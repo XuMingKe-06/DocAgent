@@ -1,0 +1,154 @@
+@import "tailwindcss";
+
+/* ===== 设计令牌 - 严格匹配原型 ===== */
+@theme {
+  /* 颜色 */
+  --color-bg: #ffffff;
+  --color-bg-sub: #f7f8fa;
+  --color-bg-hover: #f0f1f5;
+  --color-text-primary: #1f2329;
+  --color-text-secondary: #646a73;
+  --color-text-tertiary: #8f959e;
+  --color-accent: #3370ff;
+  --color-accent-light: #ebf1ff;
+  --color-accent-hover: #2860e1;
+  --color-success: #34c724;
+  --color-success-light: #edfae8;
+  --color-warning: #ff9f18;
+  --color-warning-light: #fff3e0;
+  --color-error: #f54a45;
+  --color-error-light: #fef0ef;
+  --color-border: #e5e6eb;
+  --color-border-light: #f0f1f5;
+
+  /* 字体 */
+  --font-sans: "DM Sans", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", monospace;
+
+  /* 圆角 */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* ===== 全局样式 ===== */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  font-size: inherit;
+  color: inherit;
+}
+
+input,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  border: none;
+  outline: none;
+  background: none;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d0d3d9;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b0b3ba;
+}
+
+/* ===== 动画 ===== */
+@keyframes nodeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ===== 工具类 ===== */
+.animate-node-in {
+  animation: nodeIn 0.3s ease;
+}
+.animate-fade-in {
+  animation: fadeIn 0.2s ease;
+}
+.animate-slide-up {
+  animation: slideUp 0.25s ease;
+}
+
+/* ===== 暗色模式预留 ===== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* TODO: 暗色主题变量将在后续阶段实现 */
+  }
+}
+
+/* ===== 响应式 ===== */
+@media (max-width: 900px) {
+  .sidebar-narrow {
+    width: 240px !important;
+  }
+}
