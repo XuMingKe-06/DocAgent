@@ -49,7 +49,8 @@ function FileTreeItem({ node, depth = 0 }: { node: FileNode; depth?: number }) {
 }
 
 export function FileTreeSection() {
-  const { searchKeyword, setSearchKeyword, treeData } = useFileTreeStore();
+  const { searchKeyword, setSearchKeyword, getFilteredTree } = useFileTreeStore();
+  const filteredTree = getFilteredTree();
 
   return (
     <SidebarSection title="工作区文件">
@@ -64,13 +65,13 @@ export function FileTreeSection() {
         />
       </div>
 
-      {treeData.length === 0 ? (
+      {filteredTree.length === 0 ? (
         <div className="text-[13px] text-text-tertiary text-center py-4">
-          暂无文件
+          {searchKeyword ? "未找到匹配文件" : "暂无文件"}
         </div>
       ) : (
         <div className="file-tree">
-          {treeData.map((node) => (
+          {filteredTree.map((node) => (
             <FileTreeItem key={node.path} node={node} />
           ))}
         </div>

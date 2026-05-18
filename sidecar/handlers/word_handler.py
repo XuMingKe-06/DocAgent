@@ -359,16 +359,38 @@ class WordHandler:
                     p.alignment = align_map[alignment]
 
         elif block_type == "table":
-            rows = block.get("rows", 1)
-            cols = block.get("cols", 1)
+            headers = block.get("headers", [])
+            rows_data = block.get("rows", [])
             data = block.get("data", [])
-            table = doc.add_table(rows=rows, cols=cols)
-            table.style = "Table Grid"
-            for i, row_data in enumerate(data):
-                if i < rows:
+
+            # 兼容两种格式：
+            # 格式1: {"headers": [...], "rows": [[...], [...]]} - rows 是数据列表
+            # 格式2: {"rows": 3, "cols": 2, "data": [[...]]} - rows/cols 是行列数
+            if isinstance(rows_data, list) and rows_data:
+                # 格式1: rows 是数据列表，自动计算行列数
+                if headers:
+                    all_rows = [headers] + rows_data
+                else:
+                    all_rows = rows_data
+                num_rows = len(all_rows)
+                num_cols = max(len(r) for r in all_rows) if all_rows else 1
+                table = doc.add_table(rows=num_rows, cols=num_cols)
+                table.style = "Table Grid"
+                for i, row_data in enumerate(all_rows):
                     for j, cell_text in enumerate(row_data):
-                        if j < cols:
+                        if j < num_cols:
                             table.rows[i].cells[j].text = str(cell_text)
+            else:
+                # 格式2: rows/cols 是整数
+                rows = rows_data if isinstance(rows_data, int) else 1
+                cols = block.get("cols", 1)
+                table = doc.add_table(rows=rows, cols=cols)
+                table.style = "Table Grid"
+                for i, row_data in enumerate(data):
+                    if i < rows:
+                        for j, cell_text in enumerate(row_data):
+                            if j < cols:
+                                table.rows[i].cells[j].text = str(cell_text)
 
         elif block_type == "list":
             items = block.get("items", [])

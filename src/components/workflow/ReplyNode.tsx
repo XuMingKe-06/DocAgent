@@ -7,6 +7,19 @@ interface ReplyNodeProps {
   onToggle: () => void;
 }
 
+/** 将纯文本中的简单 Markdown 格式转换为安全的 HTML（仅处理行内格式，防止 XSS） */
+function renderSafeContent(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/\n/g, "<br />");
+}
+
 export function ReplyNode({ node, onToggle }: ReplyNodeProps) {
   const data = node.data as ReplyNodeData;
   const isStreaming = node.status === "running";
@@ -31,8 +44,8 @@ export function ReplyNode({ node, onToggle }: ReplyNodeProps) {
         {node.isExpanded && (
           <div className="px-[14px] pb-3">
             <div
-              className="text-[14px] leading-[1.7] text-text-primary py-1"
-              dangerouslySetInnerHTML={{ __html: data.content }}
+              className="text-[14px] leading-[1.7] text-text-primary py-1 reply-content"
+              dangerouslySetInnerHTML={{ __html: renderSafeContent(data.content) }}
             />
             {isStreaming && (
               <span className="inline-block w-[2px] h-[16px] bg-accent animate-pulse ml-[1px] align-middle" />

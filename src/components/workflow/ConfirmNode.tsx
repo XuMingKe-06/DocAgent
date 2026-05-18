@@ -49,18 +49,18 @@ export function ConfirmNode({ node, onToggle }: ConfirmNodeProps) {
                 <div className="flex gap-2">
                   <button
                     className="px-[14px] py-[6px] rounded-[var(--radius-sm)] text-[12px] font-medium bg-error text-white hover:bg-[#D63D39] transition-all duration-150"
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      confirmHandler?.(true);
+                      await confirmHandler?.(true);
                     }}
                   >
                     {data.confirmLabel}
                   </button>
                   <button
                     className="px-[14px] py-[6px] rounded-[var(--radius-sm)] text-[12px] font-medium bg-bg-sub text-text-secondary hover:bg-bg-hover transition-all duration-150"
-                    onClick={(e) => {
+                    onClick={async (e) => {
                       e.stopPropagation();
-                      confirmHandler?.(false);
+                      await confirmHandler?.(false);
                     }}
                   >
                     {data.cancelLabel}

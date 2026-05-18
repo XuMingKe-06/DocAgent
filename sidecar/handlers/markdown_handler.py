@@ -4,6 +4,7 @@
 
 import os
 import re
+import html
 import logging
 from typing import Any
 
@@ -164,9 +165,135 @@ class MarkdownHandler:
         }
 
     def convert(self, params: dict) -> dict:
-        """格式转换"""
-        self.logger.error("convert: Markdown 格式转换暂未实现")
-        return {"error": "Markdown 格式转换暂未实现"}
+        """格式转换
+
+        params:
+            path: 源文件路径
+            output_path: 输出文件路径
+            format: 目标格式（html, txt）
+        """
+        path = params.get("path", "")
+        output_path = params.get("output_path", "")
+        target_format = params.get("format", "html")
+        if not path:
+            self.logger.error("convert: 缺少源文件路径")
+            return {"error": "缺少源文件路径"}
+        if not os.path.exists(path):
+            raise FileNotFoundError(path)
+
+        self.logger.info("convert: 开始格式转换, path=%s, format=%s", path, target_format)
+
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        if target_format in ("html", "htm"):
+            # Markdown -> HTML: 简单转换，处理标题、段落、列表、代码块、粗体/斜体
+            lines = content.split("\n")
+            html_parts = []
+            in_code_block = False
+            in_list = False
+
+            for line in lines:
+                # 代码块处理
+                if line.strip().startswith("```"):
+                    if in_code_block:
+                        html_parts.append("</code></pre>")
+                        in_code_block = False
+                    else:
+                        lang = line.strip()[3:].strip()
+                        html_parts.append(f'<pre><code class="language-{lang}">' if lang else "<pre><code>")
+                        in_code_block = True
+                    continue
+
+                if in_code_block:
+                    html_parts.append(html.escape(line))
+                    continue
+
+                # 标题处理
+                heading_match = re.match(r"^(#{1,6})\s+(.+)$", line)
+                if heading_match:
+                    if in_list:
+                        html_parts.append("</ul>")
+                        in_list = False
+                    level = len(heading_match.group(1))
+                    text = heading_match.group(2).strip()
+                    html_parts.append(f"<h{level}>{html.escape(text)}</h{level}>")
+                    continue
+
+                # 列表处理
+                list_match = re.match(r"^[-*+]\s+(.+)$", line)
+                if list_match:
+                    if not in_list:
+                        html_parts.append("<ul>")
+                        in_list = True
+                    text = list_match.group(1)
+                    html_parts.append(f"<li>{html.escape(text)}</li>")
+                    continue
+
+                # 空行
+                if not line.strip():
+                    if in_list:
+                        html_parts.append("</ul>")
+                        in_list = False
+                    continue
+
+                # 普通段落
+                if in_list:
+                    html_parts.append("</ul>")
+                    in_list = False
+                # 处理行内格式
+                text = html.escape(line)
+                text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+                text = re.sub(r"\*(.+?)\*", r"<em>\1</em>", text)
+                text = re.sub(r"`(.+?)`", r"<code>\1</code>", text)
+                html_parts.append(f"<p>{text}</p>")
+
+            if in_list:
+                html_parts.append("</ul>")
+            if in_code_block:
+                html_parts.append("</code></pre>")
+
+            result_content = "\n".join(html_parts)
+
+        elif target_format == "txt":
+            # Markdown -> 纯文本: 移除 Markdown 标记
+            result_content = content
+            # 移除标题标记
+            result_content = re.sub(r"^#{1,6}\s+", "", result_content, flags=re.MULTILINE)
+            # 移除粗体/斜体标记
+            result_content = re.sub(r"\*\*(.+?)\*\*", r"\1", result_content)
+            result_content = re.sub(r"\*(.+?)\*", r"\1", result_content)
+            # 移除行内代码标记
+            result_content = re.sub(r"`(.+?)`", r"\1", result_content)
+            # 移除代码块标记
+            result_content = re.sub(r"```\w*\n?", "", result_content)
+            # 移除列表标记
+            result_content = re.sub(r"^[-*+]\s+", "", result_content, flags=re.MULTILINE)
+            # 移除链接，保留文本
+            result_content = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", result_content)
+            # 移除图片标记
+            result_content = re.sub(r"!\[[^\]]*\]\([^)]+\)", "", result_content)
+
+        else:
+            self.logger.error("convert: 不支持的目标格式: %s", target_format)
+            return {"error": f"不支持的目标格式: {target_format}"}
+
+        # 写入输出文件
+        if output_path:
+            os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+            with open(output_path, "w", encoding="utf-8") as f:
+                f.write(result_content)
+            self.logger.info("convert: 格式转换完成, output_path=%s, format=%s", output_path, target_format)
+            return {
+                "path": output_path,
+                "format": target_format,
+                "message": f"已转换为 {target_format} 格式",
+            }
+        else:
+            return {
+                "content": result_content,
+                "format": target_format,
+            }
 
     def analyze(self, params: dict) -> dict:
         """分析 Markdown 文档"""

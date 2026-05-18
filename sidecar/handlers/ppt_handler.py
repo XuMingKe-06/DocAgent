@@ -37,16 +37,13 @@ class PptHandler:
         # 当 slides 为空但 content 非空时，从 content 构建默认幻灯片
         if not slides and content:
             self.logger.info("generate: slides 为空，从 content 参数构建默认幻灯片")
-            # 如果有标题，先创建一张标题幻灯片，再创建内容幻灯片
-            if title:
-                slides.append({"title": title, "layout": "title_slide"})
             # 将 content 按段落拆分为多张幻灯片
             paragraphs = [p.strip() for p in content.split("\n") if p.strip()]
             # 将段落分组，每组最多 5 个段落作为一张幻灯片
             chunk_size = 5
             for i in range(0, len(paragraphs), chunk_size):
                 chunk = paragraphs[i:i + chunk_size]
-                slide_title = title if i == 0 and not title else f"第 {i // chunk_size + 1} 页"
+                slide_title = title if i == 0 and title else f"第 {i // chunk_size + 1} 页"
                 slides.append({
                     "title": slide_title,
                     "content": "\n".join(chunk),

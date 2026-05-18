@@ -15,6 +15,7 @@ import { useWorkflowStore } from "./stores/useWorkflowStore";
 import { useSessionStore } from "./stores/useSessionStore";
 import { useSettingsStore } from "./stores/useSettingsStore";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
+import { useFileTreeStore } from "./stores/useFileTreeStore";
 import { useTokenStore } from "./stores/useTokenStore";
 import { useAgent } from "./hooks/useAgent";
 
@@ -26,7 +27,8 @@ export default function App() {
   const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler } = useWorkflowStore();
   const { loadSessions } = useSessionStore();
   const { loadSettings } = useSettingsStore();
-  const { loadWorkspaces } = useWorkspaceStore();
+  const { loadWorkspaces, currentWorkspaceId } = useWorkspaceStore();
+  const { loadTree } = useFileTreeStore();
   const { initTokenListener, destroyTokenListener } = useTokenStore();
 
   const {
@@ -51,6 +53,13 @@ export default function App() {
     loadWorkspaces();
     loadSessions();
   }, []);
+
+  // 工作区切换时自动加载文件树
+  useEffect(() => {
+    if (currentWorkspaceId) {
+      loadTree(currentWorkspaceId);
+    }
+  }, [currentWorkspaceId, loadTree]);
 
   // 初始化 Token 用量更新事件监听（由 store 统一管理）
   useEffect(() => {

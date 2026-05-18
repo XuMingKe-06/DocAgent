@@ -101,8 +101,9 @@ def handle_request(request: dict) -> dict:
             "error": f"不支持的操作: {action}/{doc_type}",
         }
 
-    # read 操作时，将 Rust 端发送的 input_path 映射为 Python handler 期望的 path
-    if action == "read" and "input_path" in params and "path" not in params:
+    # 将 Rust 端发送的 input_path 映射为 Python handler 期望的 path
+    # 适用于所有需要文件路径的操作（read、modify、convert、analyze 等）
+    if "input_path" in params and "path" not in params:
         params["path"] = params["input_path"]
 
     try:

@@ -116,7 +116,8 @@ class ExcelHandler:
 
         self.logger.info("read: 开始读取 Excel 文档, path=%s", path)
 
-        wb = load_workbook(path, data_only=True)
+        # 不使用 data_only 模式，以正确读取通过 ws.cell() 写入的值
+        wb = load_workbook(path, data_only=False)
         result = {"sheets": {}}
 
         if sheet_name:
@@ -134,9 +135,18 @@ class ExcelHandler:
                 for row in ws[read_range]:
                     rows.append([cell.value for cell in row])
             else:
+                # 使用 iter_rows 遍历实际有数据的区域
                 rows = []
-                for row in ws.iter_rows(values_only=True):
-                    rows.append(list(row))
+                for row in ws.iter_rows(min_row=1, max_row=ws.max_row, max_col=ws.max_column, values_only=False):
+                    row_data = []
+                    for cell in row:
+                        # 优先取 value，如果 value 为 None 则取缓存的计算值
+                        val = cell.value
+                        if val is None and cell.data_type == "f":
+                            # 公式单元格，尝试取缓存值
+                            val = cell.internal_value
+                        row_data.append(val)
+                    rows.append(row_data)
 
             result["sheets"][name] = {
                 "data": rows,

@@ -2,6 +2,23 @@ import { create } from "zustand";
 import type { FileNode } from "../types";
 import * as tauriCmd from "../services/tauri";
 
+/** 递归过滤文件树，仅保留名称匹配关键词的节点（及其父目录） */
+function filterTree(nodes: FileNode[], keyword: string): FileNode[] {
+  if (!keyword) return nodes;
+  const lower = keyword.toLowerCase();
+  return nodes.reduce<FileNode[]>((acc, node) => {
+    if (node.isDir) {
+      const filteredChildren = filterTree(node.children || [], keyword);
+      if (filteredChildren.length > 0) {
+        acc.push({ ...node, children: filteredChildren });
+      }
+    } else if (node.name.toLowerCase().includes(lower)) {
+      acc.push(node);
+    }
+    return acc;
+  }, []);
+}
+
 interface FileTreeState {
   treeData: FileNode[];
   expandedKeys: Set<string>;
@@ -13,9 +30,11 @@ interface FileTreeState {
   selectNode: (key: string) => void;
   setSearchKeyword: (keyword: string) => void;
   loadTree: (workspaceId: string) => Promise<void>;
+  /** 获取经过搜索过滤后的文件树 */
+  getFilteredTree: () => FileNode[];
 }
 
-export const useFileTreeStore = create<FileTreeState>((set) => ({
+export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   treeData: [],
   expandedKeys: new Set(),
   selectedKey: null,
@@ -52,5 +71,11 @@ export const useFileTreeStore = create<FileTreeState>((set) => ({
       console.error("[FileTreeStore] 加载文件树失败:", error);
       set({ isLoading: false });
     }
+  },
+
+  // 获取经过搜索过滤后的文件树
+  getFilteredTree: () => {
+    const { treeData, searchKeyword } = get();
+    return filterTree(treeData, searchKeyword);
   },
 }));

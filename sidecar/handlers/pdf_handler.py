@@ -43,11 +43,22 @@ class PdfHandler:
             from reportlab.pdfbase import pdfmetrics
             from reportlab.pdfbase.ttfonts import TTFont
 
-            # 注册中文字体（尝试使用系统字体）
+            # 注册中文字体（尝试使用系统字体，支持多平台）
             font_paths = [
+                # Windows
                 "C:/Windows/Fonts/msyh.ttc",
                 "C:/Windows/Fonts/simsun.ttc",
                 "C:/Windows/Fonts/simhei.ttf",
+                # macOS
+                "/System/Library/Fonts/PingFang.ttc",
+                "/System/Library/Fonts/STHeiti Light.ttc",
+                "/Library/Fonts/Arial Unicode.ttf",
+                # Linux
+                "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+                "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc",
+                "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
             ]
             font_name = "Helvetica"
             for fp in font_paths:
@@ -148,21 +159,30 @@ class PdfHandler:
                 "page_count": len(pages),
             }
         except ImportError:
-            # 回退方案：使用 pdfminer
+            # 回退方案：使用 pdfminer，统一返回结构
             try:
                 from pdfminer.high_level import extract_text
                 text = extract_text(path)
-                self.logger.info("read: PDF 文档读取完成(pdfminer), path=%s", path)
+                # 将文本按换页符分割为页面，保持与 PyMuPDF 一致的返回结构
+                page_texts = text.split("\f")
+                pages = []
+                for i, page_text in enumerate(page_texts):
+                    if page_text.strip():
+                        pages.append({
+                            "page_number": i + 1,
+                            "text": page_text,
+                        })
+                self.logger.info("read: PDF 文档读取完成(pdfminer), path=%s, 页数=%d", path, len(pages))
                 return {
-                    "text": text,
-                    "page_count": text.count("\f") + 1,
+                    "pages": pages,
+                    "page_count": len(pages),
                 }
             except ImportError:
                 self.logger.error("read: 未安装 PDF 读取库（PyMuPDF 或 pdfminer.six）")
                 return {
-                    "text": "",
-                    "error": "未安装 PDF 读取库（PyMuPDF 或 pdfminer.six）",
+                    "pages": [],
                     "page_count": 0,
+                    "error": "未安装 PDF 读取库（PyMuPDF 或 pdfminer.six）",
                 }
 
     def modify(self, params: dict) -> dict:

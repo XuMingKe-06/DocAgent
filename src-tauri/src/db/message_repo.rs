@@ -84,7 +84,7 @@ pub fn list_messages(conn: &Connection, session_id: &str) -> Vec<Message> {
         let message_role = match role_str.as_str() {
             "user" => MessageRole::User,
             "assistant" => MessageRole::Assistant,
-            "tool" => MessageRole::Assistant,
+            "tool" => MessageRole::Tool,
             _ => MessageRole::User,
         };
 
@@ -102,6 +102,21 @@ pub fn list_messages(conn: &Connection, session_id: &str) -> Vec<Message> {
                 arguments,
                 result: result_val,
             }])
+        } else if role_str == "assistant" {
+            // 助手消息可能包含 tool_calls（存储在 tool_args 字段中，格式为 JSON 数组）
+            if let Some(ref args_str) = tool_args {
+                if let Ok(calls) = serde_json::from_str::<Vec<ToolCall>>(args_str) {
+                    if !calls.is_empty() {
+                        Some(calls)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
         } else {
             None
         };

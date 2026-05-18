@@ -9,6 +9,8 @@ pub enum MessageRole {
     Assistant,
     #[serde(rename = "system")]
     System,
+    #[serde(rename = "tool")]
+    Tool,
 }
 
 /// 对话消息

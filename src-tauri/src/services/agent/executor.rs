@@ -542,7 +542,7 @@ impl<R: Runtime> AgentExecutor<R> {
         }
 
         // 超过最大迭代次数
-        let error = CommandError::agent(2001, format!("Agent 执行超过最大迭代次数 ({})", self.max_iterations));
+        let error = CommandError::agent(crate::errors::AGENT_MAX_ITERATIONS, format!("Agent 执行超过最大迭代次数 ({})", self.max_iterations));
         log::error!("Agent 执行超过最大迭代次数, session_id={}, max_iterations={}", ctx.session_id, self.max_iterations);
         self.emitter.emit_error(ErrorPayload {
             session_id: ctx.session_id.clone(),
