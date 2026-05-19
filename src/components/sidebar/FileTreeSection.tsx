@@ -49,8 +49,15 @@ function FileTreeItem({ node, depth = 0 }: { node: FileNode; depth?: number }) {
 }
 
 export function FileTreeSection() {
-  const { searchKeyword, setSearchKeyword, getFilteredTree } = useFileTreeStore();
+  const { searchKeyword, setSearchKeyword, getFilteredTree, loadTree, isLoading, activeWorkspaceId } = useFileTreeStore();
   const filteredTree = getFilteredTree();
+
+  // 手动刷新文件树
+  const handleRefresh = () => {
+    if (activeWorkspaceId) {
+      loadTree(activeWorkspaceId);
+    }
+  };
 
   return (
     <SidebarSection title="工作区文件">
@@ -63,6 +70,14 @@ export function FileTreeSection() {
           value={searchKeyword}
           onChange={(e) => setSearchKeyword(e.target.value)}
         />
+        <button
+          className={`refresh-btn ${isLoading ? "refreshing" : ""}`}
+          onClick={handleRefresh}
+          title="刷新文件树"
+          disabled={isLoading}
+        >
+          <Icon name="refresh" size={14} />
+        </button>
       </div>
 
       {filteredTree.length === 0 ? (
@@ -94,6 +109,15 @@ export function FileTreeSection() {
         .ft-icon { width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
         .ft-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .ft-indent { padding-left: 20px; }
+        .refresh-btn {
+          width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
+          border-radius: var(--radius-sm); color: var(--color-text-tertiary);
+          transition: color 0.15s, background 0.15s; flex-shrink: 0; border: none; background: none; cursor: pointer;
+        }
+        .refresh-btn:hover { color: var(--color-text-primary); background: var(--color-bg-sub); }
+        .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .refresh-btn.refreshing svg { animation: spin 0.8s linear infinite; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
     </SidebarSection>
   );

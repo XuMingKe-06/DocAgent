@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { open } from "@tauri-apps/plugin-dialog";
 import * as tauriCmd from "../../services/tauri";
 
 interface AddWorkspaceDialogProps {
@@ -12,9 +13,32 @@ export function AddWorkspaceDialog({ onClose, onSaved }: AddWorkspaceDialogProps
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 打开系统目录选择对话框
+  const handleBrowse = async () => {
+    setError(null);
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: "选择工作区目录",
+      });
+      if (selected) {
+        setPath(selected);
+        // 如果用户未手动输入名称，自动使用目录名作为工作区名称
+        if (!name.trim()) {
+          const dirName = selected.split(/[/\\]/).filter(Boolean).pop() || "";
+          setName(dirName);
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "打开目录选择器失败";
+      setError(msg);
+    }
+  };
+
   const handleSave = async () => {
     if (!path.trim()) {
-      setError("请输入工作区路径");
+      setError("请选择工作区目录");
       return;
     }
     setSaving(true);
@@ -52,15 +76,23 @@ export function AddWorkspaceDialog({ onClose, onSaved }: AddWorkspaceDialogProps
 
         {/* 表单内容 */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          {/* 工作区路径 */}
+          {/* 工作区路径 - 目录选择器 */}
           <div>
             <label className="block text-[12px] font-medium text-text-secondary mb-1">工作区路径 *</label>
-            <input
-              className="w-full px-3 py-2 border border-border rounded-[var(--radius-sm)] text-[13px] font-mono transition-colors focus:border-accent focus:outline-none"
-              placeholder="D:\Documents\ProjectDocs"
-              value={path}
-              onChange={(e) => setPath(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <input
+                className="flex-1 px-3 py-2 border border-border rounded-[var(--radius-sm)] text-[13px] font-mono transition-colors focus:border-accent focus:outline-none bg-bg-sub"
+                placeholder={'点击「浏览」选择目录...'}
+                value={path}
+                readOnly
+              />
+              <button
+                className="px-4 py-2 rounded-[var(--radius-sm)] text-[12px] font-medium bg-accent text-white hover:bg-accent-hover transition-all whitespace-nowrap"
+                onClick={handleBrowse}
+              >
+                浏览
+              </button>
+            </div>
             <div className="text-[11px] text-text-tertiary mt-1">
               Agent 将在此目录下操作文档文件
             </div>
@@ -96,7 +128,7 @@ export function AddWorkspaceDialog({ onClose, onSaved }: AddWorkspaceDialogProps
           <button
             className="px-4 py-[6px] rounded-[var(--radius-sm)] text-[12px] font-medium bg-accent text-white hover:bg-accent-hover transition-all disabled:opacity-50"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !path}
           >
             {saving ? "添加中..." : "添加"}
           </button>

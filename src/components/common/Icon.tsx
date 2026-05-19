@@ -6,7 +6,8 @@ type IconName =
   | "history" | "plus" | "settings" | "send" | "attach" | "template"
   | "file" | "doc" | "xlsx" | "ppt" | "pdf" | "folder"
   | "search" | "close" | "warning" | "check" | "dot"
-  | "code" | "menu" | "minimize" | "maximize" | "unmaximize";
+  | "code" | "menu" | "minimize" | "maximize" | "unmaximize"
+  | "refresh";
 
 interface IconProps extends SVGProps<SVGSVGElement> {
   name: IconName;
@@ -228,6 +229,13 @@ const paths: Record<IconName, React.JSX.Element> = {
     <g key="unmaximize">
       <rect x="3" y="7" width="12" height="12" rx="1" />
       <path d="M7 7V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2" />
+    </g>
+  ),
+  // 刷新
+  refresh: (
+    <g key="refresh">
+      <polyline points="23 4 23 10 17 10" />
+      <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
     </g>
   ),
 };

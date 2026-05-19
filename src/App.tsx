@@ -28,7 +28,7 @@ export default function App() {
   const { loadSessions } = useSessionStore();
   const { loadSettings } = useSettingsStore();
   const { loadWorkspaces, currentWorkspaceId } = useWorkspaceStore();
-  const { loadTree } = useFileTreeStore();
+  const { loadTree, initFileChangeListener, destroyFileChangeListener } = useFileTreeStore();
   const { initTokenListener, destroyTokenListener } = useTokenStore();
 
   const {
@@ -60,6 +60,14 @@ export default function App() {
       loadTree(currentWorkspaceId);
     }
   }, [currentWorkspaceId, loadTree]);
+
+  // 初始化文件变更事件监听（由 store 统一管理）
+  useEffect(() => {
+    initFileChangeListener();
+    return () => {
+      destroyFileChangeListener();
+    };
+  }, [initFileChangeListener, destroyFileChangeListener]);
 
   // 初始化 Token 用量更新事件监听（由 store 统一管理）
   useEffect(() => {

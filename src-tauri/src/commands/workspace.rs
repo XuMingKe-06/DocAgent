@@ -143,8 +143,8 @@ pub async fn set_active_workspace(
     let cfg_manager = state.config.lock().await;
     let ws_config = cfg_manager.load_workspaces()?;
 
-    let exists = ws_config.workspaces.iter().any(|w| w.id == workspace_id);
-    if !exists {
+    let workspace = ws_config.workspaces.iter().find(|w| w.id == workspace_id);
+    if workspace.is_none() {
         log::error!("set_active_workspace: 工作区 '{}' 不存在", workspace_id);
         return Err(CommandError::fs(
             FS_PATH_NOT_FOUND,
@@ -152,10 +152,16 @@ pub async fn set_active_workspace(
         ));
     }
 
+    let ws = workspace.unwrap();
+
     // 更新应用设置中的默认工作区
     let mut settings = cfg_manager.load_app_settings()?;
-    settings.workspace.default_workspace_id = workspace_id;
+    settings.workspace.default_workspace_id = workspace_id.clone();
     cfg_manager.save_app_settings(&settings)?;
+
+    // 启动文件监听
+    drop(cfg_manager);
+    state.fs_watcher.watch(workspace_id, ws.path.clone()).await;
 
     log::info!("set_active_workspace: 活动工作区设置成功, id={}", settings.workspace.default_workspace_id);
     Ok(())

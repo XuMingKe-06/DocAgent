@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import type { FileNode } from "../types";
 import * as tauriCmd from "../services/tauri";
+import { onFileChange, type FileChangePayload } from "../services/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 
 /** 递归过滤文件树，仅保留名称匹配关键词的节点（及其父目录） */
 function filterTree(nodes: FileNode[], keyword: string): FileNode[] {
@@ -25,6 +27,12 @@ interface FileTreeState {
   selectedKey: string | null;
   searchKeyword: string;
   isLoading: boolean;
+  /** 当前活动工作区 ID，用于文件变更事件时刷新 */
+  activeWorkspaceId: string | null;
+  /** 文件变更事件的取消监听函数 */
+  unlistenFn: UnlistenFn | null;
+  /** 防抖定时器 ID */
+  debounceTimer: ReturnType<typeof setTimeout> | null;
 
   toggleNode: (key: string) => void;
   selectNode: (key: string) => void;
@@ -32,6 +40,10 @@ interface FileTreeState {
   loadTree: (workspaceId: string) => Promise<void>;
   /** 获取经过搜索过滤后的文件树 */
   getFilteredTree: () => FileNode[];
+  /** 初始化文件变更事件监听 */
+  initFileChangeListener: () => Promise<void>;
+  /** 销毁文件变更事件监听 */
+  destroyFileChangeListener: () => void;
 }
 
 export const useFileTreeStore = create<FileTreeState>((set, get) => ({
@@ -40,6 +52,9 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   selectedKey: null,
   searchKeyword: "",
   isLoading: false,
+  activeWorkspaceId: null,
+  unlistenFn: null,
+  debounceTimer: null,
 
   // 展开/折叠节点
   toggleNode: (key) => {
@@ -63,7 +78,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
 
   // 从后端加载文件树
   loadTree: async (workspaceId) => {
-    set({ isLoading: true });
+    set({ isLoading: true, activeWorkspaceId: workspaceId });
     try {
       const treeData = await tauriCmd.getFileTree(workspaceId);
       set({ treeData, isLoading: false });
@@ -77,5 +92,45 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   getFilteredTree: () => {
     const { treeData, searchKeyword } = get();
     return filterTree(treeData, searchKeyword);
+  },
+
+  // 初始化文件变更事件监听
+  initFileChangeListener: async () => {
+    // 先销毁旧监听
+    get().destroyFileChangeListener();
+
+    try {
+      const unlisten = await onFileChange((payload: FileChangePayload) => {
+        const { activeWorkspaceId, debounceTimer } = get();
+        // 只处理当前活动工作区的文件变更
+        if (activeWorkspaceId && payload.workspaceId === activeWorkspaceId) {
+          // 防抖：500ms 内的多次变更合并为一次刷新
+          if (debounceTimer) {
+            clearTimeout(debounceTimer);
+          }
+          const timer = setTimeout(() => {
+            get().loadTree(activeWorkspaceId);
+            set({ debounceTimer: null });
+          }, 500);
+          set({ debounceTimer: timer });
+        }
+      });
+      set({ unlistenFn: unlisten });
+    } catch (error) {
+      console.error("[FileTreeStore] 初始化文件变更监听失败:", error);
+    }
+  },
+
+  // 销毁文件变更事件监听
+  destroyFileChangeListener: () => {
+    const { unlistenFn, debounceTimer } = get();
+    if (unlistenFn) {
+      unlistenFn();
+      set({ unlistenFn: null });
+    }
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+      set({ debounceTimer: null });
+    }
   },
 }));

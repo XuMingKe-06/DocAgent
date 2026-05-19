@@ -28,11 +28,13 @@ pub struct AppState {
     pub doc_service: Arc<crate::services::document::DocumentService>,
     pub llm_router: Arc<tokio::sync::RwLock<Arc<crate::services::llm::router::LlmRouter>>>,
     pub skill_registry: Arc<tokio::sync::Mutex<crate::services::skill::registry::SkillRegistry>>,
+    pub fs_watcher: Arc<crate::services::fs_watcher::FsWatcherService<tauri::Wry>>,
 }
 
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // 初始化应用数据目录
             let app_data_dir = app
@@ -136,6 +138,9 @@ pub fn run() {
 
             log::info!("DocAgent 应用初始化完成");
 
+            // 初始化文件监听服务
+            let fs_watcher = crate::services::fs_watcher::FsWatcherService::new(app.handle().clone());
+
             let state = AppState {
                 db: Arc::new(database),
                 config: Arc::new(tokio::sync::Mutex::new(config_manager)),
@@ -144,9 +149,27 @@ pub fn run() {
                 doc_service: doc_service_for_skills,
                 llm_router: Arc::new(tokio::sync::RwLock::new(Arc::new(llm_router))),
                 skill_registry: Arc::new(tokio::sync::Mutex::new(skill_registry)),
+                fs_watcher: Arc::new(fs_watcher),
             };
 
             app.manage(state);
+
+            // 应用启动时，如果已有活动工作区，自动启动文件监听
+            let fs_watcher = app.state::<AppState>().fs_watcher.clone();
+            let config_manager = app.state::<AppState>().config.clone();
+            tauri::async_runtime::spawn(async move {
+                let cfg = config_manager.lock().await;
+                if let Ok(ws_config) = cfg.load_workspaces() {
+                    if let Ok(settings) = cfg.load_app_settings() {
+                        let active_id = &settings.workspace.default_workspace_id;
+                        if !active_id.is_empty() {
+                            if let Some(ws) = ws_config.workspaces.iter().find(|w| w.id == *active_id) {
+                                fs_watcher.watch(ws.id.clone(), ws.path.clone()).await;
+                            }
+                        }
+                    }
+                }
+            });
 
             Ok(())
         })
