@@ -4,10 +4,11 @@ import { useSessionStore } from "../../stores/useSessionStore";
 interface HistoryPanelProps {
   open: boolean;
   onClose: () => void;
+  onSwitchSession: (sessionId: string) => void;
 }
 
-export function HistoryPanel({ open, onClose }: HistoryPanelProps) {
-  const { sessions, currentSessionId, switchSession } = useSessionStore();
+export function HistoryPanel({ open, onClose, onSwitchSession }: HistoryPanelProps) {
+  const { sessions, currentSessionId } = useSessionStore();
 
   return (
     <>
@@ -46,7 +47,7 @@ export function HistoryPanel({ open, onClose }: HistoryPanelProps) {
                 className={`px-3 py-[10px] rounded-[var(--radius-sm)] cursor-pointer transition-colors duration-150 mb-[2px] ${
                   s.id === currentSessionId ? "bg-accent-light" : "hover:bg-bg-sub"
                 }`}
-                onClick={() => { switchSession(s.id); onClose(); }}
+                onClick={() => { onSwitchSession(s.id); onClose(); }}
               >
                 <div className={`text-[13px] font-medium mb-1 ${
                   s.id === currentSessionId ? "text-accent" : "text-text-primary"

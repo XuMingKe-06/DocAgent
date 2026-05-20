@@ -58,6 +58,8 @@ export interface UseAgentReturn {
   confirmOperation: (operationId: string, approved: boolean, feedback?: string) => Promise<void>;
   /** 重置状态 */
   reset: () => void;
+  /** 外部设置当前会话 ID（用于切换历史会话） */
+  setSessionId: (id: string) => void;
 }
 
 /** 初始状态 */
@@ -237,6 +239,12 @@ export function useAgent(): UseAgentReturn {
     setIsStopped(initialState.isStopped);
   }, []);
 
+  /** 外部设置当前会话 ID（用于切换历史会话后同步 Agent 状态） */
+  const setSessionIdExternal = useCallback((id: string) => {
+    setSessionId(id);
+    sessionIdRef.current = id;
+  }, []);
+
   return {
     isLoading,
     error,
@@ -253,5 +261,6 @@ export function useAgent(): UseAgentReturn {
     stopAgent,
     confirmOperation,
     reset,
+    setSessionId: setSessionIdExternal,
   };
 }

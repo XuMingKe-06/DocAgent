@@ -103,23 +103,53 @@ pub fn list_messages(conn: &Connection, session_id: &str) -> Vec<Message> {
                 result: result_val,
             }])
         } else if role_str == "assistant" {
-            // 助手消息可能包含 tool_calls（存储在 tool_args 字段中，格式为 JSON 数组）
-            if let Some(ref args_str) = tool_args {
-                if let Ok(calls) = serde_json::from_str::<Vec<ToolCall>>(args_str) {
-                    if !calls.is_empty() {
-                        Some(calls)
+            // 助手消息可能包含 tool_calls
+            // 存储格式：
+            //   单个 tool_call: tool_name = "名称", tool_args = "参数JSON"
+            //   多个 tool_calls: tool_name = "[\"名称1\",\"名称2\"]", tool_args = "[\"参数1\",\"参数2\"]"
+            match (tool_name, tool_args) {
+                (Some(ref name_str), Some(ref args_str)) => {
+                    // 尝试解析为多个 tool_calls（名称是 JSON 数组）
+                    if let Ok(names) = serde_json::from_str::<Vec<String>>(name_str) {
+                        if let Ok(args_list) = serde_json::from_str::<Vec<String>>(args_str) {
+                            let calls: Vec<ToolCall> = names.iter().zip(args_list.iter())
+                                .enumerate()
+                                .filter_map(|(i, (name, args))| {
+                                    let arguments = serde_json::from_str(args)
+                                        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                                    Some(ToolCall {
+                                        id: format!("{}_{}", msg_id, i),
+                                        name: name.clone(),
+                                        arguments,
+                                        result: None,
+                                    })
+                                })
+                                .collect();
+                            if !calls.is_empty() {
+                                Some(calls)
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
                     } else {
-                        None
+                        // 单个 tool_call：tool_name 是名称字符串，tool_args 是参数 JSON
+                        let arguments = serde_json::from_str(args_str)
+                            .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                        Some(vec![ToolCall {
+                            id: msg_id.clone(),
+                            name: name_str.clone(),
+                            arguments,
+                            result: None,
+                        }])
                     }
-                } else {
-                    None
                 }
-            } else {
-                None
+                _ => None,
             }
         } else {
-            None
-        };
+            None }
+;
 
         result.push(Message {
             id: msg_id,

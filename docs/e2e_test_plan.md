@@ -44,13 +44,13 @@
 - 底部输入框可正常聚焦
 
 **验证点**:
-- [ ] SQLite 数据库文件 `<app_data_dir>/docagent.db` 已创建
-- [ ] 配置目录 `<app_data_dir>/config/` 已创建
-- [ ] 日志文件 `log/sidecar.log` 存在（Sidecar 启动后）
+- [√] SQLite 数据库文件 `<app_data_dir>/docagent.db` 已创建
+- [√] 配置目录 `<app_data_dir>/config/` 已创建
+- [√] 日志文件 `log/sidecar.log` 存在（Sidecar 启动后）
 
 ---
 
-### E2E-02: LLM Provider 配置
+### E2E-02: LLM Provider 配置（测试通过）
 
 **目标**: 验证 LLM Provider 的增删改查和连接测试
 
@@ -78,14 +78,14 @@
 - 编辑和删除操作正常
 
 **验证点**:
-- [ ] 配置文件 `<app_data_dir>/config/llm_config.json` 正确保存
-- [ ] 添加第一个 Provider 时自动设为默认
-- [ ] 删除默认 Provider 后自动切换到第一个可用 Provider
-- [ ] 无效 API Key 时连接测试返回明确的错误信息
+- [√] 配置文件 `<app_data_dir>/config/llm_config.json` 正确保存
+- [√] 添加第一个 Provider 时自动设为默认
+- [√] 删除默认 Provider 后自动切换到第一个可用 Provider
+- [√] 无效 API Key 时连接测试返回明确的错误信息
 
 ---
 
-### E2E-03: 工作区管理
+### E2E-03: 工作区管理（测试通过）
 
 **目标**: 验证工作区的添加、切换、移除功能
 
@@ -104,9 +104,9 @@
 - 移除工作区后列表更新，活动工作区自动回退
 
 **验证点**:
-- [ ] 配置文件 `<app_data_dir>/config/workspaces.json` 正确保存
-- [ ] 文件树正确展示工作区目录结构
-- [ ] 切换工作区后 Agent 的工作区路径同步更新
+- [√] 配置文件 `<app_data_dir>/config/workspaces.json` 正确保存
+- [√] 文件树正确展示工作区目录结构
+- [√] 切换工作区后 Agent 的工作区路径同步更新
 
 ---
 
@@ -136,10 +136,10 @@
 - Token 统计数字递增
 
 **验证点**:
-- [ ] 消息持久化到 SQLite（重启应用后可恢复）
-- [ ] 流式输出过程中内容逐步显示
-- [ ] Agent 执行期间输入框禁用
-- [ ] Agent 执行完成后输入框恢复可用
+- [√] 消息持久化到 SQLite（重启应用后可恢复）
+- [√] 流式输出过程中内容逐步显示
+- [√] Agent 执行期间输入框禁用
+- [√] Agent 执行完成后输入框恢复可用
 
 ---
 

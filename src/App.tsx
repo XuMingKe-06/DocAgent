@@ -18,14 +18,15 @@ import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { useFileTreeStore } from "./stores/useFileTreeStore";
 import { useTokenStore } from "./stores/useTokenStore";
 import { useAgent } from "./hooks/useAgent";
+import * as tauriCmd from "./services/tauri";
 
 export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [templateLabel, setTemplateLabel] = useState<string | undefined>(undefined);
 
-  const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler } = useWorkflowStore();
-  const { loadSessions } = useSessionStore();
+  const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler, loadFromMessages } = useWorkflowStore();
+  const { switchSession, loadSessions } = useSessionStore();
   const { loadSettings } = useSettingsStore();
   const { loadWorkspaces, currentWorkspaceId, workspaces } = useWorkspaceStore();
   const { loadTree, initFileChangeListener, destroyFileChangeListener } = useFileTreeStore();
@@ -43,6 +44,7 @@ export default function App() {
     sendMessage,
     confirmOperation,
     reset: resetAgent,
+    setSessionId: setAgentSessionId,
   } = useAgent();
 
   const streamingNodeIdRef = useRef<string | null>(null);
@@ -215,6 +217,29 @@ export default function App() {
     confirmNodeIdRef.current = null;
   }, [clearNodes, resetAgent]);
 
+  // 切换到历史会话：清空当前节点，从后端加载消息并转换为工作流节点
+  const handleSwitchSession = useCallback(async (sessionId: string) => {
+    // 清空当前工作流和 Agent 状态
+    clearNodes();
+    resetAgent();
+    streamingNodeIdRef.current = null;
+    confirmNodeIdRef.current = null;
+
+    // 更新 session store 中的当前会话 ID
+    switchSession(sessionId);
+    // 同步 Agent hook 的 sessionId，使后续消息发送到正确的会话
+    setAgentSessionId(sessionId);
+
+    // 从后端加载会话详情（包含消息列表）
+    try {
+      const detail = await tauriCmd.getSession(sessionId);
+      // 将消息转换为工作流节点并填充到 store
+      loadFromMessages(detail.messages);
+    } catch (err) {
+      console.error("[App] 加载历史会话失败:", err);
+    }
+  }, [clearNodes, resetAgent, switchSession, setAgentSessionId, loadFromMessages]);
+
   // 监听键盘快捷键
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -270,7 +295,7 @@ export default function App() {
       {/* 浮层面板 */}
       <PreviewOverlay open={previewOpen} onClose={() => setPreviewOpen(false)} />
       <SettingsDialog />
-      <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} />
+      <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} onSwitchSession={handleSwitchSession} />
 
       <style>{`
         .app { display: flex; flex-direction: column; height: 100vh; }
