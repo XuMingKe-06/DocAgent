@@ -44,8 +44,12 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir).expect("无法创建应用数据目录");
 
             // 初始化日志系统（必须在数据库和配置初始化之前，确保关键操作的错误能被记录）
-            let log_dir = std::path::Path::new("log");
-            crate::utils::logger::init(log_dir)
+            // CARGO_MANIFEST_DIR 指向 src-tauri/，其上一级即为项目根目录，日志输出到项目根目录的 log/ 下
+            let log_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .map(|p| p.join("log"))
+                .unwrap_or_else(|| std::path::PathBuf::from("log"));
+            crate::utils::logger::init(&log_dir)
                 .expect("日志系统初始化失败");
 
             // 初始化数据库

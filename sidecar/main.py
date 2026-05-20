@@ -30,7 +30,8 @@ def setup_logging():
         datefmt='%Y-%m-%d %H:%M:%S',
     )
 
-    file_handler = logging.FileHandler(log_file, mode='a', encoding='utf-8')
+    # mode='w' 覆盖写入，每次启动时清空上一次的日志
+    file_handler = logging.FileHandler(log_file, mode='w', encoding='utf-8')
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(formatter)
 
