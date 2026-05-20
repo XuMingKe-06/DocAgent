@@ -19,7 +19,7 @@ export function TopBar({ onToggleHistory, onNewSession }: TopBarProps) {
   const statusColor = hasProvider ? "bg-success" : "bg-text-tertiary";
 
   return (
-    <div data-tauri-drag-region className="flex items-center h-[52px] px-4 border-b border-border bg-bg flex-shrink-0 gap-3 z-[100]">
+    <div data-tauri-drag-region className="flex items-center h-[52px] pr-4 border-b border-border bg-bg flex-shrink-0 gap-3 z-[100]" style={{ paddingLeft: '24px' }}>
       {/* 工作区选择器 */}
       <div
         className="flex items-center gap-[6px] px-[10px] py-[5px] rounded-[var(--radius-sm)] cursor-pointer transition-colors duration-150 text-[13px] font-medium text-text-secondary whitespace-nowrap hover:bg-bg-sub"
