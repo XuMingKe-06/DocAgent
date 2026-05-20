@@ -27,8 +27,7 @@ export function WorkflowTimeline() {
   }
 
   return (
-    <div className="relative pl-[28px]">
-      <div className="absolute left-[11px] top-2 bottom-2 w-[1.5px] bg-border" />
+    <div className="workflow-timeline">
       {nodes.map((node) => (
         <WorkflowNodeRenderer key={node.id} node={node} />
       ))}

@@ -25,26 +25,26 @@ export function ReplyNode({ node, onToggle }: ReplyNodeProps) {
   const isStreaming = node.status === "running";
 
   return (
-    <div className={`relative mb-1 animate-node-in ${!node.isExpanded ? "collapsed" : ""}`}>
-      <div className="absolute -left-[28px] top-[14px] w-[22px] h-[22px] rounded-full flex items-center justify-center z-[2] bg-accent-light text-accent">
+    <div className={`wf-node animate-node-in ${!node.isExpanded ? "collapsed" : ""}`}>
+      <div className="wf-node-dot bg-accent-light text-accent">
         <Icon name="reply" size={12} />
       </div>
 
-      <div className="rounded-[var(--radius-md)] border border-border bg-bg overflow-hidden transition-colors duration-150 hover:border-[#D0D3D9]">
-        <div className="flex items-center gap-2 px-[14px] py-[10px] cursor-pointer select-none" onClick={onToggle}>
-          <span className="text-[12px] font-semibold uppercase tracking-[.3px] text-accent">回复</span>
+      <div className="wf-node-card">
+        <div className="wf-node-header" onClick={onToggle}>
+          <span className="wf-node-label reply">回复</span>
           {isStreaming && (
             <span className="inline-block w-[6px] h-[6px] rounded-full bg-accent animate-pulse" />
           )}
-          <span className="text-[11px] text-text-tertiary font-mono ml-auto">{formatTime(node.timestamp)}</span>
-          <span className="w-5 h-5 flex items-center justify-center rounded-[4px] transition-colors duration-150 text-text-tertiary hover:bg-bg-sub">
+          <span className="wf-node-time">{formatTime(node.timestamp)}</span>
+          <span className="wf-node-toggle">
             <Icon name="chevron-down" size={14} style={{ transform: node.isExpanded ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform 0.2s" }} />
           </span>
         </div>
         {node.isExpanded && (
-          <div className="px-[14px] pb-3">
+          <div className="wf-node-body">
             <div
-              className="text-[14px] leading-[1.7] text-text-primary py-1 reply-content"
+              className="wf-reply-text reply-content"
               dangerouslySetInnerHTML={{ __html: renderSafeContent(data.content) }}
             />
             {isStreaming && (
