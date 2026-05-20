@@ -8,6 +8,21 @@ use crate::models::skill::SkillResult;
 use crate::services::document::DocumentService;
 use super::registry::Skill;
 
+/// 将相对路径解析为绝对路径
+/// 如果路径已经是绝对路径，直接返回；否则拼接 workspace_root
+fn resolve_path(path: &str, workspace_root: &str) -> String {
+    if path.is_empty() {
+        return path.to_string();
+    }
+    let p = std::path::Path::new(path);
+    if p.is_absolute() {
+        return path.to_string();
+    }
+    // 相对路径：拼接工作区根目录
+    let root = std::path::Path::new(workspace_root);
+    root.join(path).to_string_lossy().to_string()
+}
+
 /// 注册所有内置技能
 pub fn register_builtin_skills(
     registry: &mut super::registry::SkillRegistry,
@@ -79,6 +94,10 @@ impl Skill for GenerateDocumentSkill {
         let doc_type = params["format"].as_str().unwrap_or("docx");
         let output_path = params["path"].as_str().unwrap_or("");
         let title = params["title"].as_str().unwrap_or("");
+        let workspace_root = params["workspace_root"].as_str().unwrap_or("");
+
+        // 将相对路径解析为绝对路径，确保 Sidecar 在正确目录生成文件
+        let resolved_path = resolve_path(output_path, workspace_root);
 
         // content 参数支持纯文本或结构化 JSON
         // 如果是字符串直接使用，如果是 JSON 对象/数组则序列化为字符串传递
@@ -94,7 +113,7 @@ impl Skill for GenerateDocumentSkill {
         };
 
         let mut sidecar_params = json!({
-            "path": output_path,
+            "path": resolved_path,
             "title": title,
             "content": content,
         });
@@ -162,7 +181,9 @@ impl Skill for ReadDocumentSkill {
     async fn execute(&self, params: Value) -> SkillResult {
         let start = Instant::now();
         let file_path = params["path"].as_str().unwrap_or("");
-        let extension = std::path::Path::new(file_path)
+        let workspace_root = params["workspace_root"].as_str().unwrap_or("");
+        let resolved_path = resolve_path(file_path, workspace_root);
+        let extension = std::path::Path::new(&resolved_path)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("docx");
@@ -176,7 +197,7 @@ impl Skill for ReadDocumentSkill {
         };
 
         let sidecar_params = json!({
-            "path": file_path,
+            "path": resolved_path,
             "include_formatting": params["include_formatting"].as_bool().unwrap_or(false),
         });
 
@@ -245,7 +266,9 @@ impl Skill for ModifyDocumentSkill {
     async fn execute(&self, params: Value) -> SkillResult {
         let start = Instant::now();
         let file_path = params["path"].as_str().unwrap_or("");
-        let extension = std::path::Path::new(file_path)
+        let workspace_root = params["workspace_root"].as_str().unwrap_or("");
+        let resolved_path = resolve_path(file_path, workspace_root);
+        let extension = std::path::Path::new(&resolved_path)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("docx");
@@ -258,7 +281,7 @@ impl Skill for ModifyDocumentSkill {
         };
 
         let sidecar_params = json!({
-            "path": file_path,
+            "path": resolved_path,
             "operations": params["operations"],
         });
 
@@ -340,8 +363,11 @@ impl Skill for DeleteDocumentSkill {
             };
         }
 
+        // 将相对路径解析为绝对路径后再做安全校验
+        let resolved_path = resolve_path(file_path, workspace_root);
+
         // 规范化路径并校验文件是否在工作区内，防止路径遍历攻击（如 ../）
-        let canonical_file = match std::path::Path::new(file_path).canonicalize() {
+        let canonical_file = match std::path::Path::new(&resolved_path).canonicalize() {
             Ok(p) => p,
             Err(_) => {
                 return SkillResult {
@@ -477,20 +503,25 @@ impl Skill for ConvertFormatSkill {
         let source_path = params["source_path"].as_str().unwrap_or("");
         let target_format = params["target_format"].as_str().unwrap_or("pdf");
         let output_path = params["output_path"].as_str().unwrap_or("");
+        let workspace_root = params["workspace_root"].as_str().unwrap_or("");
+
+        // 解析源文件路径
+        let resolved_source = resolve_path(source_path, workspace_root);
 
         let output_path = if output_path.is_empty() {
-            let stem = std::path::Path::new(source_path)
+            let stem = std::path::Path::new(&resolved_source)
                 .file_stem()
                 .and_then(|s| s.to_str())
                 .unwrap_or("output");
             format!("{}.{}", stem, target_format)
         } else {
-            output_path.to_string()
+            // 解析输出文件路径
+            resolve_path(output_path, workspace_root)
         };
 
         // 根据源文件扩展名确定 doc_type，确保调用正确的处理器
         // 例如：.docx 转 .pdf 时，应调用 Word 处理器的 convert 方法（它知道如何读取 .docx）
-        let source_extension = std::path::Path::new(source_path)
+        let source_extension = std::path::Path::new(&resolved_source)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("docx");
@@ -504,7 +535,7 @@ impl Skill for ConvertFormatSkill {
         };
 
         let sidecar_params = json!({
-            "path": source_path,
+            "path": resolved_source,
             "output_path": output_path,
             "format": target_format,
         });
@@ -594,7 +625,9 @@ impl Skill for SearchDocumentsSkill {
         }
 
         // 路径安全校验：搜索目录必须在工作区内
-        let dir_path = std::path::Path::new(directory);
+        // 先将相对路径解析为绝对路径
+        let resolved_directory = resolve_path(directory, workspace_root);
+        let dir_path = std::path::Path::new(&resolved_directory);
         if !dir_path.exists() || !dir_path.is_dir() {
             return SkillResult {
                 success: false,
@@ -793,7 +826,9 @@ impl Skill for AnalyzeDocumentSkill {
     async fn execute(&self, params: Value) -> SkillResult {
         let start = Instant::now();
         let file_path = params["path"].as_str().unwrap_or("");
-        let extension = std::path::Path::new(file_path)
+        let workspace_root = params["workspace_root"].as_str().unwrap_or("");
+        let resolved_path = resolve_path(file_path, workspace_root);
+        let extension = std::path::Path::new(&resolved_path)
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("docx");
@@ -807,7 +842,7 @@ impl Skill for AnalyzeDocumentSkill {
         };
 
         let sidecar_params = json!({
-            "path": file_path,
+            "path": resolved_path,
         });
 
         match self.doc_service.process("analyze", doc_type, sidecar_params).await {
@@ -873,7 +908,9 @@ impl Skill for ListWorkspaceSkill {
             .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
             .unwrap_or_default();
 
-        let dir = std::path::Path::new(dir_path);
+        // 将相对路径解析为绝对路径
+        let resolved_dir = resolve_path(dir_path, workspace_root);
+        let dir = std::path::Path::new(&resolved_dir);
         if !dir.exists() {
             return SkillResult {
                 success: false,
@@ -1069,6 +1106,7 @@ impl Skill for BatchProcessSkill {
         let operation = params["operation"].as_str().unwrap_or("analyze");
         let paths = params["paths"].as_array().cloned().unwrap_or_default();
         let op_params = params["params"].clone();
+        let workspace_root = params["workspace_root"].as_str().unwrap_or("");
 
         let mut results = Vec::new();
         let mut all_success = true;
@@ -1079,7 +1117,10 @@ impl Skill for BatchProcessSkill {
                 continue;
             }
 
-            let extension = std::path::Path::new(path_str)
+            // 解析相对路径为绝对路径
+            let resolved_path = resolve_path(path_str, workspace_root);
+
+            let extension = std::path::Path::new(&resolved_path)
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("docx");
@@ -1094,16 +1135,16 @@ impl Skill for BatchProcessSkill {
 
             let sidecar_params = match operation {
                 "convert" => json!({
-                    "path": path_str,
+                    "path": resolved_path,
                     "output_path": op_params["output_path"],
                     "format": op_params.get("target_format").and_then(|v| v.as_str()).unwrap_or(extension),
                 }),
                 "modify" => json!({
-                    "path": path_str,
+                    "path": resolved_path,
                     "operations": op_params["operations"],
                 }),
                 _ => json!({
-                    "path": path_str,
+                    "path": resolved_path,
                 }),
             };
 

@@ -47,6 +47,7 @@ def setup_logging():
 
 
 # 文档处理器注册表
+# txt 类型复用 MarkdownHandler，纯文本是 Markdown 的子集
 HANDLERS = {
     "docx": WordHandler(),
     "xlsx": ExcelHandler(),
@@ -54,6 +55,7 @@ HANDLERS = {
     "pdf": PdfHandler(),
     "md": MarkdownHandler(),
     "markdown": MarkdownHandler(),
+    "txt": MarkdownHandler(),
 }
 
 
@@ -148,6 +150,13 @@ def handle_request(request: dict) -> dict:
 
 def main():
     """主循环：从 stdin 读取 JSON 请求，处理并输出到 stdout"""
+    # Windows 管道模式下 stdin/stdout 默认使用系统编码（如 GBK/cp936），
+    # 而 Rust 端发送 UTF-8 编码的 JSON，编码不匹配会导致 surrogate 字符产生，
+    # 引发 UnicodeEncodeError。显式重新配置为 UTF-8 解决此问题。
+    sys.stdin.reconfigure(encoding='utf-8')
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+
     setup_logging()
     logger.info("Sidecar 启动, 等待输入...")
 

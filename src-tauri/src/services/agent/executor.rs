@@ -457,10 +457,13 @@ impl<R: Runtime> AgentExecutor<R> {
 
                     // 对需要路径安全校验的 Skill，注入工作区根目录
                     // 防止 LLM 提供恶意路径绕过校验
+                    // 同时为文档操作 Skill 注入工作区根目录，用于将相对路径解析为绝对路径
                     let mut safe_params = params;
                     let needs_workspace_root = matches!(
                         tool_call.name.as_str(),
                         "delete_document" | "search_documents" | "list_workspace"
+                        | "generate_document" | "read_document" | "modify_document" | "analyze_document"
+                        | "convert_format" | "batch_process"
                     );
                     if needs_workspace_root && !ctx.workspace_path.is_empty() {
                         safe_params["workspace_root"] = json!(ctx.workspace_path);

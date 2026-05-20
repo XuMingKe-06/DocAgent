@@ -27,7 +27,7 @@ export default function App() {
   const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler } = useWorkflowStore();
   const { loadSessions } = useSessionStore();
   const { loadSettings } = useSettingsStore();
-  const { loadWorkspaces, currentWorkspaceId } = useWorkspaceStore();
+  const { loadWorkspaces, currentWorkspaceId, workspaces } = useWorkspaceStore();
   const { loadTree, initFileChangeListener, destroyFileChangeListener } = useFileTreeStore();
   const { initTokenListener, destroyTokenListener } = useTokenStore();
 
@@ -195,13 +195,17 @@ export default function App() {
     addNode("user", { content: text, attachments: [] });
     setExecutionStatus("running");
 
+    // 获取当前工作区路径，传递给 Agent 以正确解析文件路径
+    const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId);
+    const workingDirectory = currentWorkspace?.path;
+
     try {
-      await sendMessage(text);
+      await sendMessage(text, workingDirectory ? { workingDirectory } : undefined);
     } catch (err) {
       console.error("[App] 发送消息失败:", err);
       setExecutionStatus("failed");
     }
-  }, [addNode, setExecutionStatus, sendMessage]);
+  }, [addNode, setExecutionStatus, sendMessage, workspaces, currentWorkspaceId]);
 
   // 新建会话
   const handleNewSession = useCallback(() => {
