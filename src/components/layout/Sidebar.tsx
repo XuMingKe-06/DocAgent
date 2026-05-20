@@ -14,20 +14,22 @@ export function SidebarSection({ title, defaultOpen = true, children }: SidebarS
   return (
     <div className="border-b border-border">
       <div
-        className="flex items-center justify-between px-4 py-3 cursor-pointer select-none transition-colors duration-150 hover:bg-black/[.02]"
+        className="flex items-center justify-between px-4 py-[10px] cursor-pointer select-none transition-colors duration-150 hover:bg-black/[.03] group"
         onClick={() => setOpen(!open)}
       >
-        <span className="text-[12px] font-semibold text-text-secondary uppercase tracking-[.5px]">
+        <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-[.8px] group-hover:text-text-primary transition-colors duration-150">
           {title}
         </span>
         <span
-          className="text-text-tertiary transition-transform duration-200"
+          className="text-text-tertiary transition-all duration-200 group-hover:text-text-secondary"
           style={{ transform: open ? "rotate(0deg)" : "rotate(-90deg)" }}
         >
           <Icon name="chevron-down" size={14} />
         </span>
       </div>
-      {open && <div className="px-4 pb-3">{children}</div>}
+      {open && (
+        <div className="px-4 pb-3 animate-slide-up">{children}</div>
+      )}
     </div>
   );
 }

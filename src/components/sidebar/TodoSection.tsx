@@ -18,8 +18,9 @@ export function TodoSection({ items }: TodoSectionProps) {
   if (todoItems.length === 0) {
     return (
       <SidebarSection title="任务进度">
-        <div className="text-[13px] text-text-tertiary text-center py-4">
-          暂无任务
+        <div className="empty-state">
+          <Icon name="check-circle" size={20} className="opacity-40" />
+          <span>暂无任务</span>
         </div>
       </SidebarSection>
     );
@@ -31,34 +32,105 @@ export function TodoSection({ items }: TodoSectionProps) {
         {todoItems.map((item) => (
           <div
             key={item.id}
-            className={`flex items-center gap-2 px-2 py-[6px] rounded-[var(--radius-sm)] text-[13px] ${
-              item.done ? "text-text-tertiary" :
-              item.active ? "text-accent font-medium" :
-              "text-text-secondary"
+            className={`todo-item ${
+              item.done ? "done" :
+              item.active ? "active" :
+              "pending"
             }`}
           >
             <span
-              className={`w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center flex-shrink-0 transition-all duration-150 ${
+              className={`todo-indicator ${
                 item.done
-                  ? "bg-success border-success text-white"
+                  ? "indicator-done"
                   : item.active
-                  ? "border-accent bg-accent-light"
-                  : "border-border"
+                  ? "indicator-active"
+                  : "indicator-pending"
               }`}
             >
               {item.done && (
                 <Icon name="check" size={10} strokeWidth={3} />
               )}
               {item.active && (
-                <span className="w-[6px] h-[6px] rounded-full bg-accent animate-[pulse_1.5s_infinite]" />
+                <span className="active-dot" />
               )}
             </span>
-            <span className={item.done ? "line-through" : ""}>
+            <span className={`todo-text ${item.done ? "line-through" : ""}`}>
               {item.text}
             </span>
           </div>
         ))}
       </div>
+
+      <style>{`
+        .todo-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 6px 8px;
+          border-radius: var(--radius-sm);
+          font-size: 13px;
+          transition: all 0.15s;
+        }
+        .todo-item:hover {
+          background: var(--color-accent-bg);
+        }
+        .todo-item.done {
+          color: var(--color-text-quaternary);
+        }
+        .todo-item.active {
+          color: var(--color-accent);
+          font-weight: 500;
+          background: var(--color-accent-lighter);
+        }
+        .todo-item.pending {
+          color: var(--color-text-secondary);
+        }
+        .todo-indicator {
+          width: 16px;
+          height: 16px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          transition: all 0.2s;
+        }
+        .indicator-done {
+          background: var(--color-success);
+          border: 1.5px solid var(--color-success);
+          color: white;
+        }
+        .indicator-active {
+          border: 1.5px solid var(--color-accent);
+          background: var(--color-accent-light);
+        }
+        .indicator-pending {
+          border: 1.5px solid var(--color-border-strong);
+        }
+        .active-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          background: var(--color-accent);
+          animation: pulse 1.5s infinite;
+        }
+        .todo-text {
+          flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 20px 16px;
+          color: var(--color-text-quaternary);
+          font-size: 12px;
+        }
+      `}</style>
     </SidebarSection>
   );
 }

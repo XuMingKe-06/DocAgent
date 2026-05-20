@@ -25,29 +25,24 @@ export function AgentInfoSection() {
   return (
     <SidebarSection title="Agent 信息">
       <div className="flex flex-col gap-[10px]">
-        {/* 当前模型 */}
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] text-text-tertiary">当前模型</span>
-          <div className="flex items-center gap-[6px] px-[10px] py-1 bg-bg rounded-[var(--radius-sm)] text-[12px] font-medium">
-            <span className={`w-[6px] h-[6px] rounded-full ${activeProvider ? "bg-success" : "bg-text-tertiary"}`} />
+        <div className="info-row">
+          <span className="info-label">当前模型</span>
+          <div className={`info-badge ${activeProvider ? "status-online" : "status-offline"}`}>
+            <span className={`status-dot ${activeProvider ? "bg-success" : "bg-text-quaternary"}`} />
             {activeProvider?.model ?? "未配置"}
           </div>
         </div>
 
-        {/* Provider */}
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] text-text-tertiary">Provider</span>
-          <span className="text-[13px] font-medium text-text-primary">
-            {activeProvider?.providerType ?? "未配置"}
-          </span>
+        <div className="info-row">
+          <span className="info-label">Provider</span>
+          <span className="info-value">{activeProvider?.providerType ?? "未配置"}</span>
         </div>
 
-        {/* 作者名 */}
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] text-text-tertiary">作者名</span>
+        <div className="info-row">
+          <span className="info-label">作者名</span>
           {editing ? (
             <input
-              className="text-[13px] font-medium text-text-primary px-2 py-[2px] border border-border rounded-[4px] w-20"
+              className="edit-input"
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               onBlur={handleSave}
@@ -56,7 +51,7 @@ export function AgentInfoSection() {
             />
           ) : (
             <span
-              className="text-[13px] font-medium text-text-primary px-2 py-[2px] rounded-[4px] cursor-pointer border border-transparent transition-all duration-150 hover:border-border hover:bg-bg"
+              className="info-value clickable"
               onClick={() => { setEditValue(settings.general.authorName); setEditing(true); }}
             >
               {settings.general.authorName || "未设置"}
@@ -64,14 +59,75 @@ export function AgentInfoSection() {
           )}
         </div>
 
-        {/* 确认级别 */}
-        <div className="flex items-center justify-between">
-          <span className="text-[12px] text-text-tertiary">确认级别</span>
-          <span className="text-[13px] font-medium text-text-primary">
+        <div className="info-row">
+          <span className="info-label">确认级别</span>
+          <span className="info-value">
             {confirmationLevelLabels[settings.general.confirmationLevel] ?? settings.general.confirmationLevel}
           </span>
         </div>
       </div>
+
+      <style>{`
+        .info-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+        }
+        .info-label {
+          font-size: 12px;
+          color: var(--color-text-quaternary);
+          flex-shrink: 0;
+        }
+        .info-badge {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 3px 10px;
+          background: var(--color-bg-sub);
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 500;
+        }
+        .info-badge.status-online {
+          background: var(--color-success-bg);
+        }
+        .status-dot {
+          width: 6px;
+          height: 6px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+        .info-value {
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--color-text-primary);
+        }
+        .info-value.clickable {
+          padding: 2px 6px;
+          border-radius: 4px;
+          cursor: pointer;
+          border: 1px solid transparent;
+          transition: all 0.15s;
+        }
+        .info-value.clickable:hover {
+          border-color: var(--color-border);
+          background: var(--color-bg-sub);
+        }
+        .edit-input {
+          font-size: 13px;
+          font-weight: 500;
+          padding: 2px 6px;
+          border: 1px solid var(--color-border-strong);
+          border-radius: 4px;
+          width: 100px;
+          transition: all 0.2s;
+        }
+        .edit-input:focus {
+          border-color: var(--color-accent);
+          box-shadow: 0 0 0 2px var(--color-accent-lighter);
+        }
+      `}</style>
     </SidebarSection>
   );
 }

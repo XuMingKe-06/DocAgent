@@ -12,13 +12,16 @@ function FileTreeItem({ node, depth = 0 }: { node: FileNode; depth?: number }) {
     return (
       <div>
         <div
-          className="ft-item"
+          className="ft-item group"
           onClick={() => toggleNode(node.path)}
         >
-          <span className="ft-icon">
+          <span className="ft-icon text-text-tertiary group-hover:text-text-secondary">
             <Icon name="folder" size={16} />
           </span>
           <span className="ft-name">{node.name}</span>
+          <span className="ft-chevron transition-transform duration-200" style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
+            <Icon name="chevron-down" size={12} />
+          </span>
         </div>
         {isExpanded && node.children && (
           <div className="ft-indent">
@@ -33,10 +36,16 @@ function FileTreeItem({ node, depth = 0 }: { node: FileNode; depth?: number }) {
 
   return (
     <div
-      className={`ft-item ${isSelected ? "active" : ""}`}
+      className={`ft-item file-item ${isSelected ? "active" : ""}`}
       onClick={() => selectNode(node.path)}
     >
-      <span className="ft-icon">
+      <span className={`ft-icon ${
+        node.extension === "docx" ? "text-[#2b579a]" :
+        node.extension === "xlsx" ? "text-[#217346]" :
+        node.extension === "pptx" ? "text-[#b7472a]" :
+        node.extension === "pdf" ? "text-[#ea4335]" :
+        "text-text-tertiary"
+      }`}>
         {node.extension === "docx" ? <Icon name="doc" size={16} /> :
          node.extension === "xlsx" ? <Icon name="xlsx" size={16} /> :
          node.extension === "pptx" ? <Icon name="ppt" size={16} /> :
@@ -52,7 +61,6 @@ export function FileTreeSection() {
   const { searchKeyword, setSearchKeyword, getFilteredTree, loadTree, isLoading, activeWorkspaceId } = useFileTreeStore();
   const filteredTree = getFilteredTree();
 
-  // 手动刷新文件树
   const handleRefresh = () => {
     if (activeWorkspaceId) {
       loadTree(activeWorkspaceId);
@@ -61,11 +69,11 @@ export function FileTreeSection() {
 
   return (
     <SidebarSection title="工作区文件">
-      <div className="flex items-center gap-[6px] px-2 py-[6px] mb-[6px] bg-bg border border-border rounded-[var(--radius-sm)]">
-        <Icon name="search" size={14} className="text-text-tertiary flex-shrink-0" />
+      <div className="search-bar">
+        <Icon name="search" size={14} className="text-text-quaternary flex-shrink-0" />
         <input
           type="text"
-          className="flex-1 text-[12px] placeholder:text-text-tertiary bg-transparent"
+          className="flex-1 text-[12px] placeholder:text-text-quaternary bg-transparent"
           placeholder="搜索文件..."
           value={searchKeyword}
           onChange={(e) => setSearchKeyword(e.target.value)}
@@ -81,8 +89,9 @@ export function FileTreeSection() {
       </div>
 
       {filteredTree.length === 0 ? (
-        <div className="text-[13px] text-text-tertiary text-center py-4">
-          {searchKeyword ? "未找到匹配文件" : "暂无文件"}
+        <div className="empty-state">
+          <Icon name="file" size={24} className="opacity-40" />
+          <span>{searchKeyword ? "未找到匹配文件" : "暂无文件"}</span>
         </div>
       ) : (
         <div className="file-tree">
@@ -93,31 +102,113 @@ export function FileTreeSection() {
       )}
 
       <style>{`
-        .file-tree { font-size: 13px; }
+        .search-bar {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 6px 8px;
+          margin-bottom: 8px;
+          background: var(--color-bg-sub);
+          border: 1px solid var(--color-border-light);
+          border-radius: var(--radius-sm);
+          transition: all 0.2s;
+        }
+        .search-bar:focus-within {
+          border-color: var(--color-accent);
+          background: var(--color-bg);
+          box-shadow: 0 0 0 2px var(--color-accent-lighter);
+        }
+        .file-tree {
+          font-size: 13px;
+        }
         .ft-item {
           display: flex;
           align-items: center;
           gap: 6px;
-          padding: 4px 8px;
+          padding: 5px 8px;
           border-radius: var(--radius-sm);
           cursor: pointer;
-          transition: background 0.1s;
+          transition: all 0.15s;
           color: var(--color-text-primary);
+          position: relative;
         }
-        .ft-item:hover { background: rgba(0,0,0,0.04); }
-        .ft-item.active { background: var(--color-accent-light); color: var(--color-accent); }
-        .ft-icon { width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-        .ft-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .ft-indent { padding-left: 20px; }
+        .ft-item:hover {
+          background: var(--color-accent-bg);
+          color: var(--color-accent);
+        }
+        .ft-item.active {
+          background: var(--color-accent-light);
+          color: var(--color-accent);
+          font-weight: 500;
+        }
+        .file-item:hover {
+          background: var(--color-accent-bg);
+        }
+        .ft-icon {
+          width: 16px;
+          height: 16px;
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: color 0.15s;
+        }
+        .ft-name {
+          flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .ft-chevron {
+          width: 16px;
+          height: 16px;
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: var(--color-text-quaternary);
+          transition: all 0.2s;
+        }
+        .ft-indent {
+          padding-left: 20px;
+          border-left: 1px solid var(--color-border-light);
+          margin-left: 12px;
+        }
         .refresh-btn {
-          width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;
-          border-radius: var(--radius-sm); color: var(--color-text-tertiary);
-          transition: color 0.15s, background 0.15s; flex-shrink: 0; border: none; background: none; cursor: pointer;
+          width: 24px;
+          height: 24px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: var(--radius-xs);
+          color: var(--color-text-quaternary);
+          transition: all 0.15s;
+          flex-shrink: 0;
+          border: none;
+          background: none;
+          cursor: pointer;
         }
-        .refresh-btn:hover { color: var(--color-text-primary); background: var(--color-bg-sub); }
-        .refresh-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-        .refresh-btn.refreshing svg { animation: spin 0.8s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .refresh-btn:hover {
+          color: var(--color-text-primary);
+          background: var(--color-bg-hover);
+        }
+        .refresh-btn:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .refresh-btn.refreshing svg {
+          animation: spin 0.8s linear infinite;
+        }
+        .empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+          padding: 24px 16px;
+          color: var(--color-text-quaternary);
+          font-size: 12px;
+        }
       `}</style>
     </SidebarSection>
   );

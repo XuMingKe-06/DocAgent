@@ -11,7 +11,6 @@ interface HistoryPanelProps {
 export function HistoryPanel({ open, onClose, onSwitchSession }: HistoryPanelProps) {
   const { sessions, currentSessionId, loadSessions } = useSessionStore();
 
-  // 面板打开时刷新会话列表，确保显示最新数据（包括通过 Agent 新创建的会话）
   useEffect(() => {
     if (open) {
       loadSessions();
@@ -22,54 +21,137 @@ export function HistoryPanel({ open, onClose, onSwitchSession }: HistoryPanelPro
     <>
       {open && (
         <div
-          className="fixed inset-0 z-[140]"
+          className="fixed inset-0 z-[140] bg-overlay/30"
           onClick={onClose}
         />
       )}
 
       <div
-        className={`fixed top-[52px] left-0 w-[280px] bottom-0 bg-bg border-r border-border z-[150] flex flex-col transition-transform duration-250 ${
+        className={`fixed top-[52px] left-0 w-[300px] bottom-0 bg-bg border-r border-border z-[150] flex flex-col transition-transform duration-300 ease-out ${
           open ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="px-4 py-4 border-b border-border flex items-center justify-between">
-          <h3 className="text-[14px] font-semibold">历史会话</h3>
+        <div className="history-header">
+          <h3 className="history-title">历史会话</h3>
           <button
-            className="w-[28px] h-[28px] flex items-center justify-center rounded-[var(--radius-sm)] transition-colors duration-150 text-text-secondary"
+            className="history-close-btn"
             onClick={onClose}
           >
             <Icon name="close" size={16} />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2">
+        <div className="history-list">
           {sessions.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-text-tertiary text-[13px] px-4 text-center">
-              <Icon name="history" size={24} className="mb-3 opacity-50" />
+            <div className="history-empty">
+              <Icon name="history" size={32} className="opacity-30" />
               <p>暂无历史会话</p>
             </div>
           ) : (
             sessions.map((s) => (
               <div
                 key={s.id}
-                className={`px-3 py-[10px] rounded-[var(--radius-sm)] cursor-pointer transition-colors duration-150 mb-[2px] ${
-                  s.id === currentSessionId ? "bg-accent-light" : "hover:bg-bg-sub"
-                }`}
+                className={`history-item ${s.id === currentSessionId ? "active" : ""}`}
                 onClick={() => { onSwitchSession(s.id); onClose(); }}
               >
-                <div className={`text-[13px] font-medium mb-1 ${
-                  s.id === currentSessionId ? "text-accent" : "text-text-primary"
-                }`}>
+                <div className={`history-item-title ${s.id === currentSessionId ? "text-accent" : ""}`}>
                   {s.title}
                 </div>
-                <div className="text-[11px] text-text-tertiary flex gap-2">
+                <div className="history-item-meta">
                   <span>{new Date(s.updatedAt).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}</span>
-                  <span>{s.status}</span>
+                  <span className="history-status">{s.status}</span>
                 </div>
               </div>
             ))
           )}
         </div>
+
+        <style>{`
+          .history-header {
+            padding: 16px;
+            border-bottom: 1px solid var(--color-border-light);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          }
+          .history-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--color-text-primary);
+          }
+          .history-close-btn {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-sm);
+            color: var(--color-text-secondary);
+            transition: all 0.15s;
+          }
+          .history-close-btn:hover {
+            background: var(--color-bg-sub);
+            color: var(--color-text-primary);
+          }
+          .history-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+          }
+          .history-empty {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            gap: 12px;
+            color: var(--color-text-quaternary);
+            font-size: 13px;
+          }
+          .history-item {
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all 0.15s;
+            margin-bottom: 2px;
+            border: 1px solid transparent;
+          }
+          .history-item:hover {
+            background: var(--color-accent-bg);
+            border-color: var(--color-accent-light);
+          }
+          .history-item.active {
+            background: var(--color-accent-light);
+            border-color: var(--color-accent-light);
+          }
+          .history-item-title {
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 4px;
+            color: var(--color-text-primary);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          .history-item-meta {
+            font-size: 11px;
+            color: var(--color-text-quaternary);
+            display: flex;
+            gap: 8px;
+            align-items: center;
+          }
+          .history-status {
+            padding: 1px 6px;
+            border-radius: 3px;
+            background: var(--color-bg-sub);
+            font-size: 10px;
+            font-weight: 500;
+          }
+          .history-item.active .history-status {
+            background: var(--color-accent-light);
+            color: var(--color-accent);
+          }
+        `}</style>
       </div>
     </>
   );

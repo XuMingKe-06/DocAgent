@@ -5,7 +5,7 @@ type IconName =
   | "chevron-down" | "chevron-up" | "chevron-left" | "chevron-right"
   | "history" | "plus" | "settings" | "send" | "attach" | "template"
   | "file" | "doc" | "xlsx" | "ppt" | "pdf" | "folder"
-  | "search" | "close" | "warning" | "check" | "dot"
+  | "search" | "close" | "warning" | "check" | "check-circle" | "dot"
   | "code" | "menu" | "minimize" | "maximize" | "unmaximize"
   | "refresh";
 
@@ -189,6 +189,13 @@ const paths: Record<IconName, React.JSX.Element> = {
   check: (
     <g key="check">
       <polyline points="20 6 9 17 4 12" />
+    </g>
+  ),
+  // 勾选圆圈
+  "check-circle": (
+    <g key="check-circle">
+      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+      <polyline points="22 4 12 14.01 9 11.01" />
     </g>
   ),
   // 圆点

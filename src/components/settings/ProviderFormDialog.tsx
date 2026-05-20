@@ -88,44 +88,35 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
 
   return (
     <div
-      className="fixed inset-0 bg-black/35 z-[400] flex items-center justify-center animate-fade-in"
+      className="fixed inset-0 bg-overlay z-[400] flex items-center justify-center animate-fade-in"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="w-[520px] bg-bg rounded-[var(--radius-lg)] shadow-lg flex flex-col overflow-hidden animate-slide-up"
+        className="dialog-modal"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 标题栏 */}
-        <div className="flex items-center px-6 py-4 border-b border-border gap-3 flex-shrink-0">
-          <h3 className="text-[15px] font-bold flex-1">
+        <div className="dialog-header">
+          <h3 className="dialog-title">
             {mode === "add" ? "添加 LLM Provider" : "编辑 LLM Provider"}
           </h3>
-          <button
-            className="w-[28px] h-[28px] flex items-center justify-center rounded-[var(--radius-sm)] transition-colors duration-150 text-text-secondary hover:bg-bg-sub"
-            onClick={onClose}
-          >
-            x
-          </button>
+          <button className="dialog-close-btn" onClick={onClose}>x</button>
         </div>
 
-        {/* 表单内容 */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
-          {/* Provider 名称 */}
-          <div>
-            <label className="block text-[12px] font-medium text-text-secondary mb-1">Provider 名称</label>
+        <div className="dialog-body">
+          <div className="form-group">
+            <label className="form-label">Provider 名称</label>
             <input
-              className="w-full px-3 py-2 border border-border rounded-[var(--radius-sm)] text-[13px] transition-colors focus:border-accent focus:outline-none"
+              className="form-input"
               placeholder="例如：我的 GPT-4o"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
 
-          {/* Provider 类型 */}
-          <div>
-            <label className="block text-[12px] font-medium text-text-secondary mb-1">Provider 类型</label>
+          <div className="form-group">
+            <label className="form-label">Provider 类型</label>
             <select
-              className="w-full px-3 py-2 border border-border rounded-[var(--radius-sm)] text-[13px] bg-bg cursor-pointer focus:border-accent focus:outline-none"
+              className="form-select"
               value={providerType}
               onChange={(e) => setProviderType(e.target.value as LLMProviderType)}
             >
@@ -135,49 +126,41 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
             </select>
           </div>
 
-          {/* API Base URL */}
-          <div>
-            <label className="block text-[12px] font-medium text-text-secondary mb-1">API Base URL</label>
+          <div className="form-group">
+            <label className="form-label">API Base URL</label>
             <input
-              className="w-full px-3 py-2 border border-border rounded-[var(--radius-sm)] text-[13px] font-mono transition-colors focus:border-accent focus:outline-none"
+              className="form-input form-input-mono"
               placeholder="https://api.openai.com/v1"
               value={apiBase}
               onChange={(e) => setApiBase(e.target.value)}
             />
           </div>
 
-          {/* API Key */}
-          <div>
-            <label className="block text-[12px] font-medium text-text-secondary mb-1">
+          <div className="form-group">
+            <label className="form-label">
               API Key{mode === "edit" ? "（留空则保持不变）" : ""}
             </label>
             <input
               type="password"
-              className="w-full px-3 py-2 border border-border rounded-[var(--radius-sm)] text-[13px] font-mono transition-colors focus:border-accent focus:outline-none"
+              className="form-input form-input-mono"
               placeholder={mode === "edit" ? "sk-..." : "sk-..."}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
             />
           </div>
 
-          {/* 模型名称 */}
-          <div>
-            <label className="block text-[12px] font-medium text-text-secondary mb-1">模型名称</label>
+          <div className="form-group">
+            <label className="form-label">模型名称</label>
             <input
-              className="w-full px-3 py-2 border border-border rounded-[var(--radius-sm)] text-[13px] font-mono transition-colors focus:border-accent focus:outline-none"
+              className="form-input form-input-mono"
               placeholder="例如：gpt-4o、claude-3-5-sonnet、gemini-1.5-pro"
               value={model}
               onChange={(e) => setModel(e.target.value)}
             />
           </div>
 
-          {/* 连接测试结果 */}
           {testResult && (
-            <div className={`px-3 py-2 rounded-[var(--radius-sm)] text-[12px] ${
-              testResult.success
-                ? "bg-green-50 text-green-700 border border-green-200"
-                : "bg-red-50 text-red-700 border border-red-200"
-            }`}>
+            <div className={`test-result ${testResult.success ? "test-success" : "test-error"}`}>
               {testResult.success ? (
                 <span>连接成功 - 延迟: {testResult.latencyMs}ms{testResult.model ? ` | 模型: ${testResult.model}` : ""}</span>
               ) : (
@@ -186,40 +169,169 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
             </div>
           )}
 
-          {/* 错误信息 */}
           {error && (
-            <div className="px-3 py-2 rounded-[var(--radius-sm)] text-[12px] bg-red-50 text-red-700 border border-red-200">
-              {error}
-            </div>
+            <div className="test-result test-error">{error}</div>
           )}
         </div>
 
-        {/* 底部操作栏 */}
-        <div className="flex items-center justify-end gap-2 px-6 py-4 border-t border-border flex-shrink-0">
+        <div className="dialog-footer">
           {mode === "edit" && provider && (
             <button
-              className="px-3 py-[6px] rounded-[var(--radius-sm)] text-[12px] font-medium bg-bg-sub text-text-secondary hover:bg-bg-hover transition-all mr-auto"
+              className="dialog-btn dialog-btn-ghost mr-auto"
               onClick={handleTest}
               disabled={testing}
             >
               {testing ? "测试中..." : "测试连接"}
             </button>
           )}
-          <button
-            className="px-4 py-[6px] rounded-[var(--radius-sm)] text-[12px] font-medium bg-bg-sub text-text-secondary hover:bg-bg-hover transition-all"
-            onClick={onClose}
-          >
-            取消
-          </button>
-          <button
-            className="px-4 py-[6px] rounded-[var(--radius-sm)] text-[12px] font-medium bg-accent text-white hover:bg-accent-hover transition-all disabled:opacity-50"
-            onClick={handleSave}
-            disabled={saving}
-          >
+          <button className="dialog-btn dialog-btn-ghost" onClick={onClose}>取消</button>
+          <button className="dialog-btn dialog-btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? "保存中..." : "保存"}
           </button>
         </div>
       </div>
+
+      <style>{`
+        .dialog-modal {
+          width: 520px;
+          background: var(--color-bg-elevated);
+          border-radius: var(--radius-xl);
+          box-shadow: var(--shadow-xl);
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+          animation: scaleIn 0.2s ease;
+        }
+        .dialog-header {
+          padding: 18px 24px;
+          border-bottom: 1px solid var(--color-border-light);
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-shrink: 0;
+        }
+        .dialog-title {
+          font-size: 15px;
+          font-weight: 700;
+          color: var(--color-text-primary);
+          flex: 1;
+        }
+        .dialog-close-btn {
+          width: 28px;
+          height: 28px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: var(--radius-sm);
+          color: var(--color-text-secondary);
+          transition: all 0.15s;
+          font-size: 16px;
+        }
+        .dialog-close-btn:hover {
+          background: var(--color-bg-sub);
+          color: var(--color-text-primary);
+        }
+        .dialog-body {
+          flex: 1;
+          overflow-y: auto;
+          padding: 20px 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 16px;
+        }
+        .form-group {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .form-label {
+          font-size: 12px;
+          font-weight: 500;
+          color: var(--color-text-secondary);
+        }
+        .form-input {
+          padding: 8px 12px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-sm);
+          font-size: 13px;
+          transition: all 0.2s;
+          background: var(--color-bg);
+          color: var(--color-text-primary);
+        }
+        .form-input:focus {
+          border-color: var(--color-accent);
+          box-shadow: 0 0 0 2px var(--color-accent-lighter);
+          outline: none;
+        }
+        .form-input-mono {
+          font-family: var(--font-mono);
+        }
+        .form-select {
+          padding: 8px 12px;
+          border: 1px solid var(--color-border);
+          border-radius: var(--radius-sm);
+          font-size: 13px;
+          background: var(--color-bg);
+          color: var(--color-text-primary);
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .form-select:focus {
+          border-color: var(--color-accent);
+          box-shadow: 0 0 0 2px var(--color-accent-lighter);
+          outline: none;
+        }
+        .test-result {
+          padding: 8px 12px;
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+        }
+        .test-success {
+          background: var(--color-success-light);
+          color: var(--color-success);
+          border: 1px solid rgba(52, 199, 36, 0.3);
+        }
+        .test-error {
+          background: var(--color-error-light);
+          color: var(--color-error);
+          border: 1px solid rgba(245, 74, 69, 0.3);
+        }
+        .dialog-footer {
+          padding: 16px 24px;
+          border-top: 1px solid var(--color-border-light);
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-shrink: 0;
+        }
+        .dialog-btn {
+          padding: 6px 16px;
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          font-weight: 500;
+          border: none;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        .dialog-btn-primary {
+          background: var(--color-accent);
+          color: white;
+        }
+        .dialog-btn-primary:hover:not(:disabled) {
+          background: var(--color-accent-hover);
+        }
+        .dialog-btn-primary:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        .dialog-btn-ghost {
+          background: var(--color-bg-sub);
+          color: var(--color-text-secondary);
+        }
+        .dialog-btn-ghost:hover {
+          background: var(--color-bg-hover);
+        }
+      `}</style>
     </div>
   );
 }

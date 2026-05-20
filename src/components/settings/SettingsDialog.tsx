@@ -8,11 +8,11 @@ import { TemplatesTab } from "./TemplatesTab";
 import { GeneralTab } from "./GeneralTab";
 
 const tabs = [
-  { id: "llm" as const, label: "LLM 配置" },
-  { id: "workspace" as const, label: "工作区管理" },
-  { id: "skill" as const, label: "Skills 管理" },
-  { id: "template" as const, label: "Prompt 模板" },
-  { id: "general" as const, label: "通用设置" },
+  { id: "llm" as const, label: "LLM 配置", icon: "settings" },
+  { id: "workspace" as const, label: "工作区管理", icon: "folder" },
+  { id: "skill" as const, label: "Skills 管理", icon: "tool" },
+  { id: "template" as const, label: "Prompt 模板", icon: "template" },
+  { id: "general" as const, label: "通用设置", icon: "code" },
 ];
 
 export function SettingsDialog() {
@@ -41,48 +41,138 @@ export function SettingsDialog() {
 
   return (
     <div
-      className="fixed inset-0 bg-black/35 z-[300] flex items-center justify-center animate-fade-in"
+      className="fixed inset-0 bg-overlay z-[300] flex items-center justify-center animate-fade-in"
       onClick={(e) => { if (e.target === e.currentTarget) closeSettings(); }}
     >
       <div
-        className="w-[720px] max-h-[80vh] bg-bg rounded-[var(--radius-lg)] shadow-lg flex flex-col overflow-hidden animate-slide-up"
+        className="settings-modal"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 顶部 */}
-        <div className="flex items-center px-6 py-4 border-b border-border gap-3 flex-shrink-0">
-          <h2 className="text-[16px] font-bold flex-1">设置</h2>
+        <div className="settings-header">
+          <h2 className="settings-title">设置</h2>
           <button
-            className="w-[30px] h-[30px] flex items-center justify-center rounded-[var(--radius-sm)] transition-colors duration-150 text-text-secondary hover:bg-bg-sub"
+            className="settings-close-btn"
             onClick={closeSettings}
           >
             <Icon name="close" size={18} />
           </button>
         </div>
 
-        {/* 主体 */}
-        <div className="flex flex-1 overflow-hidden">
-          {/* 左侧导航 */}
-          <div className="w-[180px] flex-shrink-0 border-r border-border py-3 px-2 overflow-y-auto">
+        <div className="settings-body">
+          <div className="settings-nav">
             {tabs.map((tab) => (
               <div
                 key={tab.id}
-                className={`px-3 py-2 rounded-[var(--radius-sm)] text-[13px] cursor-pointer transition-colors duration-150 mb-[2px] ${
-                  activeSettingsTab === tab.id
-                    ? "bg-accent-light text-accent font-medium"
-                    : "text-text-secondary hover:bg-bg-sub"
-                }`}
+                className={`settings-nav-item ${activeSettingsTab === tab.id ? "active" : ""}`}
                 onClick={() => setActiveTab(tab.id)}
               >
-                {tab.label}
+                <span className="settings-nav-icon">
+                  <Icon name={tab.icon as any} size={16} />
+                </span>
+                <span className="settings-nav-label">{tab.label}</span>
               </div>
             ))}
           </div>
 
-          {/* 右侧内容 */}
-          <div className="flex-1 overflow-y-auto px-6 py-6">
+          <div className="settings-content">
             {renderTab()}
           </div>
         </div>
+
+        <style>{`
+          .settings-modal {
+            width: 760px;
+            max-height: 80vh;
+            background: var(--color-bg-elevated);
+            border-radius: var(--radius-xl);
+            box-shadow: var(--shadow-xl);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: scaleIn 0.2s ease;
+          }
+          .settings-header {
+            padding: 20px 24px;
+            border-bottom: 1px solid var(--color-border-light);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+          }
+          .settings-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--color-text-primary);
+            flex: 1;
+          }
+          .settings-close-btn {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-sm);
+            color: var(--color-text-secondary);
+            transition: all 0.15s;
+          }
+          .settings-close-btn:hover {
+            background: var(--color-bg-sub);
+            color: var(--color-text-primary);
+          }
+          .settings-body {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+          }
+          .settings-nav {
+            width: 180px;
+            flex-shrink: 0;
+            border-right: 1px solid var(--color-border-light);
+            padding: 12px 8px;
+            overflow-y: auto;
+            background: var(--color-bg-sub);
+          }
+          .settings-nav-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            color: var(--color-text-secondary);
+            cursor: pointer;
+            transition: all 0.15s;
+            margin-bottom: 2px;
+          }
+          .settings-nav-item:hover {
+            background: var(--color-bg-hover);
+            color: var(--color-text-primary);
+          }
+          .settings-nav-item.active {
+            background: var(--color-accent-light);
+            color: var(--color-accent);
+            font-weight: 500;
+          }
+          .settings-nav-icon {
+            width: 18px;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+          }
+          .settings-nav-label {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+          .settings-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+          }
+        `}</style>
       </div>
     </div>
   );
