@@ -6,9 +6,11 @@ interface HistoryPanelProps {
   open: boolean;
   onClose: () => void;
   onSwitchSession: (sessionId: string) => void;
+  // 删除当前会话后的回调，用于清空工作流或切换到其他会话
+  onDeleteCurrentSession?: (nextSessionId: string | null) => void;
 }
 
-export function HistoryPanel({ open, onClose, onSwitchSession }: HistoryPanelProps) {
+export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSession }: HistoryPanelProps) {
   const { sessions, currentSessionId, loadSessions, deleteSession, updateSessionTitle } = useSessionStore();
 
   // 正在编辑的会话ID
@@ -76,7 +78,22 @@ export function HistoryPanel({ open, onClose, onSwitchSession }: HistoryPanelPro
   // 确认删除
   const handleConfirmDelete = async () => {
     if (deleteConfirmId) {
+      // 判断是否删除的是当前会话
+      const isDeletingCurrent = deleteConfirmId === currentSessionId;
+      
+      // 计算删除后的下一个会话ID（在删除前计算，因为删除后列表会变化）
+      const currentIndex = sessions.findIndex(s => s.id === deleteConfirmId);
+      const nextSessionId = sessions.length > 1
+        ? (sessions[currentIndex + 1]?.id || sessions[currentIndex - 1]?.id || null)
+        : null;
+      
       await deleteSession(deleteConfirmId);
+      
+      // 如果删除的是当前会话，通知父组件处理工作流更新
+      if (isDeletingCurrent && onDeleteCurrentSession) {
+        onDeleteCurrentSession(nextSessionId);
+      }
+      
       setDeleteConfirmId(null);
       setDeleteConfirmTitle("");
     }

@@ -253,6 +253,30 @@ export default function App() {
     }
   }, [clearNodes, resetAgent, switchSession, setAgentSessionId, loadFromMessages]);
 
+  // 删除当前会话后的处理：清空工作流或切换到其他会话
+  const handleDeleteCurrentSession = useCallback(async (nextSessionId: string | null) => {
+    // 清空当前工作流和 Agent 状态
+    clearNodes();
+    resetAgent();
+    streamingNodeIdRef.current = null;
+    confirmNodeIdRef.current = null;
+
+    if (nextSessionId) {
+      // 切换到下一个可用会话
+      switchSession(nextSessionId);
+      setAgentSessionId(nextSessionId);
+      
+      // 加载新会话的内容
+      try {
+        const detail = await tauriCmd.getSession(nextSessionId);
+        loadFromMessages(detail.messages);
+      } catch (err) {
+        console.error("[App] 加载切换后的会话失败:", err);
+      }
+    }
+    // 如果 nextSessionId 为 null，表示没有其他会话，工作流保持清空状态
+  }, [clearNodes, resetAgent, switchSession, setAgentSessionId, loadFromMessages]);
+
   // 监听键盘快捷键
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -308,7 +332,7 @@ export default function App() {
       {/* 浮层面板 */}
       <PreviewOverlay open={previewOpen} onClose={() => setPreviewOpen(false)} />
       <SettingsDialog />
-      <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} onSwitchSession={handleSwitchSession} />
+      <HistoryPanel open={historyOpen} onClose={() => setHistoryOpen(false)} onSwitchSession={handleSwitchSession} onDeleteCurrentSession={handleDeleteCurrentSession} />
 
       <style>{`
         .app { display: flex; flex-direction: column; height: 100vh; }
