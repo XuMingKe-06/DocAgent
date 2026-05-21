@@ -254,10 +254,31 @@ impl Skill for ModifyDocumentSkill {
                                 "type": "string",
                                 "enum": ["replace", "add_paragraph", "add_heading", "add_table", "set_cell", "append", "prepend"],
                                 "description": "操作类型"
+                            },
+                            "index": {
+                                "type": "integer",
+                                "description": "段落索引（从0开始），用于 replace 操作按索引替换整段内容"
+                            },
+                            "text": {
+                                "type": "string",
+                                "description": "新文本内容，用于 replace（按索引替换）或 add_paragraph/add_heading 操作"
+                            },
+                            "old": {
+                                "type": "string",
+                                "description": "要替换的旧文本，用于 replace 操作的全文搜索替换模式"
+                            },
+                            "new": {
+                                "type": "string",
+                                "description": "替换后的新文本，用于 replace 操作的全文搜索替换模式"
+                            },
+                            "level": {
+                                "type": "integer",
+                                "description": "标题级别（1-6），用于 add_heading 操作"
                             }
-                        }
+                        },
+                        "required": ["type"]
                     },
-                    "description": "修改操作列表"
+                    "description": "修改操作列表。replace 操作支持两种模式：1) 按索引替换整段：提供 index 和 text；2) 全文搜索替换：提供 old 和 new"
                 }
             },
             "required": ["path", "operations"]

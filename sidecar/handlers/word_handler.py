@@ -130,7 +130,8 @@ class WordHandler:
         params:
             path: 文件路径
             operations: 修改操作列表
-                [{"type": "replace", "old": "...", "new": "..."},
+                [{"type": "replace", "old": "...", "new": "..."},  # 全文搜索替换
+                 {"type": "replace", "index": 1, "text": "..."},   # 按段落索引替换整段
                  {"type": "add_paragraph", "text": "...", "position": 0},
                  {"type": "add_table", "rows": 3, "cols": 2, "data": [[...]]}]
         """
@@ -151,15 +152,30 @@ class WordHandler:
             op_type = op.get("type", "")
 
             if op_type == "replace":
-                # 文本替换
-                old_text = op.get("old", "")
-                new_text = op.get("new", "")
-                for para in doc.paragraphs:
-                    if old_text in para.text:
-                        for run in para.runs:
-                            if old_text in run.text:
-                                run.text = run.text.replace(old_text, new_text)
-                                modified_count += 1
+                # 检查是按索引替换还是全文搜索替换
+                if "index" in op:
+                    # 按段落索引替换整段内容
+                    index = op.get("index", 0)
+                    new_text = op.get("text", "")
+                    if 0 <= index < len(doc.paragraphs):
+                        para = doc.paragraphs[index]
+                        # 清空原有内容并设置新文本
+                        para.clear()
+                        para.add_run(new_text)
+                        modified_count += 1
+                        self.logger.debug("modify: 按索引替换段落 %d, 新文本: %s", index, new_text[:50])
+                    else:
+                        self.logger.warning("modify: 段落索引 %d 超出范围 (0-%d)", index, len(doc.paragraphs) - 1)
+                else:
+                    # 全文搜索替换
+                    old_text = op.get("old", "")
+                    new_text = op.get("new", "")
+                    for para in doc.paragraphs:
+                        if old_text in para.text:
+                            for run in para.runs:
+                                if old_text in run.text:
+                                    run.text = run.text.replace(old_text, new_text)
+                                    modified_count += 1
 
             elif op_type == "add_paragraph":
                 # 添加段落
