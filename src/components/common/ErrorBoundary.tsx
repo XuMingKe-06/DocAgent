@@ -53,8 +53,8 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           justifyContent: "center",
           height: "100vh",
           padding: "40px",
-          background: "var(--color-bg, #f8f9fa)",
-          color: "var(--color-text-primary, #1a1a1a)",
+          background: "var(--color-bg)",
+          color: "var(--color-text-primary)",
           fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
         }}>
           <div style={{
@@ -66,7 +66,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               width: "64px",
               height: "64px",
               borderRadius: "16px",
-              background: "var(--color-error-bg, #fef2f2)",
+              background: "var(--color-error-bg)",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -86,7 +86,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
             <p style={{
               fontSize: "14px",
-              color: "var(--color-text-secondary, #666)",
+              color: "var(--color-text-secondary)",
               lineHeight: 1.6,
               marginBottom: "24px",
             }}>
@@ -99,12 +99,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <details style={{
                 marginBottom: "24px",
                 textAlign: "left",
-                background: "var(--color-bg-sub, #f1f1f1)",
+                background: "var(--color-bg-sub)",
                 borderRadius: "8px",
                 padding: "12px 16px",
                 fontSize: "12px",
                 fontFamily: "monospace",
-                color: "var(--color-error, #dc2626)",
+                color: "var(--color-error)",
                 maxHeight: "160px",
                 overflow: "auto",
               }}>
@@ -112,7 +112,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                   cursor: "pointer",
                   fontWeight: 500,
                   marginBottom: "8px",
-                  color: "var(--color-text-secondary, #666)",
+                  color: "var(--color-text-secondary)",
                 }}>
                   错误详情
                 </summary>
@@ -130,9 +130,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 style={{
                   padding: "8px 20px",
                   borderRadius: "6px",
-                  border: "1px solid var(--color-border, #e5e5e5)",
-                  background: "var(--color-bg, #fff)",
-                  color: "var(--color-text-primary, #1a1a1a)",
+                  border: "1px solid var(--color-border)",
+                  background: "var(--color-bg)",
+                  color: "var(--color-text-primary)",
                   fontSize: "13px",
                   fontWeight: 500,
                   cursor: "pointer",
@@ -147,7 +147,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                   padding: "8px 20px",
                   borderRadius: "6px",
                   border: "none",
-                  background: "var(--color-accent, #4f46e5)",
+                  background: "var(--color-accent)",
                   color: "#fff",
                   fontSize: "13px",
                   fontWeight: 500,

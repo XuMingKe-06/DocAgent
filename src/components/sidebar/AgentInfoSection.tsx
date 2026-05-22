@@ -132,7 +132,7 @@ export function AgentInfoSection() {
           font-weight: 500;
           color: var(--color-text-primary);
           border: 1px solid transparent;
-          transition: all 0.2s;
+          transition: all 0.15s;
           cursor: pointer;
           background: none;
         }

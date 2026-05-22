@@ -49,7 +49,7 @@ export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: Delete
           display: flex;
           align-items: center;
           justify-content: center;
-          background: rgba(0, 0, 0, 0.3);
+          background: var(--color-overlay);
           animation: del-fade-in 0.15s ease-out;
         }
         @keyframes del-fade-in {
@@ -62,7 +62,7 @@ export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: Delete
           background: var(--color-bg-elevated, #fff);
           border: 1px solid var(--color-border-light);
           border-radius: var(--radius-lg, 12px);
-          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+          box-shadow: var(--shadow-lg);
           padding: 20px;
           animation: del-dialog-in 0.2s ease-out;
         }
@@ -89,8 +89,8 @@ export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: Delete
           width: 32px;
           height: 32px;
           border-radius: 50%;
-          background: rgba(229, 62, 62, 0.08);
-          color: var(--color-error, #e53e3e);
+          background: var(--color-error-bg);
+          color: var(--color-error);
           flex-shrink: 0;
         }
         .del-title {
@@ -114,7 +114,7 @@ export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: Delete
         }
         .del-warning {
           font-size: 12px;
-          color: var(--color-error, #e53e3e);
+          color: var(--color-error);
           margin: 0;
           opacity: 0.8;
         }
@@ -133,14 +133,14 @@ export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: Delete
           transition: all 0.15s;
         }
         .del-btn-cancel {
-          background: var(--color-bg-hover, rgba(0, 0, 0, 0.04));
+          background: var(--color-bg-hover);
           color: var(--color-text-secondary);
         }
         .del-btn-cancel:hover {
-          background: var(--color-bg-hover, rgba(0, 0, 0, 0.08));
+          background: var(--color-bg-sub);
         }
         .del-btn-danger {
-          background: var(--color-error, #e53e3e);
+          background: var(--color-error);
           color: #fff;
         }
         .del-btn-danger:hover {

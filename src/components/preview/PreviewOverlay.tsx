@@ -656,7 +656,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
         {/* 左侧：修改前（显示 removed + unchanged 行） */}
         <div
           ref={leftRef}
-          className="flex-1 overflow-y-auto px-5 py-5 font-mono text-[12px] leading-[1.8] bg-[#FAFAFA] border-r border-border"
+          className="flex-1 overflow-y-auto px-5 py-5 font-mono text-[12px] leading-[1.8] bg-[var(--color-bg-sub)] border-r border-border"
           onScroll={() => handleScroll("left")}
         >
           <div className="px-3 py-2 bg-bg-sub font-sans font-semibold text-[12px] mb-3 sticky top-0 z-10">修改前</div>

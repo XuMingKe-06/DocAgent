@@ -445,7 +445,7 @@ export default function App() {
         .topbar-btn {
           width: 34px; height: 34px; border-radius: var(--radius-sm);
           display: flex; align-items: center; justify-content: center;
-          transition: background 0.15s; color: var(--color-text-secondary);
+          transition: all 0.15s; color: var(--color-text-secondary);
         }
         .topbar-btn:hover { background: var(--color-bg-sub); color: var(--color-text-primary); }
         .input-btn {

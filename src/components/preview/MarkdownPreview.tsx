@@ -245,40 +245,40 @@ const markdownStyles = `
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background: #2d2d2d;
-  border-bottom: 1px solid #404040;
+  background: var(--color-bg-sub);
+  border-bottom: 1px solid var(--color-border);
 }
 
 .md-code-lang {
   font-size: 11px;
   font-family: var(--font-mono);
-  color: #a0a0a0;
+  color: var(--color-text-tertiary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .md-code-copy {
   font-size: 11px;
-  color: #a0a0a0;
+  color: var(--color-text-tertiary);
   padding: 2px 8px;
   border-radius: 3px;
   transition: all 0.15s;
 }
 
 .md-code-copy:hover {
-  color: #e0e0e0;
-  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text-secondary);
+  background: var(--color-bg-hover);
 }
 
 .md-code-content {
   margin: 0 !important;
   padding: 14px 16px !important;
-  background: #1e1e1e !important;
+  background: var(--color-bg-elevated) !important;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.6;
-  color: #d4d4d4;
+  color: var(--color-text-secondary);
 }
 
 /* 代码块中的 code 覆盖行内代码样式 */

@@ -268,7 +268,7 @@ function NewItemInput({
           display: flex;
           align-items: center;
           justify-content: center;
-          background: rgba(0, 0, 0, 0.3);
+          background: var(--color-overlay);
           animation: ni-fade-in 0.15s ease-out;
         }
         @keyframes ni-fade-in {
@@ -281,7 +281,7 @@ function NewItemInput({
           background: var(--color-bg-elevated, #fff);
           border: 1px solid var(--color-border-light);
           border-radius: var(--radius-lg, 12px);
-          box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 12px rgba(0, 0, 0, 0.06);
+          box-shadow: var(--shadow-lg);
           padding: 20px;
           animation: ni-dialog-in 0.2s ease-out;
         }
@@ -308,7 +308,7 @@ function NewItemInput({
           width: 32px;
           height: 32px;
           border-radius: 50%;
-          background: rgba(51, 112, 255, 0.08);
+          background: var(--color-accent-bg);
           color: var(--color-accent);
           flex-shrink: 0;
         }
@@ -342,7 +342,7 @@ function NewItemInput({
         .ni-error {
           margin: 6px 0 0;
           font-size: 12px;
-          color: var(--color-error, #e53e3e);
+          color: var(--color-error);
         }
         .ni-footer {
           display: flex;
@@ -359,11 +359,11 @@ function NewItemInput({
           transition: all 0.15s;
         }
         .ni-btn-cancel {
-          background: var(--color-bg-hover, rgba(0, 0, 0, 0.04));
+          background: var(--color-bg-hover);
           color: var(--color-text-secondary);
         }
         .ni-btn-cancel:hover {
-          background: var(--color-bg-hover, rgba(0, 0, 0, 0.08));
+          background: var(--color-bg-sub);
         }
         .ni-btn-confirm {
           background: var(--color-accent);
@@ -746,7 +746,7 @@ export function FileTreeSection({ onOpenPreview }: { onOpenPreview?: (filePath: 
           position: relative;
         }
         .ft-item:hover {
-          background: rgba(51, 112, 255, 0.04);
+          background: var(--color-accent-bg);
         }
         .ft-dir:hover {
           color: var(--color-accent);
@@ -765,7 +765,7 @@ export function FileTreeSection({ onOpenPreview }: { onOpenPreview?: (filePath: 
           flex-shrink: 0;
         }
         .ft-file:hover {
-          background: rgba(51, 112, 255, 0.04);
+          background: var(--color-accent-bg);
         }
         .ft-selected {
           background: var(--color-accent-light) !important;

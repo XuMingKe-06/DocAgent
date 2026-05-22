@@ -130,7 +130,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           background: var(--color-bg-elevated, #fff);
           border: 1px solid var(--color-border-light);
           border-radius: var(--radius-md, 8px);
-          box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
+          box-shadow: var(--shadow-md);
           padding: 4px;
           z-index: 10000;
           animation: ctx-menu-in 0.12s ease-out;
@@ -161,13 +161,13 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           text-align: left;
         }
         .ctx-menu-item:hover {
-          background: var(--color-bg-hover, rgba(0, 0, 0, 0.04));
+          background: var(--color-bg-hover);
         }
         .ctx-menu-item-danger {
-          color: var(--color-error, #e53e3e);
+          color: var(--color-error);
         }
         .ctx-menu-item-danger:hover {
-          background: rgba(229, 62, 62, 0.08);
+          background: var(--color-error-bg);
         }
         .ctx-menu-item-icon {
           display: flex;
@@ -179,7 +179,7 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
           color: var(--color-text-tertiary);
         }
         .ctx-menu-item-danger .ctx-menu-item-icon {
-          color: var(--color-error, #e53e3e);
+          color: var(--color-error);
         }
         .ctx-menu-item-label {
           flex: 1;

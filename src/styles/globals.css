@@ -218,6 +218,66 @@ textarea {
   animation: scaleIn 0.2s ease;
 }
 
+/* ===== 空状态与骨架屏 ===== */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  text-align: center;
+}
+.empty-state-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--color-bg-sub);
+  border: 1px solid var(--color-border-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-quaternary);
+  margin-bottom: 12px;
+}
+.empty-state-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin-bottom: 4px;
+}
+.empty-state-desc {
+  font-size: 12px;
+  color: var(--color-text-quaternary);
+  line-height: 1.5;
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-bg-sub) 25%,
+    var(--color-bg-hover) 50%,
+    var(--color-bg-sub) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+}
+.skeleton-text {
+  height: 14px;
+  margin-bottom: 8px;
+  width: 80%;
+}
+.skeleton-text-short {
+  height: 14px;
+  margin-bottom: 8px;
+  width: 40%;
+}
+.skeleton-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+}
+
 /* ===== 暗色模式 ===== */
 .dark {
   --color-bg: #1a1a2e;
@@ -300,13 +360,20 @@ textarea {
 
 /* ===== 暗色模式特殊覆盖 ===== */
 .dark .wf-node-card:hover {
-  border-color: #44445a;
+  border-color: var(--color-border-strong);
 }
 .dark .confirm-dialog {
-  background: #2e2a1a;
+  background: var(--color-warning-light);
 }
 .dark .wf-result-file:hover {
-  background: #2a3d5e;
+  background: var(--color-accent-light);
+}
+/* 暗色模式下代码块保持深色背景 */
+.dark .md-code-content {
+  background: #1a1a2e !important;
+}
+.dark .md-code-header {
+  background: #22223a;
 }
 
 /* ===== 工作流时间线样式 ===== */
@@ -372,7 +439,7 @@ textarea {
 }
 
 .wf-node-card:hover {
-  border-color: #D0D3D9;
+  border-color: var(--color-border-strong);
 }
 
 /* 卡片头部 */
@@ -393,7 +460,7 @@ textarea {
 }
 
 .wf-node-label.user { color: var(--color-accent); }
-.wf-node-label.thinking { color: #6C5CE7; }
+.wf-node-label.thinking { color: var(--color-purple); }
 .wf-node-label.tool { color: var(--color-text-secondary); }
 .wf-node-label.result { color: var(--color-success); }
 .wf-node-label.error { color: var(--color-error); }
@@ -521,7 +588,7 @@ textarea {
 }
 
 .wf-result-file:hover {
-  background: #D9E5FF;
+  background: var(--color-accent-light);
 }
 
 /* 最终回复节点 */
@@ -546,7 +613,7 @@ textarea {
   padding: 12px;
   border: 1px solid var(--color-warning);
   border-radius: var(--radius-md);
-  background: #FFFBF5;
+  background: var(--color-warning-light);
 }
 
 .confirm-dialog-title {
@@ -595,7 +662,8 @@ textarea {
 }
 
 .btn-danger:hover {
-  background: #D63D39;
+  background: var(--color-error);
+  filter: brightness(0.9);
 }
 
 .btn-ghost {

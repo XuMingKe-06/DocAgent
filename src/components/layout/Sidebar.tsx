@@ -93,7 +93,7 @@ export function SidebarSection({ title, defaultOpen = true, children }: SidebarS
         }
         .sb-section-body {
           overflow: hidden;
-          transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+          transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1),
                       opacity 0.25s ease;
         }
         .sb-section-content {

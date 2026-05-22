@@ -166,11 +166,11 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
           padding: 6px 10px 6px 12px;
           transition: all 0.2s;
           background: var(--color-bg);
-          box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+          box-shadow: var(--shadow-xs);
         }
         .input-container:focus-within {
           border-color: var(--color-accent);
-          box-shadow: 0 0 0 3px var(--color-accent-lighter), 0 2px 8px rgba(0, 0, 0, 0.06);
+          box-shadow: 0 0 0 3px var(--color-accent-lighter), var(--shadow-sm);
         }
         .input-container.has-content {
           border-color: var(--color-accent);
@@ -247,15 +247,16 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
           justify-content: center;
           border-radius: var(--radius-sm);
           color: white;
-          background: var(--color-error, #ef4444);
+          background: var(--color-error);
           transition: all 0.2s;
           flex-shrink: 0;
         }
         .stop-btn:hover {
-          background: var(--color-error-hover, #dc2626);
+          background: var(--color-error);
+          filter: brightness(0.9);
         }
         .stop-btn-loading {
-          background: var(--color-text-quaternary, #9ca3af);
+          background: var(--color-text-quaternary);
           cursor: wait;
         }
         .loading-spinner {

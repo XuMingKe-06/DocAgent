@@ -256,8 +256,8 @@ export function SkillsTab() {
           font-weight: 500;
           padding: 1px 6px;
           border-radius: 4px;
-          background: var(--color-purple-light, rgba(139,92,246,0.1));
-          color: var(--color-purple, #8b5cf6);
+          background: var(--color-purple-light);
+          color: var(--color-purple);
         }
         .skill-desc {
           font-size: 11px;
@@ -298,8 +298,8 @@ export function SkillsTab() {
           color: var(--color-text-primary);
         }
         .skill-action-btn-danger:hover {
-          background: var(--color-error-light, rgba(239,68,68,0.1));
-          color: var(--color-error, #ef4444);
+          background: var(--color-error-light);
+          color: var(--color-error);
         }
         .toggle-switch {
           position: relative;
