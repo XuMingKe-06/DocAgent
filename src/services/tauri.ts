@@ -164,6 +164,16 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
   }
 }
 
+/** 清除所有会话数据 */
+export async function clearAllSessions(): Promise<number> {
+  try {
+    return await invoke<number>("clear_all_sessions");
+  } catch (error) {
+    console.error("[tauri] clearAllSessions 失败:", error);
+    throw error;
+  }
+}
+
 // ================================================================
 // 工作区命令
 // ================================================================

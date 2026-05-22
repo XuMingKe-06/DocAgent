@@ -1,7 +1,12 @@
+import { useState } from "react";
 import { useSettingsStore } from "../../stores/useSettingsStore";
+import { useSessionStore } from "../../stores/useSessionStore";
+import type { AppSettings } from "../../types";
 
 export function GeneralTab() {
   const { settings, updateSettings } = useSettingsStore();
+  const { clearAllSessions } = useSessionStore();
+  const [clearConfirm, setClearConfirm] = useState(false);
 
   return (
     <div>
@@ -128,6 +133,88 @@ export function GeneralTab() {
         </div>
       </div>
 
+      {/* 数据管理 */}
+      <div className="settings-section">
+        <div className="section-header">
+          <span className="section-title">数据管理</span>
+        </div>
+
+        <div className="setting-row">
+          <div className="setting-info">
+            <div className="setting-label">导出配置</div>
+            <div className="setting-desc">将应用设置和 LLM 配置导出为 JSON 文件</div>
+          </div>
+          <button
+            className="dm-btn"
+            onClick={() => handleExportSettings(settings)}
+          >
+            导出
+          </button>
+        </div>
+
+        <div className="setting-row">
+          <div className="setting-info">
+            <div className="setting-label">清除会话数据</div>
+            <div className="setting-desc">删除所有会话记录和消息，此操作不可撤销</div>
+          </div>
+          {clearConfirm ? (
+            <div className="dm-confirm-group">
+              <button
+                className="dm-btn dm-btn-danger"
+                onClick={async () => {
+                  try {
+                    await clearAllSessions();
+                  } catch (error) {
+                    console.error("[GeneralTab] 清除会话数据失败:", error);
+                  }
+                  setClearConfirm(false);
+                }}
+              >
+                确认清除
+              </button>
+              <button
+                className="dm-btn"
+                onClick={() => setClearConfirm(false)}
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              className="dm-btn dm-btn-danger"
+              onClick={() => setClearConfirm(true)}
+            >
+              清除
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* 关于 */}
+      <div className="settings-section">
+        <div className="section-header">
+          <span className="section-title">关于</span>
+        </div>
+
+        <div className="about-card">
+          <div className="about-name">DocAgent</div>
+          <div className="about-version">v0.1.0</div>
+          <div className="about-desc">
+            基于 AI Agent 的智能文档处理桌面应用
+          </div>
+          <div className="about-meta">
+            <div className="about-meta-row">
+              <span className="about-meta-label">技术栈</span>
+              <span className="about-meta-value">Tauri 2 + React + Rust + Python</span>
+            </div>
+            <div className="about-meta-row">
+              <span className="about-meta-label">引擎版本</span>
+              <span className="about-meta-value">Python 3.12+ Sidecar</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <style>{`
         .settings-section {
           margin-bottom: 24px;
@@ -211,7 +298,93 @@ export function GeneralTab() {
           font-family: var(--font-mono);
           flex-shrink: 0;
         }
+        .dm-btn {
+          padding: 5px 14px;
+          font-size: 12px;
+          font-weight: 500;
+          border-radius: var(--radius-sm);
+          background: var(--color-bg-sub);
+          color: var(--color-text-secondary);
+          cursor: pointer;
+          transition: all 0.15s;
+          flex-shrink: 0;
+          border: 1px solid var(--color-border);
+        }
+        .dm-btn:hover {
+          background: var(--color-bg-hover);
+          color: var(--color-text-primary);
+        }
+        .dm-btn-danger {
+          background: var(--color-error-bg);
+          color: var(--color-error);
+          border-color: var(--color-error);
+        }
+        .dm-btn-danger:hover {
+          background: var(--color-error);
+          color: #fff;
+        }
+        .dm-confirm-group {
+          display: flex;
+          gap: 6px;
+          flex-shrink: 0;
+        }
+        .about-card {
+          padding: 20px;
+          background: var(--color-bg-sub);
+          border-radius: var(--radius-md);
+          border: 1px solid var(--color-border-light);
+        }
+        .about-name {
+          font-size: 18px;
+          font-weight: 700;
+          color: var(--color-text-primary);
+        }
+        .about-version {
+          font-size: 12px;
+          font-family: var(--font-mono);
+          color: var(--color-text-tertiary);
+          margin-top: 4px;
+        }
+        .about-desc {
+          font-size: 13px;
+          color: var(--color-text-secondary);
+          margin-top: 8px;
+        }
+        .about-meta {
+          margin-top: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .about-meta-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        .about-meta-label {
+          font-size: 12px;
+          color: var(--color-text-quaternary);
+          min-width: 60px;
+        }
+        .about-meta-value {
+          font-size: 12px;
+          color: var(--color-text-secondary);
+        }
       `}</style>
     </div>
   );
+}
+
+/**
+ * 导出设置到 JSON 文件
+ */
+function handleExportSettings(settings: AppSettings) {
+  const json = JSON.stringify(settings, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `docagent-settings-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
 }

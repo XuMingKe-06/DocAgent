@@ -49,6 +49,46 @@ impl Default for RetentionPolicy {
     }
 }
 
+/// 主题模式
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub enum ThemeMode {
+    Light,
+    Dark,
+    System,
+}
+
+impl Default for ThemeMode {
+    fn default() -> Self {
+        ThemeMode::System
+    }
+}
+
+/// 外观设置
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct AppearanceSettings {
+    /// 主题模式：light / dark / system
+    #[serde(default)]
+    pub theme_mode: ThemeMode,
+    /// 字体大小倍率，1.0 为默认大小
+    #[serde(default = "default_font_scale")]
+    pub font_scale: f64,
+}
+
+fn default_font_scale() -> f64 {
+    1.0
+}
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self {
+            theme_mode: ThemeMode::default(),
+            font_scale: default_font_scale(),
+        }
+    }
+}
+
 /// 通用设置
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -196,6 +236,8 @@ pub struct AppSettings {
     #[serde(default)]
     pub general: GeneralSettings,
     #[serde(default)]
+    pub appearance: AppearanceSettings,
+    #[serde(default)]
     pub token_budget: TokenBudget,
     #[serde(default)]
     pub version_snapshot: VersionSnapshot,
@@ -257,6 +299,14 @@ pub fn merge_with_defaults(
                 default_settings.general.language.clone()
             } else {
                 user_settings.general.language.clone()
+            },
+        },
+        appearance: AppearanceSettings {
+            theme_mode: user_settings.appearance.theme_mode.clone(),
+            font_scale: if user_settings.appearance.font_scale == 0.0 {
+                default_settings.appearance.font_scale
+            } else {
+                user_settings.appearance.font_scale
             },
         },
         token_budget: TokenBudget {

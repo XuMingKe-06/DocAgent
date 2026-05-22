@@ -1,17 +1,23 @@
 // ===== 设置相关类型定义 - 与 Rust 后端对齐 =====
 
-export type SettingsTab = "llm" | "workspace" | "skill" | "template" | "general";
+export type SettingsTab = "llm" | "workspace" | "skill" | "template" | "appearance" | "shortcuts" | "general";
 
 // ----- 应用设置 -----
 
 export type ConfirmationLevel = "always" | "editOnly" | "never";
 export type ExceedAction = "warn" | "block" | "fallback";
 export type RetentionPolicy = "byCount" | "byDays" | "both";
+export type ThemeMode = "light" | "dark" | "system";
 
 export interface GeneralSettings {
   authorName: string;
   confirmationLevel: ConfirmationLevel;
   language: string;
+}
+
+export interface AppearanceSettings {
+  themeMode: ThemeMode;
+  fontScale: number;
 }
 
 export interface TokenBudgetSettings {
@@ -40,6 +46,7 @@ export interface Shortcuts {
 
 export interface AppSettings {
   general: GeneralSettings;
+  appearance: AppearanceSettings;
   tokenBudget: TokenBudgetSettings;
   versionSnapshot: VersionSnapshotSettings;
   workspace: WorkspaceDefaults;

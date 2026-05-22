@@ -49,6 +49,10 @@ const defaultSettings: AppSettings = {
     confirmationLevel: "editOnly",
     language: "zh-CN",
   },
+  appearance: {
+    themeMode: "system",
+    fontScale: 1.0,
+  },
   tokenBudget: {
     dailyLimit: 0,
     monthlyLimit: 0,
@@ -103,6 +107,10 @@ interface SettingsState {
   updateTemplate: (id: string, params: UpdateTemplateParams) => Promise<PromptTemplate | null>;
   /** 删除模板 */
   deleteTemplate: (id: string) => Promise<boolean>;
+  /** 应用外观设置到 DOM */
+  applyAppearance: () => void;
+  /** 初始化系统主题偏好监听（跟随系统模式时自动响应变化） */
+  initThemeListener: () => () => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
@@ -125,6 +133,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       });
       return { settings: merged };
     });
+    // 如果更新了外观设置，立即应用到 DOM
+    if (updates.appearance) {
+      // 使用 setTimeout 确保 state 已更新
+      setTimeout(() => get().applyAppearance(), 0);
+    }
   },
 
   // 打开设置对话框
@@ -173,6 +186,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         activeProviderId: defaultProvider?.id ?? null,
         skills,
       });
+      // 设置加载完成后应用外观
+      get().applyAppearance();
       // 异步加载模板列表（不阻塞设置加载）
       get().loadTemplates();
     } catch (error) {
@@ -274,5 +289,46 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       console.error("[SettingsStore] 删除模板失败:", error);
       return false;
     }
+  },
+
+  // 应用外观设置到 DOM（主题模式 + 字体缩放）
+  applyAppearance: () => {
+    const { settings } = get();
+    const { themeMode, fontScale } = settings.appearance;
+
+    // 应用主题
+    const root = document.documentElement;
+    root.classList.remove("dark", "light");
+    if (themeMode === "dark") {
+      root.classList.add("dark");
+    } else if (themeMode === "light") {
+      root.classList.add("light");
+    } else {
+      // system: 跟随系统偏好
+      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (prefersDark) {
+        root.classList.add("dark");
+      }
+    }
+
+    // 应用字体缩放
+    root.style.setProperty("--font-scale", String(fontScale));
+  },
+
+  // 初始化系统主题偏好监听
+  initThemeListener: () => {
+    const mql = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = () => {
+      const { settings } = get();
+      if (settings.appearance.themeMode === "system") {
+        const root = document.documentElement;
+        root.classList.remove("dark", "light");
+        if (mql.matches) {
+          root.classList.add("dark");
+        }
+      }
+    };
+    mql.addEventListener("change", handler);
+    return () => mql.removeEventListener("change", handler);
   },
 }));

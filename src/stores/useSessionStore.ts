@@ -13,6 +13,7 @@ interface SessionState {
   deleteSession: (sessionId: string) => Promise<void>;
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>;
   loadSessions: (workspaceId?: string) => Promise<void>;
+  clearAllSessions: () => Promise<number>;
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -105,6 +106,18 @@ export const useSessionStore = create<SessionState>((set) => ({
     } catch (error) {
       console.error("[SessionStore] 加载会话列表失败:", error);
       set({ isLoading: false });
+    }
+  },
+
+  // 清除所有会话数据，调用后端 API
+  clearAllSessions: async () => {
+    try {
+      const count = await tauriCmd.clearAllSessions();
+      set({ sessions: [], currentSessionId: null });
+      return count;
+    } catch (error) {
+      console.error("[SessionStore] 清除所有会话失败:", error);
+      throw error;
     }
   },
 }));

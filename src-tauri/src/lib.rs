@@ -223,6 +223,7 @@ pub fn run() {
             commands::session::get_session,
             commands::session::delete_session,
             commands::session::update_session_title,
+            commands::session::clear_all_sessions,
             // 工作区命令
             commands::workspace::list_workspaces,
             commands::workspace::add_workspace,

@@ -205,3 +205,20 @@ pub fn delete_session(conn: &Connection, id: &str) -> Result<(), CommandError> {
     }
     Ok(())
 }
+
+/// 清除所有会话（同时删除所有关联的消息记录和 Token 统计）
+pub fn clear_all_sessions(conn: &Connection) -> Result<u64, CommandError> {
+    // 先统计要删除的会话数量
+    let count: u64 = conn
+        .query_row("SELECT COUNT(*) FROM sessions", [], |row| row.get(0))
+        .unwrap_or(0);
+
+    // 删除所有消息记录
+    conn.execute("DELETE FROM session_messages", [])?;
+    // 删除所有 Token 统计记录
+    conn.execute("DELETE FROM token_usage", [])?;
+    // 删除所有会话
+    conn.execute("DELETE FROM sessions", [])?;
+
+    Ok(count)
+}

@@ -32,7 +32,7 @@ export default function App() {
 
   const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler, loadFromMessages, executionStatus } = useWorkflowStore();
   const { switchSession, loadSessions, clearCurrentSession } = useSessionStore();
-  const { loadSettings } = useSettingsStore();
+  const { loadSettings, initThemeListener } = useSettingsStore();
   const { loadWorkspaces, currentWorkspaceId, workspaces } = useWorkspaceStore();
   const { loadTree, initFileChangeListener, destroyFileChangeListener } = useFileTreeStore();
   const { initTokenListener, destroyTokenListener } = useTokenStore();
@@ -64,6 +64,9 @@ export default function App() {
     loadSettings();
     loadWorkspaces();
     loadSessions();
+    // 初始化系统主题偏好监听
+    const cleanup = initThemeListener();
+    return cleanup;
   }, []);
 
   // 当 Agent 创建新会话时，同步刷新 session store 并选中新会话

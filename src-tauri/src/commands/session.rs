@@ -141,3 +141,25 @@ pub async fn update_session_title(
 
     Ok(())
 }
+
+/// 清除所有会话数据
+#[tauri::command]
+pub async fn clear_all_sessions(
+    app_handle: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<u64, CommandError> {
+    log::info!("clear_all_sessions 请求");
+    let conn = state.db.conn()?;
+    let count = session_repo::clear_all_sessions(&conn)?;
+    log::info!("clear_all_sessions 成功: 已删除 {} 条会话", count);
+
+    // 发射会话更新事件，通知前端刷新列表
+    let emitter = AgentEmitter::new(app_handle);
+    let _ = emitter.emit_session_updated(types::SessionUpdatePayload {
+        session_id: String::new(),
+        change_type: "cleared".to_string(),
+        data: None,
+    });
+
+    Ok(count)
+}
