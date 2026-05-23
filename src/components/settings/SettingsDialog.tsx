@@ -52,140 +52,130 @@ export function SettingsDialog() {
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-overlay z-[300] flex items-center justify-center animate-fade-in"
-      onClick={(e) => { if (e.target === e.currentTarget) closeSettings(); }}
-    >
-      <div
-        className="settings-modal"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="settings-header">
-          <h2 className="settings-title">设置</h2>
-          <button
-            className="settings-close-btn"
-            onClick={closeSettings}
-          >
-            <Icon name="close" size={18} />
-          </button>
-        </div>
-
-        <div className="settings-body">
-          <div className="settings-nav">
-            {tabs.map((tab) => (
-              <div
-                key={tab.id}
-                className={`settings-nav-item ${activeSettingsTab === tab.id ? "active" : ""}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <span className="settings-nav-icon">
-                  <Icon name={tab.icon as any} size={16} />
-                </span>
-                <span className="settings-nav-label">{tab.label}</span>
-              </div>
-            ))}
-          </div>
-
-          <div className="settings-content">
-            {renderTab()}
-          </div>
-        </div>
-
-        <style>{`
-          .settings-modal {
-            width: 760px;
-            max-height: 80vh;
-            background: var(--color-bg-elevated);
-            border-radius: var(--radius-xl);
-            box-shadow: var(--shadow-xl);
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            animation: scaleIn 0.2s ease;
-          }
-          .settings-header {
-            padding: 20px 24px;
-            border-bottom: 1px solid var(--color-border-light);
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-shrink: 0;
-          }
-          .settings-title {
-            font-size: 16px;
-            font-weight: 700;
-            color: var(--color-text-primary);
-            flex: 1;
-          }
-          .settings-close-btn {
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border-radius: var(--radius-sm);
-            color: var(--color-text-secondary);
-            transition: all 0.15s;
-          }
-          .settings-close-btn:hover {
-            background: var(--color-bg-sub);
-            color: var(--color-text-primary);
-          }
-          .settings-body {
-            display: flex;
-            flex: 1;
-            overflow: hidden;
-          }
-          .settings-nav {
-            width: 180px;
-            flex-shrink: 0;
-            border-right: 1px solid var(--color-border-light);
-            padding: 12px 8px;
-            overflow-y: auto;
-            background: var(--color-bg-sub);
-          }
-          .settings-nav-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 10px 12px;
-            border-radius: var(--radius-sm);
-            font-size: 13px;
-            color: var(--color-text-secondary);
-            cursor: pointer;
-            transition: all 0.15s;
-            margin-bottom: 2px;
-          }
-          .settings-nav-item:hover {
-            background: var(--color-bg-hover);
-            color: var(--color-text-primary);
-          }
-          .settings-nav-item.active {
-            background: var(--color-accent-light);
-            color: var(--color-accent);
-            font-weight: 500;
-          }
-          .settings-nav-icon {
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-          }
-          .settings-nav-label {
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-          }
-          .settings-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 24px;
-          }
-        `}</style>
+    <div className="settings-page">
+      <div className="settings-header">
+        <h2 className="settings-title">设置</h2>
+        <button
+          className="settings-close-btn"
+          onClick={closeSettings}
+        >
+          <Icon name="close" size={18} />
+        </button>
       </div>
+
+      <div className="settings-body">
+        <div className="settings-nav">
+          {tabs.map((tab) => (
+            <div
+              key={tab.id}
+              className={`settings-nav-item ${activeSettingsTab === tab.id ? "active" : ""}`}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              <span className="settings-nav-icon">
+                <Icon name={tab.icon as any} size={16} />
+              </span>
+              <span className="settings-nav-label">{tab.label}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="settings-content">
+          {renderTab()}
+        </div>
+      </div>
+
+      <style>{`
+        .settings-page {
+          position: fixed;
+          inset: 0;
+          z-index: 300;
+          background: var(--color-bg-elevated);
+          display: flex;
+          flex-direction: column;
+          animation: fadeIn 0.2s ease;
+        }
+        .settings-header {
+          padding: 16px 24px;
+          border-bottom: 1px solid var(--color-border-light);
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-shrink: 0;
+        }
+        .settings-title {
+          font-size: 16px;
+          font-weight: 700;
+          color: var(--color-text-primary);
+          flex: 1;
+        }
+        .settings-close-btn {
+          width: 32px;
+          height: 32px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: var(--radius-sm);
+          color: var(--color-text-secondary);
+          transition: all 0.15s;
+        }
+        .settings-close-btn:hover {
+          background: var(--color-bg-sub);
+          color: var(--color-text-primary);
+        }
+        .settings-body {
+          display: flex;
+          flex: 1;
+          overflow: hidden;
+        }
+        .settings-nav {
+          width: 200px;
+          flex-shrink: 0;
+          border-right: 1px solid var(--color-border-light);
+          padding: 12px 8px;
+          overflow-y: auto;
+          background: var(--color-bg-sub);
+        }
+        .settings-nav-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 10px 12px;
+          border-radius: var(--radius-sm);
+          font-size: 13px;
+          color: var(--color-text-secondary);
+          cursor: pointer;
+          transition: all 0.15s;
+          margin-bottom: 2px;
+        }
+        .settings-nav-item:hover {
+          background: var(--color-bg-hover);
+          color: var(--color-text-primary);
+        }
+        .settings-nav-item.active {
+          background: var(--color-accent-light);
+          color: var(--color-accent);
+          font-weight: 500;
+        }
+        .settings-nav-icon {
+          width: 18px;
+          height: 18px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+        }
+        .settings-nav-label {
+          flex: 1;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .settings-content {
+          flex: 1;
+          overflow-y: auto;
+          padding: 24px 32px;
+        }
+      `}</style>
     </div>
   );
 }

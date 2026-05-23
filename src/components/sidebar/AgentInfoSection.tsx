@@ -83,14 +83,14 @@ export function AgentInfoSection() {
         .ai-grid {
           display: flex;
           flex-direction: column;
-          gap: 10px;
+          gap: 2px;
         }
         .ai-field {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 8px;
-          padding: 6px 0;
+          padding: 3px 0;
         }
         .ai-field-label {
           font-size: 12px;
@@ -171,6 +171,9 @@ export function AgentInfoSection() {
           transition: all 0.2s;
           outline: none;
           color: var(--color-text-primary);
+        }
+        .ai-field-edit:focus-visible {
+          outline: none;
         }
         .ai-setup-hint {
           display: flex;

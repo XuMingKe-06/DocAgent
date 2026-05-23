@@ -77,9 +77,6 @@ export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
 
     return (
       <div className="wf-empty" role="status" aria-label="空会话">
-        <div className="wf-empty-icon">
-          <Icon name="file" size={32} strokeWidth={1.5} />
-        </div>
         <h3 className="wf-empty-title">开始新会话</h3>
         <p className="wf-empty-desc">
           在下方输入指令，Agent 将协助你处理文档

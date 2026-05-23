@@ -208,6 +208,10 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
           line-height: 1.5;
           font-size: 13px;
           padding: 2px 4px;
+          outline: none;
+        }
+        .input-textarea:focus-visible {
+          outline: none;
         }
         .input-textarea::placeholder {
           color: var(--color-text-quaternary);
