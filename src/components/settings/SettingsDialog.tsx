@@ -9,6 +9,7 @@ import { AppearanceTab } from "./AppearanceTab";
 import { ShortcutsTab } from "./ShortcutsTab";
 import { GeneralTab } from "./GeneralTab";
 import { TokenUsageTab } from "./TokenUsageTab";
+import { HelpTab } from "./HelpTab";
 
 const tabs = [
   { id: "llm" as const, label: "LLM 配置", icon: "settings" },
@@ -19,6 +20,7 @@ const tabs = [
   { id: "appearance" as const, label: "外观设置", icon: "theme" },
   { id: "shortcuts" as const, label: "快捷键", icon: "keyboard" },
   { id: "general" as const, label: "通用设置", icon: "code" },
+  { id: "help" as const, label: "帮助", icon: "info" },
 ];
 
 export function SettingsDialog() {
@@ -45,6 +47,7 @@ export function SettingsDialog() {
       case "appearance": return <AppearanceTab />;
       case "shortcuts": return <ShortcutsTab />;
       case "general": return <GeneralTab />;
+      case "help": return <HelpTab />;
     }
   };
 

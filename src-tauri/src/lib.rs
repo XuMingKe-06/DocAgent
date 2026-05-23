@@ -312,6 +312,8 @@ pub fn run() {
             // 设置命令
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::settings::export_config,
+            commands::settings::import_config,
             // Agent 命令
             commands::agent::start_agent,
             commands::agent::stop_agent,
@@ -326,6 +328,7 @@ pub fn run() {
             commands::token::get_token_usage_trend,
             commands::token::get_token_provider_usage,
             commands::token::get_token_usage_overview,
+            commands::token::check_token_budget,
             // 日志命令
             commands::log::get_error_log,
             // 更新命令

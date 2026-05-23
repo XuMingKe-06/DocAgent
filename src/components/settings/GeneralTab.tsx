@@ -42,6 +42,32 @@ export function GeneralTab() {
           />
         </div>
 
+        {/* 作者邮箱 */}
+        <div className="setting-row">
+          <div className="setting-info">
+            <div className="setting-label">作者邮箱</div>
+            <div className="setting-desc">文档元数据中的联系邮箱</div>
+          </div>
+          <input
+            className="setting-input"
+            value={settings.general.authorEmail}
+            onChange={(e) => updateSettings({ general: { authorEmail: e.target.value } })}
+          />
+        </div>
+
+        {/* 作者公司/组织 */}
+        <div className="setting-row">
+          <div className="setting-info">
+            <div className="setting-label">作者公司/组织</div>
+            <div className="setting-desc">文档元数据中的所属组织</div>
+          </div>
+          <input
+            className="setting-input"
+            value={settings.general.authorCompany}
+            onChange={(e) => updateSettings({ general: { authorCompany: e.target.value } })}
+          />
+        </div>
+
         <div className="setting-row">
           <div className="setting-info">
             <div className="setting-label">操作确认级别</div>

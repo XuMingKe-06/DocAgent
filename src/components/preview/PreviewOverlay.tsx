@@ -632,6 +632,8 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
   const rightRef = useRef<HTMLDivElement>(null);
   // 同步滚动锁，防止循环触发
   const syncing = useRef(false);
+  // 视图模式：并排对比(side-by-side) 或 内联对比(inline)
+  const [viewMode, setViewMode] = useState<"side-by-side" | "inline">("side-by-side");
 
   // 同步滚动处理，使用 requestAnimationFrame 防止循环触发
   const handleScroll = (source: "left" | "right") => {
@@ -658,14 +660,57 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
-      {/* 差异统计栏 */}
+      {/* 差异统计栏 + 视图模式切换 */}
       <div className="flex items-center gap-4 px-5 py-2 border-b border-border bg-bg-sub text-[12px] flex-shrink-0">
         <span className="text-text-secondary">差异统计:</span>
         <span className="text-success font-medium">+{stats.added} 新增</span>
         <span className="text-error font-medium">-{stats.removed} 删除</span>
+        {/* 视图模式切换按钮 */}
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            className={`diff-mode-btn ${viewMode === "side-by-side" ? "diff-mode-btn-active" : ""}`}
+            onClick={() => setViewMode("side-by-side")}
+            title="并排对比"
+          >
+            并排
+          </button>
+          <button
+            className={`diff-mode-btn ${viewMode === "inline" ? "diff-mode-btn-active" : ""}`}
+            onClick={() => setViewMode("inline")}
+            title="内联对比"
+          >
+            内联
+          </button>
+        </div>
       </div>
 
-      {/* 左右对比面板 */}
+      {/* 根据视图模式渲染不同内容 */}
+      {viewMode === "inline" ? (
+        /* 内联对比视图：所有行在一个面板中显示 */
+        <div className="flex-1 overflow-y-auto px-5 py-5 font-mono text-[12px] leading-[1.8]">
+          {diffLines.map((line, i) => {
+            const isAdded = line.type === "added";
+            const isRemoved = line.type === "removed";
+            return (
+              <div
+                key={i}
+                className={
+                  isAdded ? "bg-success-light text-success" :
+                  isRemoved ? "bg-error-light text-error" : ""
+                }
+              >
+                {/* 删除行显示旧行号，新增行显示新行号，未修改行显示行号 */}
+                <span className="diff-ln">{line.oldLineNum ?? line.newLineNum ?? ""}</span>
+                <span className={`diff-marker ${isAdded ? "diff-marker-added" : ""} ${isRemoved ? "diff-marker-removed" : ""}`}>
+                  {isAdded ? "+" : isRemoved ? "-" : " "}
+                </span>
+                {line.content}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+      /* 并排对比面板 */
       <div className="flex flex-1 overflow-hidden">
         {/* 左侧：修改前（显示 removed + unchanged 行） */}
         <div
@@ -723,6 +768,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
           })}
         </div>
       </div>
+      )}
 
       <style>{`
         .diff-ln {
@@ -748,6 +794,26 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
         .diff-line-placeholder {
           background: var(--color-bg-sub);
           min-height: 1.8em;
+        }
+        /* 视图模式切换按钮样式 */
+        .diff-mode-btn {
+          padding: 2px 8px;
+          border-radius: var(--radius-sm);
+          border: 1px solid var(--color-border);
+          background: transparent;
+          color: var(--color-text-tertiary);
+          cursor: pointer;
+          font-size: 11px;
+          transition: all 0.15s;
+        }
+        .diff-mode-btn:hover {
+          background: var(--color-bg-hover);
+          color: var(--color-text-secondary);
+        }
+        .diff-mode-btn-active {
+          background: var(--color-accent-lighter);
+          color: var(--color-accent);
+          border-color: var(--color-accent);
         }
       `}</style>
     </div>

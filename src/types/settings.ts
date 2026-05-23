@@ -1,6 +1,6 @@
 // ===== 设置相关类型定义 - 与 Rust 后端对齐 =====
 
-export type SettingsTab = "llm" | "workspace" | "skill" | "template" | "usage" | "appearance" | "shortcuts" | "general";
+export type SettingsTab = "llm" | "workspace" | "skill" | "template" | "usage" | "appearance" | "shortcuts" | "general" | "help";
 
 // ----- 应用设置 -----
 
@@ -12,6 +12,10 @@ export type UpdateChannel = "stable" | "beta";
 
 export interface GeneralSettings {
   authorName: string;
+  /** 作者邮箱 */
+  authorEmail: string;
+  /** 作者公司/组织 */
+  authorCompany: string;
   confirmationLevel: ConfirmationLevel;
   language: string;
 }
@@ -196,4 +200,15 @@ export interface TokenUsageOverview {
   todayOutput: number;
   monthInput: number;
   monthOutput: number;
+}
+
+/** Token 预算状态 */
+export interface BudgetStatus {
+  dailyLimit: number;
+  dailyUsed: number;
+  monthlyLimit: number;
+  monthlyUsed: number;
+  exceedAction: string;
+  isDailyExceeded: boolean;
+  isMonthlyExceeded: boolean;
 }

@@ -31,6 +31,7 @@ import type {
   DailyUsageItem,
   ProviderUsageItem,
   TokenUsageOverview,
+  BudgetStatus,
 } from "../types";
 
 // ================================================================
@@ -348,6 +349,19 @@ export async function updateSettings(settings: Record<string, unknown>): Promise
   if (!result.ok) throw result.error.raw;
 }
 
+/** 导出应用配置 */
+export async function exportConfig(includeSecrets?: boolean): Promise<string> {
+  const result = await safeInvoke(() => invoke<string>("export_config", { includeSecrets: includeSecrets ?? null }), { context: "exportConfig" });
+  if (!result.ok) throw result.error.raw;
+  return result.data;
+}
+
+/** 导入应用配置 */
+export async function importConfig(configJson: string, overwrite?: boolean): Promise<void> {
+  const result = await safeInvoke(() => invoke("import_config", { configJson, overwrite: overwrite ?? null }), { context: "importConfig" });
+  if (!result.ok) throw result.error.raw;
+}
+
 // ================================================================
 // Agent 命令
 // ================================================================
@@ -462,6 +476,13 @@ export async function getTokenUsageOverview(
   const result = await safeInvoke(() => invoke<TokenUsageOverview>("get_token_usage_overview", {
     workspaceId: workspaceId ?? null,
   }), { context: "getTokenUsageOverview" });
+  if (!result.ok) throw result.error.raw;
+  return result.data;
+}
+
+/** 检查 Token 预算使用情况 */
+export async function checkTokenBudget(): Promise<BudgetStatus> {
+  const result = await safeInvoke(() => invoke<BudgetStatus>("check_token_budget"), { context: "checkTokenBudget" });
   if (!result.ok) throw result.error.raw;
   return result.data;
 }

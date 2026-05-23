@@ -47,6 +47,8 @@ function deepMerge<T extends object>(target: T, source: DeepPartial<T>): T {
 const defaultSettings: AppSettings = {
   general: {
     authorName: "",
+    authorEmail: "",
+    authorCompany: "",
     confirmationLevel: "editOnly",
     language: "zh-CN",
   },

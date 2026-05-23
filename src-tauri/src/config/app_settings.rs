@@ -95,6 +95,12 @@ impl Default for AppearanceSettings {
 pub struct GeneralSettings {
     #[serde(default)]
     pub author_name: String,
+    /// 作者邮箱
+    #[serde(default)]
+    pub author_email: String,
+    /// 作者公司/组织
+    #[serde(default)]
+    pub author_company: String,
     #[serde(default)]
     pub confirmation_level: ConfirmationLevel,
     #[serde(default = "default_language")]
@@ -109,6 +115,8 @@ impl Default for GeneralSettings {
     fn default() -> Self {
         Self {
             author_name: String::new(),
+            author_email: String::new(),
+            author_company: String::new(),
             confirmation_level: ConfirmationLevel::default(),
             language: default_language(),
         }
@@ -335,6 +343,16 @@ pub fn merge_with_defaults(
                 default_settings.general.author_name.clone()
             } else {
                 user_settings.general.author_name.clone()
+            },
+            author_email: if user_settings.general.author_email.is_empty() {
+                default_settings.general.author_email.clone()
+            } else {
+                user_settings.general.author_email.clone()
+            },
+            author_company: if user_settings.general.author_company.is_empty() {
+                default_settings.general.author_company.clone()
+            } else {
+                user_settings.general.author_company.clone()
             },
             confirmation_level: user_settings.general.confirmation_level.clone(),
             language: if user_settings.general.language.is_empty() {
