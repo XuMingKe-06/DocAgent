@@ -42,6 +42,8 @@ export default function App() {
   const [previewContent, setPreviewContent] = useState("");
   const [previewFileType, setPreviewFileType] = useState<string | undefined>(undefined);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // PDF 文件的 base64 编码数据，用于 pdfjs-dist 渲染
+  const [previewPdfBase64, setPreviewPdfBase64] = useState<string | null>(null);
 
   const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler, loadFromMessages, executionStatus } = useWorkflowStore();
   const { switchSession, loadSessions, clearCurrentSession } = useSessionStore();
@@ -338,11 +340,24 @@ export default function App() {
     setPreviewTitle(fileName);
     setPreviewContent("");
     setPreviewFileType(undefined);
+    setPreviewPdfBase64(null);
 
     try {
       const result = await tauriCmd.previewDocument(currentWorkspaceId, filePath);
       setPreviewContent(result.content);
       setPreviewFileType(result.fileType);
+
+      // 对 PDF 文件额外获取 base64 数据用于 pdfjs-dist 渲染
+      const ext = fileName.split(".").pop()?.toLowerCase();
+      if (ext === "pdf") {
+        try {
+          const base64Data = await tauriCmd.getPdfData(currentWorkspaceId, filePath);
+          setPreviewPdfBase64(base64Data);
+        } catch (pdfErr) {
+          console.error("[App] 获取PDF数据失败，降级为文本预览:", pdfErr);
+          // 降级：不设置 pdfBase64，PreviewOverlay 将使用文本模式
+        }
+      }
     } catch (err) {
       console.error("[App] 预览文档失败:", err);
       setPreviewContent(`[预览失败] ${err instanceof Error ? err.message : String(err)}`);
@@ -358,6 +373,7 @@ export default function App() {
     setPreviewContent("");
     setPreviewTitle("");
     setPreviewFileType(undefined);
+    setPreviewPdfBase64(null);
   }, []);
 
   // 监听键盘快捷键
@@ -420,6 +436,7 @@ export default function App() {
           title={previewTitle}
           content={previewContent}
           fileType={previewFileType}
+          pdfBase64Data={previewPdfBase64}
         />
       </Suspense>
       {previewLoading && (

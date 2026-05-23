@@ -4,6 +4,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import * as Diff from "diff";
+import { PdfCanvasViewer } from "./PdfCanvasViewer";
 
 interface DiffData {
   oldContent: string;
@@ -17,6 +18,8 @@ interface PreviewOverlayProps {
   content?: string;
   fileType?: string;
   diffData?: DiffData | null;
+  // PDF 文件的 base64 编码数据，用于 pdfjs-dist 渲染
+  pdfBase64Data?: string | null;
 }
 
 export function PreviewOverlay({
@@ -26,6 +29,7 @@ export function PreviewOverlay({
   content = "",
   fileType,
   diffData = null,
+  pdfBase64Data = null,
 }: PreviewOverlayProps) {
   const [showDiff, setShowDiff] = useState(false);
 
@@ -74,9 +78,14 @@ export function PreviewOverlay({
         {/* 内容区 */}
         {showDiff && diffData ? (
           <DiffView oldContent={diffData.oldContent} newContent={diffData.newContent} />
+        ) : fileType?.toLowerCase() === "pdf" && pdfBase64Data ? (
+          // PDF 真实渲染模式：PdfCanvasViewer 自带滚动和工具栏，不需要外层滚动包裹
+          <div className="flex-1 overflow-hidden">
+            <ContentRenderer content={content} fileType={fileType} pdfBase64Data={pdfBase64Data} />
+          </div>
         ) : (
           <div className="flex-1 overflow-y-auto">
-            <ContentRenderer content={content} fileType={fileType} />
+            <ContentRenderer content={content} fileType={fileType} pdfBase64Data={pdfBase64Data} />
           </div>
         )}
       </div>
@@ -87,8 +96,13 @@ export function PreviewOverlay({
 /**
  * 根据 fileType 选择对应的渲染方式
  */
-function ContentRenderer({ content, fileType }: { content: string; fileType?: string }) {
+function ContentRenderer({ content, fileType, pdfBase64Data }: { content: string; fileType?: string; pdfBase64Data?: string | null }) {
   const normalizedType = fileType?.toLowerCase()?.trim() ?? "";
+
+  // PDF 真实渲染预览：使用 pdfjs-dist Canvas 渲染
+  if (normalizedType === "pdf" && pdfBase64Data) {
+    return <PdfCanvasViewer base64Data={pdfBase64Data} />;
+  }
 
   // Markdown 渲染
   if (normalizedType === "md" || normalizedType === "markdown") {
@@ -100,7 +114,7 @@ function ContentRenderer({ content, fileType }: { content: string; fileType?: st
     return <ExcelTableRenderer content={content} />;
   }
 
-  // Word / PPT / PDF 结构化渲染
+  // Word / PPT / PDF 结构化渲染（PDF 无 base64 数据时降级为文本预览）
   if (normalizedType === "docx" || normalizedType === "pptx" || normalizedType === "pdf") {
     return <DocumentStructureRenderer content={content} fileType={normalizedType} />;
   }

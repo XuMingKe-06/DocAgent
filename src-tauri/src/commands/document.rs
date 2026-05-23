@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use base64::Engine;
 use serde_json::json;
 use tauri::State;
 
@@ -375,4 +376,44 @@ pub async fn show_in_file_manager(
 
     log::info!("show_in_file_manager: 已打开文件管理器, path={}", path);
     Ok(())
+}
+
+/// 获取 PDF 文件的 base64 编码数据，用于前端 pdfjs-dist 渲染
+#[tauri::command]
+pub async fn get_pdf_data(
+    workspace_id: String,
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<String, CommandError> {
+    log::info!("get_pdf_data: 获取PDF数据, workspace_id={}, path={}", workspace_id, path);
+    let (_, abs_path) = resolve_workspace_path(&workspace_id, &path, &state).await?;
+
+    if !abs_path.exists() {
+        log::error!("get_pdf_data: 文件不存在: {}", path);
+        return Err(CommandError::doc(
+            DOC_FILE_NOT_FOUND,
+            format!("文件不存在: {}", path),
+        ));
+    }
+
+    // 校验文件扩展名
+    let extension = abs_path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    if extension != "pdf" {
+        log::warn!("get_pdf_data: 非 PDF 文件: .{}", extension);
+        return Err(CommandError::doc(
+            DOC_FORMAT_UNSUPPORTED,
+            format!("仅支持 PDF 文件，当前文件格式: .{}", extension),
+        ));
+    }
+
+    // 读取 PDF 文件二进制数据并编码为 base64
+    let file_data = std::fs::read(&abs_path)?;
+    let base64_str = base64::engine::general_purpose::STANDARD.encode(&file_data);
+
+    log::info!("get_pdf_data: 读取完成, 文件大小={} 字节", file_data.len());
+    Ok(base64_str)
 }

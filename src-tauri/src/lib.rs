@@ -256,6 +256,7 @@ pub fn run() {
             commands::document::rename_file,
             commands::document::delete_file,
             commands::document::show_in_file_manager,
+            commands::document::get_pdf_data,
             // Skill 命令
             commands::skill::list_skills,
             commands::skill::list_custom_skills,

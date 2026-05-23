@@ -3,7 +3,7 @@ import type { SVGProps } from "react";
 type IconName =
   | "user" | "thinking" | "tool" | "result" | "reply" | "error"
   | "chevron-down" | "chevron-up" | "chevron-left" | "chevron-right"
-  | "history" | "plus" | "settings" | "send" | "attach" | "template"
+  | "history" | "plus" | "minus" | "settings" | "send" | "attach" | "template"
   | "file" | "doc" | "xlsx" | "ppt" | "pdf" | "folder"
   | "search" | "close" | "warning" | "check" | "check-circle" | "dot"
   | "code" | "menu" | "minimize" | "maximize" | "unmaximize"
@@ -86,6 +86,12 @@ const paths: Record<IconName, React.JSX.Element> = {
   plus: (
     <g key="plus">
       <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </g>
+  ),
+  // 减号
+  minus: (
+    <g key="minus">
       <line x1="5" y1="12" x2="19" y2="12" />
     </g>
   ),

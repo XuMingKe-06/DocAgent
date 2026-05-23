@@ -271,6 +271,19 @@ export async function previewDocument(
   }
 }
 
+/** 获取 PDF 文件的 base64 编码数据，用于 pdfjs-dist 渲染 */
+export async function getPdfData(
+  workspaceId: string,
+  path: string,
+): Promise<string> {
+  try {
+    return await invoke<string>("get_pdf_data", { workspaceId, path });
+  } catch (error) {
+    console.error("[tauri] getPdfData 失败:", error);
+    throw error;
+  }
+}
+
 /** 获取文档版本历史 */
 export async function getDocumentVersions(
   workspaceId: string,
