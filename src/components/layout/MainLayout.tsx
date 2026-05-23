@@ -9,7 +9,7 @@ export function MainLayout({ mainArea, sidebar }: MainLayoutProps) {
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* 主界面区 */}
-      <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+      <div className="flex-1 flex flex-col min-w-0">
         {mainArea}
       </div>
 

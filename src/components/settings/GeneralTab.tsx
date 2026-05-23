@@ -364,50 +364,6 @@ export function GeneralTab() {
       </div>
 
       <style>{`
-        .settings-section {
-          margin-bottom: 24px;
-        }
-        .settings-section:last-child {
-          margin-bottom: 0;
-        }
-        .section-header {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 16px;
-        }
-        .section-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--color-text-secondary);
-          text-transform: uppercase;
-          letter-spacing: 0.3px;
-        }
-        .setting-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          padding: 10px 12px;
-          border-bottom: 1px solid var(--color-border-light);
-          gap: 16px;
-        }
-        .setting-row:last-child {
-          border-bottom: none;
-        }
-        .setting-info {
-          flex: 1;
-          min-width: 0;
-        }
-        .setting-label {
-          font-size: 13px;
-          font-weight: 500;
-          color: var(--color-text-primary);
-        }
-        .setting-desc {
-          font-size: 11px;
-          color: var(--color-text-quaternary);
-          margin-top: 2px;
-        }
         .setting-input {
           padding: 6px 10px;
           border: 1px solid var(--color-border);

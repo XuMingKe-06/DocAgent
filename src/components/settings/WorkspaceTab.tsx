@@ -33,11 +33,15 @@ export function WorkspaceTab() {
       <div className="section-header">
         <span className="section-title">工作区列表</span>
         <span className="section-badge">{workspaces.length}</span>
+        <button className="add-btn" onClick={() => setShowAddDialog(true)}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+          添加工作区
+        </button>
       </div>
 
       {workspaces.length === 0 && (
         <div className="empty-state-lg">
-          <span>暂无工作区，请点击下方按钮添加</span>
+          <span>暂无工作区，请点击右侧按钮添加</span>
         </div>
       )}
 
@@ -83,10 +87,6 @@ export function WorkspaceTab() {
         </div>
       ))}
 
-      <button className="add-btn" onClick={() => setShowAddDialog(true)}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-        添加工作区
-      </button>
 
       {showAddDialog && (
         <AddWorkspaceDialog
@@ -96,26 +96,8 @@ export function WorkspaceTab() {
       )}
 
       <style>{`
-        .section-header {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 16px;
-        }
-        .section-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--color-text-secondary);
-          text-transform: uppercase;
-          letter-spacing: 0.3px;
-        }
-        .section-badge {
-          font-size: 11px;
-          font-weight: 500;
-          padding: 1px 8px;
-          border-radius: 10px;
-          background: var(--color-accent-light);
-          color: var(--color-accent);
+        .section-header .add-btn {
+          margin-left: auto;
         }
         .empty-state-lg {
           font-size: 13px;

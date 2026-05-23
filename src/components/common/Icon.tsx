@@ -9,7 +9,8 @@ export type IconName =
   | "code" | "menu" | "minimize" | "maximize" | "unmaximize"
   | "refresh" | "edit" | "trash" | "stop" | "back"
   | "copy" | "eye" | "folder-plus" | "file-plus" | "external-link"
-  | "chart" | "clock" | "git-compare" | "undo";
+  | "chart" | "clock" | "git-compare" | "undo"
+  | "theme" | "keyboard" | "info";
 
 interface IconProps extends SVGProps<SVGSVGElement> {
   name: IconName;
@@ -348,6 +349,38 @@ const paths: Record<IconName, React.JSX.Element> = {
     <g key="undo">
       <polyline points="1 4 1 10 7 10" />
       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+    </g>
+  ),
+  // 主题/外观
+  theme: (
+    <g key="theme">
+      <circle cx="12" cy="12" r="5" />
+      <line x1="12" y1="1" x2="12" y2="3" />
+      <line x1="12" y1="21" x2="12" y2="23" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+      <line x1="1" y1="12" x2="3" y2="12" />
+      <line x1="21" y1="12" x2="23" y2="12" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </g>
+  ),
+  // 键盘
+  keyboard: (
+    <g key="keyboard">
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="7" cy="10" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="10" r="1" fill="currentColor" stroke="none" />
+      <circle cx="17" cy="10" r="1" fill="currentColor" stroke="none" />
+      <line x1="8" y1="14" x2="16" y2="14" />
+    </g>
+  ),
+  // 信息/帮助
+  info: (
+    <g key="info">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="16" x2="12" y2="12" />
+      <line x1="12" y1="8" x2="12.01" y2="8" />
     </g>
   ),
 };

@@ -108,6 +108,10 @@ export function SkillsTab() {
           {customSkills.length > 0 && (
             <span className="section-badge">{customSkills.length}</span>
           )}
+          <button className="add-btn" onClick={handleCreate}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+            创建自定义 Skill
+          </button>
         </div>
 
         {customSkills.length > 0 ? (
@@ -172,10 +176,6 @@ export function SkillsTab() {
           </div>
         )}
 
-        <button className="add-btn" onClick={handleCreate}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          创建自定义 Skill
-        </button>
       </div>
 
       {/* 自定义 Skill 编辑对话框 */}
@@ -197,26 +197,8 @@ export function SkillsTab() {
       )}
 
       <style>{`
-        .section-header {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          margin-bottom: 16px;
-        }
-        .section-title {
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--color-text-secondary);
-          text-transform: uppercase;
-          letter-spacing: 0.3px;
-        }
-        .section-badge {
-          font-size: 11px;
-          font-weight: 500;
-          padding: 1px 8px;
-          border-radius: 10px;
-          background: var(--color-accent-light);
-          color: var(--color-accent);
+        .section-header .add-btn {
+          margin-left: auto;
         }
         .skills-list {
           display: flex;
