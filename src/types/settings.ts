@@ -5,7 +5,6 @@ export type SettingsTab = "llm" | "workspace" | "skill" | "template" | "usage" |
 // ----- 应用设置 -----
 
 export type ConfirmationLevel = "always" | "editOnly" | "never";
-export type ExceedAction = "warn" | "block" | "fallback";
 export type RetentionPolicy = "byCount" | "byDays" | "both";
 export type ThemeMode = "light" | "dark" | "system";
 export type UpdateChannel = "stable" | "beta";
@@ -23,12 +22,6 @@ export interface GeneralSettings {
 export interface AppearanceSettings {
   themeMode: ThemeMode;
   fontScale: number;
-}
-
-export interface TokenBudgetSettings {
-  dailyLimit: number;
-  monthlyLimit: number;
-  exceedAction: ExceedAction;
 }
 
 export interface VersionSnapshotSettings {
@@ -57,7 +50,6 @@ export interface UpdateSettings {
 export interface AppSettings {
   general: GeneralSettings;
   appearance: AppearanceSettings;
-  tokenBudget: TokenBudgetSettings;
   versionSnapshot: VersionSnapshotSettings;
   workspace: WorkspaceDefaults;
   shortcuts: Shortcuts;
@@ -200,15 +192,4 @@ export interface TokenUsageOverview {
   todayOutput: number;
   monthInput: number;
   monthOutput: number;
-}
-
-/** Token 预算状态 */
-export interface BudgetStatus {
-  dailyLimit: number;
-  dailyUsed: number;
-  monthlyLimit: number;
-  monthlyUsed: number;
-  exceedAction: string;
-  isDailyExceeded: boolean;
-  isMonthlyExceeded: boolean;
 }

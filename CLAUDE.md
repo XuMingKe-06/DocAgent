@@ -88,8 +88,8 @@ cargo clean
 │  │  ├─ workflow/       工作流时间线: WorkflowTimeline, WorkflowNode (User/Thinking/Tool/Result/Reply/Confirm)
 │  │  ├─ sidebar/        右侧栏: FileTreeSection, AgentInfoSection, TodoSection, TokenSection
 │  │  ├─ preview/        文档预览浮层: PreviewOverlay, MarkdownPreview, PdfCanvasViewer (pdfjs-dist canvas 渲染)
-│  │  ├─ settings/       设置弹窗: SettingsDialog + 8 个标签页 (LLMConfig, WorkspaceTab, SkillsTab,
-│  │  │                      TemplatesTab, GeneralTab, AppearanceTab, ShortcutsTab, TokenUsageTab)
+│  │  ├─ settings/       设置弹窗: SettingsDialog + 9 个标签页 (LLMConfig, WorkspaceTab, SkillsTab,
+│  │  │                      TemplatesTab, TokenUsageTab, AppearanceTab, ShortcutsTab, GeneralTab, HelpTab)
 │  │  │                      + 子弹窗 (ProviderFormDialog, AddWorkspaceDialog, TemplateEditDialog,
 │  │  │                        CustomSkillDialog)
 │  │  ├─ session/        历史会话面板: HistoryPanel
@@ -212,7 +212,7 @@ AppState {
 ### 错误码体系
 错误码按模块分段，定义在 `errors.rs`：
 - 1000-1999: LLM (连接失败/认证/限流/超时/Provider不可用等)
-- 2000-2999: Agent (已运行/最大迭代/确认超时/Skill不存在/禁用/预算超限等)
+- 2000-2999: Agent (已运行/最大迭代/确认超时/Skill不存在/禁用等)
 - 3000-3999: 文档处理 (文件不存在/格式不支持/解析错误/Sidecar错误等)
 - 4000-4999: 数据库 (连接/查询/记录不存在/约束冲突/迁移失败等)
 - 5000-5999: 配置 (格式无效/字段缺失/Provider不存在等)
@@ -220,10 +220,9 @@ AppState {
 - 7000-7999: 运行时 (事件发射错误)
 
 ### 应用设置
-`AppSettings` 含以下子配置（JSON 文件存储），前端 SettingsDialog 含 8 个标签页：
+`AppSettings` 含以下子配置（JSON 文件存储），前端 SettingsDialog 含 9 个标签页：
 - `GeneralSettings`: 作者名、确认级别(Always/EditOnly/Never)、语言 → **GeneralTab**
 - `AppearanceSettings`: 主题模式(light/dark/system)、字体缩放 → **AppearanceTab**
-- `TokenBudget`: 日限额/月限额/超额动作(Warn/Block/Fallback) → **TokenUsageTab**
 - `VersionSnapshot`: 保留策略(ByCount/ByDays/Both)、最大数量/天数
 - `WorkspaceDefaults`: 默认工作区 ID → **WorkspaceTab**
 - `Shortcuts`: 快捷键配置（newSession/closeSession/sendMessage/toggleSidebar/quickPrompt）→ **ShortcutsTab**

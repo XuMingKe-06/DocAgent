@@ -7,14 +7,10 @@ interface TokenState {
   outputTokens: number;
   dailyTotal: number;
   monthlyTotal: number;
-  dailyBudget: number;
-  monthlyBudget: number;
   totalCost: number;
 
   addTokenUsage: (input: number, output: number) => void;
   resetSession: () => void;
-  setDailyBudget: (budget: number) => void;
-  setMonthlyBudget: (budget: number) => void;
   /** 初始化 token:update 事件监听，应在应用启动时调用 */
   initTokenListener: () => Promise<void>;
   /** 销毁 token:update 事件监听，应在应用卸载时调用 */
@@ -30,8 +26,6 @@ export const useTokenStore = create<TokenState>((set) => ({
   outputTokens: 0,
   dailyTotal: 0,
   monthlyTotal: 0,
-  dailyBudget: 0,
-  monthlyBudget: 0,
   totalCost: 0,
 
   addTokenUsage: (input, output) => {
@@ -47,9 +41,6 @@ export const useTokenStore = create<TokenState>((set) => ({
   resetSession: () => {
     set({ sessionTokens: 0, inputTokens: 0, outputTokens: 0 });
   },
-
-  setDailyBudget: (budget) => set({ dailyBudget: budget }),
-  setMonthlyBudget: (budget) => set({ monthlyBudget: budget }),
 
   // 初始化 token:update 事件监听
   initTokenListener: async () => {

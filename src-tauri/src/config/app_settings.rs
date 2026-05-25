@@ -14,16 +14,6 @@ pub enum ConfirmationLevel {
     Never,
 }
 
-/// 超出预算时的动作
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
-pub enum ExceedAction {
-    #[default]
-    Warn,
-    Block,
-    Fallback,
-}
-
 /// 版本快照保留策略
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -101,20 +91,6 @@ impl Default for GeneralSettings {
             language: default_language(),
         }
     }
-}
-
-/// Token 预算设置
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct TokenBudget {
-    /// 每日限额，0 表示不限制
-    #[serde(default)]
-    pub daily_limit: u64,
-    /// 每月限额，0 表示不限制
-    #[serde(default)]
-    pub monthly_limit: u64,
-    #[serde(default)]
-    pub exceed_action: ExceedAction,
 }
 
 /// 版本快照设置
@@ -242,8 +218,6 @@ pub struct AppSettings {
     #[serde(default)]
     pub appearance: AppearanceSettings,
     #[serde(default)]
-    pub token_budget: TokenBudget,
-    #[serde(default)]
     pub version_snapshot: VersionSnapshot,
     #[serde(default)]
     pub workspace: WorkspaceDefaults,
@@ -325,19 +299,6 @@ pub fn merge_with_defaults(
             } else {
                 user_settings.appearance.font_scale
             },
-        },
-        token_budget: TokenBudget {
-            daily_limit: if user_settings.token_budget.daily_limit == 0 {
-                default_settings.token_budget.daily_limit
-            } else {
-                user_settings.token_budget.daily_limit
-            },
-            monthly_limit: if user_settings.token_budget.monthly_limit == 0 {
-                default_settings.token_budget.monthly_limit
-            } else {
-                user_settings.token_budget.monthly_limit
-            },
-            exceed_action: user_settings.token_budget.exceed_action.clone(),
         },
         version_snapshot: VersionSnapshot {
             retention_policy: user_settings.version_snapshot.retention_policy.clone(),

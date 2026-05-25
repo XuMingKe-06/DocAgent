@@ -25,7 +25,6 @@ pub const AGENT_OPERATION_REJECTED: u32 = 2005;
 pub const AGENT_SKILL_NOT_FOUND: u32 = 2006;
 pub const AGENT_SKILL_DISABLED: u32 = 2007;
 pub const AGENT_EXECUTION_ERROR: u32 = 2008;
-pub const AGENT_BUDGET_EXCEEDED: u32 = 2009;
 pub const AGENT_SESSION_NOT_FOUND: u32 = 2010;
 
 // ============================================================

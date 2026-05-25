@@ -328,7 +328,6 @@ pub fn run() {
             commands::token::get_token_usage_trend,
             commands::token::get_token_provider_usage,
             commands::token::get_token_usage_overview,
-            commands::token::check_token_budget,
             // 日志命令
             commands::log::get_error_log,
             // 开发人员工具命令

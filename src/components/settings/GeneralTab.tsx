@@ -101,52 +101,6 @@ export function GeneralTab() {
 
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">Token 预算</span>
-        </div>
-
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">日预算上限</div>
-            <div className="setting-desc">超出时触发提醒</div>
-          </div>
-          <input
-            className="setting-input setting-input-narrow"
-            placeholder="不限制"
-            value={settings.tokenBudget.dailyLimit || ""}
-            onChange={(e) => updateSettings({ tokenBudget: { dailyLimit: Number(e.target.value) || 0 } })}
-          />
-        </div>
-
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">月预算上限</div>
-          </div>
-          <input
-            className="setting-input setting-input-narrow"
-            placeholder="不限制"
-            value={settings.tokenBudget.monthlyLimit || ""}
-            onChange={(e) => updateSettings({ tokenBudget: { monthlyLimit: Number(e.target.value) || 0 } })}
-          />
-        </div>
-
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">超出预算行为</div>
-          </div>
-          <select
-            className="setting-select"
-            value={settings.tokenBudget.exceedAction}
-            onChange={(e) => updateSettings({ tokenBudget: { exceedAction: e.target.value as typeof settings.tokenBudget.exceedAction } })}
-          >
-            <option value="warn">仅提醒</option>
-            <option value="block">暂停Agent</option>
-            <option value="fallback">切换到更便宜的模型</option>
-          </select>
-        </div>
-      </div>
-
-      <div className="settings-section">
-        <div className="section-header">
           <span className="section-title">版本快照</span>
         </div>
 

@@ -484,7 +484,6 @@ interface TokenStatsProps {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  budget: number;
   usagePercent: number;
 }
 ```
@@ -671,7 +670,6 @@ interface AppSettings {
   autoScroll: boolean;
   showTimestamps: boolean;
   confirmLevel: ConfirmLevel;
-  tokenBudget: number;
   enableSounds: boolean;
   minimizeToTray: boolean;
   autoUpdate: boolean;
@@ -953,7 +951,7 @@ interface FileTreeState {
 
 ### 3.6 useTokenStore
 
-管理 Token 统计和预算。
+管理 Token 统计。
 
 ```typescript
 interface TokenState {
@@ -961,19 +959,14 @@ interface TokenState {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
-  budget: number;
   sessionTokens: SessionTokenBreakdown[];
-  isOverBudget: boolean;
 
   // 计算属性
   usagePercent: number;
-  remainingTokens: number;
 
   // 操作
   addTokenUsage: (usage: TokenUsage) => void;
   resetSessionTokens: () => void;
-  setBudget: (budget: number) => void;
-  checkBudget: () => boolean;
   getTokenStats: () => TokenStats;
 }
 
@@ -1151,8 +1144,6 @@ interface UseTokenCounterReturn {
 
   // 便捷方法
   estimateTokens: (text: string) => number;
-  getRemainingBudget: () => number;
-  isOverBudget: () => boolean;
 }
 
 function useTokenCounter(options: UseTokenCounterOptions): UseTokenCounterReturn;
@@ -1435,7 +1426,6 @@ interface AppSettings {
   autoScroll: boolean;
   showTimestamps: boolean;
   confirmLevel: ConfirmLevel;
-  tokenBudget: number;
   enableSounds: boolean;
   minimizeToTray: boolean;
   autoUpdate: boolean;

@@ -181,7 +181,7 @@ CREATE TABLE IF NOT EXISTS version_snapshots (
 
 ### 2.4 token_usage Token统计表
 
-存储每次 LLM 调用的 Token 消耗明细，用于预算控制与使用分析。
+存储每次 LLM 调用的 Token 消耗明细，用于使用分析。
 
 #### DDL
 
@@ -214,7 +214,7 @@ CREATE TABLE IF NOT EXISTS token_usage (
 #### 业务规则
 
 - 每次成功的 LLM API 调用均写入一条记录
-- 日/月预算检查通过聚合查询实现，参见索引设计
+- 日/月统计通过聚合查询实现，参见索引设计
 - `workspace_id` 冗余存储，便于按工作区维度统计
 
 ---
@@ -291,7 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_token_usage_provider_model
 | `idx_token_usage_session_id` | token_usage | session_id | 按会话查询 Token 用量 |
 | `idx_token_usage_workspace_id` | token_usage | workspace_id | 按工作区查询 Token 用量 |
 | `idx_token_usage_created_at` | token_usage | created_at DESC | 按时间排序/清理过期记录 |
-| `idx_token_usage_workspace_created` | token_usage | workspace_id, created_at DESC | 按工作区+时间范围聚合（日/月预算检查） |
+| `idx_token_usage_workspace_created` | token_usage | workspace_id, created_at DESC | 按工作区+时间范围聚合统计 |
 | `idx_token_usage_provider_model` | token_usage | llm_provider, llm_model | 按提供商和模型统计用量 |
 
 ---
@@ -483,7 +483,7 @@ LLM 提供商与模型配置文件。
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "AppSettings",
   "type": "object",
-  "required": ["general", "token_budget", "version_snapshot", "workspace", "shortcuts"],
+  "required": ["general", "version_snapshot", "workspace", "shortcuts"],
   "additionalProperties": false,
   "properties": {
     "general": {
@@ -514,37 +514,6 @@ LLM 提供商与模型配置文件。
           "description": "界面语言",
           "enum": ["zh-CN", "en-US", "ja-JP"],
           "default": "zh-CN"
-        }
-      }
-    },
-    "token_budget": {
-      "type": "object",
-      "description": "Token 预算控制",
-      "required": ["daily_limit", "monthly_limit", "exceed_action"],
-      "additionalProperties": false,
-      "properties": {
-        "daily_limit": {
-          "type": "integer",
-          "description": "每日 Token 上限（0 表示不限制）",
-          "minimum": 0,
-          "default": 0
-        },
-        "monthly_limit": {
-          "type": "integer",
-          "description": "每月 Token 上限（0 表示不限制）",
-          "minimum": 0,
-          "default": 0
-        },
-        "exceed_action": {
-          "type": "string",
-          "description": "超出预算时的行为",
-          "enum": ["warn", "block", "fallback"],
-          "default": "warn",
-          "enumDescriptions": {
-            "warn": "仅警告，允许继续使用",
-            "block": "阻止请求，直到预算重置",
-            "fallback": "自动切换到更便宜的模型"
-          }
         }
       }
     },
@@ -636,11 +605,6 @@ LLM 提供商与模型配置文件。
     "author_name": "张三",
     "confirmation_level": "edit_only",
     "language": "zh-CN"
-  },
-  "token_budget": {
-    "daily_limit": 100000,
-    "monthly_limit": 2000000,
-    "exceed_action": "warn"
   },
   "version_snapshot": {
     "retention_policy": "both",

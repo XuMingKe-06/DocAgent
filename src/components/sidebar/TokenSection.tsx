@@ -3,10 +3,7 @@ import { useTokenStore } from "../../stores/useTokenStore";
 import { formatTokens } from "../../utils/format";
 
 export function TokenSection() {
-  const { sessionTokens, inputTokens, outputTokens, dailyTotal, monthlyTotal, dailyBudget, monthlyBudget } = useTokenStore();
-
-  const dailyBudgetPercent = dailyBudget > 0 ? (dailyTotal / dailyBudget) * 100 : 0;
-  const monthlyBudgetPercent = monthlyBudget > 0 ? (monthlyTotal / monthlyBudget) * 100 : 0;
+  const { sessionTokens, inputTokens, outputTokens, dailyTotal, monthlyTotal } = useTokenStore();
 
   return (
     <SidebarSection title="Token 统计">
@@ -37,47 +34,10 @@ export function TokenSection() {
           <span className="tk-field-label">今日累计</span>
           <span className="tk-field-value">{formatTokens(dailyTotal)}</span>
         </div>
-        {dailyBudget > 0 && (
-          <div className="tk-mini-bar-track" role="progressbar" aria-valuenow={Math.round(dailyBudgetPercent)} aria-valuemin={0} aria-valuemax={100} aria-label="今日预算使用进度">
-            <div
-              className={`tk-mini-bar-fill ${
-                dailyBudgetPercent > 100 ? "bar-exceeded" : dailyBudgetPercent > 80 ? "bar-warning" : ""
-              }`}
-              style={{ width: `${Math.min(dailyBudgetPercent, 100)}%` }}
-            />
-          </div>
-        )}
 
         <div className="tk-field">
           <span className="tk-field-label">本月累计</span>
           <span className="tk-field-value">{formatTokens(monthlyTotal)}</span>
-        </div>
-        {monthlyBudget > 0 && (
-          <div className="tk-mini-bar-track" role="progressbar" aria-valuenow={Math.round(monthlyBudgetPercent)} aria-valuemin={0} aria-valuemax={100} aria-label="本月预算使用进度">
-            <div
-              className={`tk-mini-bar-fill ${
-                monthlyBudgetPercent > 100 ? "bar-exceeded" : monthlyBudgetPercent > 80 ? "bar-warning" : ""
-              }`}
-              style={{ width: `${Math.min(monthlyBudgetPercent, 100)}%` }}
-            />
-          </div>
-        )}
-
-        {/* 分隔线 */}
-        <div className="tk-divider" />
-
-        {/* 预算设置 */}
-        <div className="tk-field">
-          <span className="tk-field-label">日预算</span>
-          <span className={`tk-field-value ${dailyBudget > 0 ? "" : "tk-value-unset"}`}>
-            {dailyBudget > 0 ? formatTokens(dailyBudget) : "--"}
-          </span>
-        </div>
-        <div className="tk-field">
-          <span className="tk-field-label">月预算</span>
-          <span className={`tk-field-value ${monthlyBudget > 0 ? "" : "tk-value-unset"}`}>
-            {monthlyBudget > 0 ? formatTokens(monthlyBudget) : "--"}
-          </span>
         </div>
       </div>
 
@@ -107,9 +67,6 @@ export function TokenSection() {
           font-size: 14px;
           font-weight: 600;
           letter-spacing: -0.2px;
-        }
-        .tk-value-unset {
-          color: var(--color-text-quaternary);
         }
         .tk-breakdown {
           display: flex;
@@ -152,24 +109,6 @@ export function TokenSection() {
           height: 1px;
           background: var(--color-border-light);
           margin: 2px 0;
-        }
-        .tk-mini-bar-track {
-          height: 2px;
-          background: var(--color-border-light);
-          border-radius: 1px;
-          overflow: hidden;
-        }
-        .tk-mini-bar-fill {
-          height: 100%;
-          border-radius: 1px;
-          background: var(--color-accent);
-          transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1), background 0.3s;
-        }
-        .tk-mini-bar-fill.bar-warning {
-          background: var(--color-warning);
-        }
-        .tk-mini-bar-fill.bar-exceeded {
-          background: var(--color-error);
         }
       `}</style>
     </SidebarSection>

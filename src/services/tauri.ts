@@ -31,7 +31,6 @@ import type {
   DailyUsageItem,
   ProviderUsageItem,
   TokenUsageOverview,
-  BudgetStatus,
 } from "../types";
 
 // ================================================================
@@ -476,13 +475,6 @@ export async function getTokenUsageOverview(
   const result = await safeInvoke(() => invoke<TokenUsageOverview>("get_token_usage_overview", {
     workspaceId: workspaceId ?? null,
   }), { context: "getTokenUsageOverview" });
-  if (!result.ok) throw result.error.raw;
-  return result.data;
-}
-
-/** 检查 Token 预算使用情况 */
-export async function checkTokenBudget(): Promise<BudgetStatus> {
-  const result = await safeInvoke(() => invoke<BudgetStatus>("check_token_budget"), { context: "checkTokenBudget" });
   if (!result.ok) throw result.error.raw;
   return result.data;
 }

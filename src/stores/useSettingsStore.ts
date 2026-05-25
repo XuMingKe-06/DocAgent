@@ -56,11 +56,6 @@ const defaultSettings: AppSettings = {
     themeMode: "system",
     fontScale: 1.0,
   },
-  tokenBudget: {
-    dailyLimit: 0,
-    monthlyLimit: 0,
-    exceedAction: "warn",
-  },
   versionSnapshot: {
     retentionPolicy: "byCount",
     maxCount: 50,
