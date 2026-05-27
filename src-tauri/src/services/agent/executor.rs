@@ -22,8 +22,6 @@ const CONFIRM_TIMEOUT_SECS: u64 = 300;
 pub struct ExecutionResult {
     pub summary: String,
     pub total_steps: u32,
-    pub total_input_tokens: u64,
-    pub total_output_tokens: u64,
     pub duration_ms: u64,
 }
 
@@ -107,8 +105,6 @@ impl<R: Runtime> AgentExecutor<R> {
         &self,
         ctx: &mut AgentContext,
         total_steps: u32,
-        total_input_tokens: u64,
-        total_output_tokens: u64,
         start_time: std::time::Instant,
     ) -> Option<ExecutionResult> {
         if self.check_stopped(&ctx.session_id) {
@@ -123,8 +119,6 @@ impl<R: Runtime> AgentExecutor<R> {
             Some(ExecutionResult {
                 summary: "Agent 已被用户停止".to_string(),
                 total_steps,
-                total_input_tokens,
-                total_output_tokens,
                 duration_ms: start_time.elapsed().as_millis() as u64,
             })
         } else {
@@ -283,8 +277,6 @@ impl<R: Runtime> AgentExecutor<R> {
     pub async fn execute(&self, ctx: &mut AgentContext) -> Result<ExecutionResult, CommandError> {
         let start_time = std::time::Instant::now();
         let mut total_steps = 0u32;
-        let mut total_input_tokens = 0u64;
-        let mut total_output_tokens = 0u64;
 
         log::info!("Agent 开始执行, session_id={}", ctx.session_id);
 
@@ -323,8 +315,6 @@ impl<R: Runtime> AgentExecutor<R> {
             if let Some(result) = self.handle_stop_if_needed(
                 ctx,
                 total_steps,
-                total_input_tokens,
-                total_output_tokens,
                 start_time,
             ) {
                 return Ok(result);
@@ -445,20 +435,6 @@ impl<R: Runtime> AgentExecutor<R> {
                 }).ok();
             }
 
-            // Token 估算：使用更合理的启发式算法
-            // 英文约 4 字符 = 1 token，中文约 1.5 字符 = 1 token
-            // 混合文本取折中值：约 2 字符 = 1 token
-            // 同时计算 tool_calls 的 arguments 占用的 token
-            let input_chars: usize = messages.iter()
-                .map(|m| m.content.len() + m.tool_calls.as_ref().map(|tc| tc.iter().map(|t| t.arguments.len()).sum::<usize>()).unwrap_or(0))
-                .sum();
-            let output_chars = assistant_content.len()
-                + collected_tool_calls.iter().map(|tc| tc.arguments.len()).sum::<usize>();
-            let estimated_input = (input_chars as u64) / 2;
-            let estimated_output = (output_chars as u64) / 2;
-            total_input_tokens += estimated_input;
-            total_output_tokens += estimated_output;
-
             // 检查是否有 tool_calls
             let has_tool_calls = !collected_tool_calls.is_empty();
             log::debug!("LLM 响应解析完成, session_id={}, tool_calls数={}, 内容长度={}", ctx.session_id, collected_tool_calls.len(), assistant_content.len());
@@ -471,8 +447,6 @@ impl<R: Runtime> AgentExecutor<R> {
                     if let Some(result) = self.handle_stop_if_needed(
                         ctx,
                         total_steps,
-                        total_input_tokens,
-                        total_output_tokens,
                         start_time,
                     ) {
                         return Ok(result);
@@ -676,15 +650,12 @@ impl<R: Runtime> AgentExecutor<R> {
                 session_id: ctx.session_id.clone(),
                 summary: assistant_content.clone(),
                 total_steps,
-                total_tokens: total_input_tokens + total_output_tokens,
                 duration_ms: total_duration_ms,
             }).ok();
 
             return Ok(ExecutionResult {
                 summary: assistant_content,
                 total_steps,
-                total_input_tokens,
-                total_output_tokens,
                 duration_ms: total_duration_ms,
             });
         }

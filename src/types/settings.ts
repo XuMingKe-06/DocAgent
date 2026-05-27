@@ -1,6 +1,6 @@
 // ===== 设置相关类型定义 - 与 Rust 后端对齐 =====
 
-export type SettingsTab = "llm" | "workspace" | "skill" | "template" | "usage" | "appearance" | "shortcuts" | "general" | "help";
+export type SettingsTab = "llm" | "workspace" | "skill" | "template" | "appearance" | "shortcuts" | "general" | "help";
 
 // ----- 应用设置 -----
 
@@ -178,31 +178,4 @@ export interface UpdateTemplateParams {
   content?: string;
   category?: string;
   variables?: TemplateVariable[];
-}
-
-// ----- Token 统计相关类型 -----
-
-/** 每日用量统计项 */
-export interface DailyUsageItem {
-  date: string;
-  inputTokens: number;
-  outputTokens: number;
-}
-
-/** 按 Provider/Model 分组的用量统计项 */
-export interface ProviderUsageItem {
-  provider: string;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-}
-
-/** Token 用量概览 */
-export interface TokenUsageOverview {
-  totalInput: number;
-  totalOutput: number;
-  todayInput: number;
-  todayOutput: number;
-  monthInput: number;
-  monthOutput: number;
 }

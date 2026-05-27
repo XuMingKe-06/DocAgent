@@ -2,12 +2,11 @@ use tauri::{AppHandle, State};
 
 use crate::db::session_repo;
 use crate::db::message_repo;
-use crate::db::token_repo;
 use crate::errors::CommandError;
 use crate::events::AgentEmitter;
 use crate::events::types;
 use crate::models::session::{
-    CreateSessionParams, Session, SessionDetail, SessionFilter, SessionSummary, TokenUsage,
+    CreateSessionParams, Session, SessionDetail, SessionFilter, SessionSummary,
 };
 use crate::AppState;
 
@@ -69,7 +68,7 @@ pub async fn list_sessions(
     Ok(result)
 }
 
-/// 获取会话详情，包含消息历史和 Token 用量
+/// 获取会话详情，包含消息历史
 #[tauri::command]
 pub async fn get_session(
     session_id: String,
@@ -80,18 +79,10 @@ pub async fn get_session(
     let session = session_repo::get_session(&conn, &session_id)?;
     let messages = message_repo::list_messages(&conn, &session_id);
 
-    let (input_tokens, output_tokens) = token_repo::get_session_usage(&conn, &session_id);
-    let token_usage = TokenUsage {
-        prompt_tokens: input_tokens as u64,
-        completion_tokens: output_tokens as u64,
-        total_tokens: (input_tokens + output_tokens) as u64,
-    };
-
-    log::info!("get_session 成功: session_id={}, 消息数={}, tokens={}", session_id, messages.len(), token_usage.total_tokens);
+    log::info!("get_session 成功: session_id={}, 消息数={}", session_id, messages.len());
     Ok(SessionDetail {
         session,
         messages,
-        token_usage,
     })
 }
 

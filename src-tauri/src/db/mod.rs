@@ -2,7 +2,6 @@ pub mod init;
 pub mod session_repo;
 pub mod message_repo;
 pub mod snapshot_repo;
-pub mod token_repo;
 pub mod template_repo;
 
 use rusqlite::Connection;

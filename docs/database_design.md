@@ -13,7 +13,6 @@
    - [sessions 会话表](#21-sessions-会话表)
    - [session_messages 消息表](#22-session_messages-消息表)
    - [version_snapshots 版本快照表](#23-version_snapshots-版本快照表)
-   - [token_usage Token统计表](#24-token_usage-token统计表)
 3. [索引设计](#3-索引设计)
 4. [JSON 配置文件 Schema](#4-json-配置文件-schema)
    - [llm_config.json](#41-llm_configjson)
@@ -27,7 +26,7 @@
 
 ## 1. 概述
 
-DocAgent 使用 **SQLite** 作为本地嵌入式数据库，存储会话记录、消息历史、版本快照元数据及 Token 使用统计。应用配置信息采用 **JSON 文件** 存储，便于用户手动编辑与版本管理。
+DocAgent 使用 **SQLite** 作为本地嵌入式数据库，存储会话记录、消息历史及版本快照元数据。应用配置信息采用 **JSON 文件** 存储，便于用户手动编辑与版本管理。
 
 ### 设计原则
 
@@ -61,8 +60,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     title             TEXT        NOT NULL DEFAULT '新会话',
     created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    total_input_tokens  INTEGER   NOT NULL DEFAULT 0,
-    total_output_tokens INTEGER   NOT NULL DEFAULT 0,
     llm_provider      TEXT        NOT NULL DEFAULT '',
     llm_model         TEXT        NOT NULL DEFAULT ''
 );
@@ -77,8 +74,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 | `title` | TEXT | NOT NULL, DEFAULT '新会话' | 会话标题，可由用户修改或由 AI 自动生成 |
 | `created_at` | TEXT | NOT NULL | 创建时间，ISO 8601 格式 |
 | `updated_at` | TEXT | NOT NULL | 最后更新时间，ISO 8601 格式 |
-| `total_input_tokens` | INTEGER | NOT NULL, DEFAULT 0 | 该会话累计输入 Token 数 |
-| `total_output_tokens` | INTEGER | NOT NULL, DEFAULT 0 | 该会话累计输出 Token 数 |
 | `llm_provider` | TEXT | NOT NULL, DEFAULT '' | 使用的 LLM 提供商标识（如 openai、anthropic） |
 | `llm_model` | TEXT | NOT NULL, DEFAULT '' | 使用的 LLM 模型名称（如 gpt-4o、claude-3-sonnet） |
 
@@ -86,7 +81,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 
 - `id` 由应用层生成 UUID v4，不依赖数据库自增
 - `updated_at` 在每次消息写入时由应用层更新
-- `total_input_tokens` / `total_output_tokens` 为冗余聚合字段，由应用层在写入消息时同步更新
 - `workspace_id` 为逻辑外键，指向 workspaces.json 中的工作区，不建立物理外键约束
 
 ---
@@ -107,8 +101,6 @@ CREATE TABLE IF NOT EXISTS session_messages (
     tool_args         TEXT        DEFAULT NULL,
     tool_result       TEXT        DEFAULT NULL,
     thinking_content  TEXT        DEFAULT NULL,
-    input_tokens      INTEGER     NOT NULL DEFAULT 0,
-    output_tokens     INTEGER     NOT NULL DEFAULT 0,
     created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 ```
@@ -125,8 +117,6 @@ CREATE TABLE IF NOT EXISTS session_messages (
 | `tool_args` | TEXT | DEFAULT NULL | 工具调用参数（JSON 字符串），仅 role='tool' 时有值 |
 | `tool_result` | TEXT | DEFAULT NULL | 工具调用返回结果（JSON 字符串），仅 role='tool' 时有值 |
 | `thinking_content` | TEXT | DEFAULT NULL | AI 思考过程内容（支持扩展思考的模型） |
-| `input_tokens` | INTEGER | NOT NULL, DEFAULT 0 | 本条消息消耗的输入 Token 数 |
-| `output_tokens` | INTEGER | NOT NULL, DEFAULT 0 | 本条消息消耗的输出 Token 数 |
 | `created_at` | TEXT | NOT NULL | 消息创建时间，ISO 8601 格式 |
 
 #### 业务规则
@@ -179,46 +169,6 @@ CREATE TABLE IF NOT EXISTS version_snapshots (
 
 ---
 
-### 2.4 token_usage Token统计表
-
-存储每次 LLM 调用的 Token 消耗明细，用于使用分析。
-
-#### DDL
-
-```sql
-CREATE TABLE IF NOT EXISTS token_usage (
-    id                TEXT        NOT NULL PRIMARY KEY,
-    session_id        TEXT        NOT NULL,
-    workspace_id      TEXT        NOT NULL,
-    llm_provider      TEXT        NOT NULL DEFAULT '',
-    llm_model         TEXT        NOT NULL DEFAULT '',
-    input_tokens      INTEGER     NOT NULL DEFAULT 0,
-    output_tokens     INTEGER     NOT NULL DEFAULT 0,
-    created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-```
-
-#### 字段说明
-
-| 字段 | 类型 | 约束 | 说明 |
-|------|------|------|------|
-| `id` | TEXT | PRIMARY KEY | 记录唯一标识，UUID v4 |
-| `session_id` | TEXT | NOT NULL | 关联的会话 ID |
-| `workspace_id` | TEXT | NOT NULL | 关联的工作区 ID |
-| `llm_provider` | TEXT | NOT NULL, DEFAULT '' | LLM 提供商标识 |
-| `llm_model` | TEXT | NOT NULL, DEFAULT '' | LLM 模型名称 |
-| `input_tokens` | INTEGER | NOT NULL, DEFAULT 0 | 本次调用输入 Token 数 |
-| `output_tokens` | INTEGER | NOT NULL, DEFAULT 0 | 本次调用输出 Token 数 |
-| `created_at` | TEXT | NOT NULL | 记录创建时间，ISO 8601 格式 |
-
-#### 业务规则
-
-- 每次成功的 LLM API 调用均写入一条记录
-- 日/月统计通过聚合查询实现，参见索引设计
-- `workspace_id` 冗余存储，便于按工作区维度统计
-
----
-
 ## 3. 索引设计
 
 ### 3.1 索引 DDL
@@ -256,22 +206,6 @@ CREATE INDEX IF NOT EXISTS idx_version_snapshots_file_path
 
 CREATE INDEX IF NOT EXISTS idx_version_snapshots_created_at
     ON version_snapshots (created_at DESC);
-
--- token_usage 表索引
-CREATE INDEX IF NOT EXISTS idx_token_usage_session_id
-    ON token_usage (session_id);
-
-CREATE INDEX IF NOT EXISTS idx_token_usage_workspace_id
-    ON token_usage (workspace_id);
-
-CREATE INDEX IF NOT EXISTS idx_token_usage_created_at
-    ON token_usage (created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_token_usage_workspace_created
-    ON token_usage (workspace_id, created_at DESC);
-
-CREATE INDEX IF NOT EXISTS idx_token_usage_provider_model
-    ON token_usage (llm_provider, llm_model);
 ```
 
 ### 3.2 索引说明
@@ -288,11 +222,6 @@ CREATE INDEX IF NOT EXISTS idx_token_usage_provider_model
 | `idx_version_snapshots_session_id` | version_snapshots | session_id | 按会话查询快照 |
 | `idx_version_snapshots_file_path` | version_snapshots | file_path | 按文件路径查询快照历史 |
 | `idx_version_snapshots_created_at` | version_snapshots | created_at DESC | 按时间排序快照/清理过期快照 |
-| `idx_token_usage_session_id` | token_usage | session_id | 按会话查询 Token 用量 |
-| `idx_token_usage_workspace_id` | token_usage | workspace_id | 按工作区查询 Token 用量 |
-| `idx_token_usage_created_at` | token_usage | created_at DESC | 按时间排序/清理过期记录 |
-| `idx_token_usage_workspace_created` | token_usage | workspace_id, created_at DESC | 按工作区+时间范围聚合统计 |
-| `idx_token_usage_provider_model` | token_usage | llm_provider, llm_model | 按提供商和模型统计用量 |
 
 ---
 
@@ -901,7 +830,7 @@ CREATE TABLE IF NOT EXISTS schema_version (
 
 ```sql
 INSERT INTO schema_version (version, description)
-VALUES (1, '初始建表：sessions, session_messages, version_snapshots, token_usage');
+VALUES (1, '初始建表：sessions, session_messages, version_snapshots');
 ```
 
 ### 5.2 迁移脚本规范
@@ -1054,8 +983,6 @@ CREATE TABLE IF NOT EXISTS sessions (
     title             TEXT        NOT NULL DEFAULT '新会话',
     created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    total_input_tokens  INTEGER   NOT NULL DEFAULT 0,
-    total_output_tokens INTEGER   NOT NULL DEFAULT 0,
     llm_provider      TEXT        NOT NULL DEFAULT '',
     llm_model         TEXT        NOT NULL DEFAULT ''
 );
@@ -1070,8 +997,6 @@ CREATE TABLE IF NOT EXISTS session_messages (
     tool_args         TEXT        DEFAULT NULL,
     tool_result       TEXT        DEFAULT NULL,
     thinking_content  TEXT        DEFAULT NULL,
-    input_tokens      INTEGER     NOT NULL DEFAULT 0,
-    output_tokens     INTEGER     NOT NULL DEFAULT 0,
     created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
@@ -1083,18 +1008,6 @@ CREATE TABLE IF NOT EXISTS version_snapshots (
     file_path         TEXT        NOT NULL,
     snapshot_path     TEXT        NOT NULL,
     operation         TEXT        NOT NULL DEFAULT '',
-    created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
-
--- token_usage Token统计表
-CREATE TABLE IF NOT EXISTS token_usage (
-    id                TEXT        NOT NULL PRIMARY KEY,
-    session_id        TEXT        NOT NULL,
-    workspace_id      TEXT        NOT NULL,
-    llm_provider      TEXT        NOT NULL DEFAULT '',
-    llm_model         TEXT        NOT NULL DEFAULT '',
-    input_tokens      INTEGER     NOT NULL DEFAULT 0,
-    output_tokens     INTEGER     NOT NULL DEFAULT 0,
     created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 
@@ -1122,20 +1035,9 @@ CREATE INDEX IF NOT EXISTS idx_version_snapshots_file_path
 CREATE INDEX IF NOT EXISTS idx_version_snapshots_created_at
     ON version_snapshots (created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_token_usage_session_id
-    ON token_usage (session_id);
-CREATE INDEX IF NOT EXISTS idx_token_usage_workspace_id
-    ON token_usage (workspace_id);
-CREATE INDEX IF NOT EXISTS idx_token_usage_created_at
-    ON token_usage (created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_token_usage_workspace_created
-    ON token_usage (workspace_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_token_usage_provider_model
-    ON token_usage (llm_provider, llm_model);
-
 -- 记录初始版本
 INSERT INTO schema_version (version, description)
-VALUES (1, '初始建表：sessions, session_messages, version_snapshots, token_usage');
+VALUES (1, '初始建表：sessions, session_messages, version_snapshots');
 ```
 
 ### 6.2 数据类型映射

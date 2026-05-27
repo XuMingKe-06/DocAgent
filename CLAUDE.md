@@ -86,16 +86,16 @@ cargo clean
 │  ├─ components/
 │  │  ├─ layout/         布局组件: TopBar, MainArea, Sidebar, InputArea, WindowControls
 │  │  ├─ workflow/       工作流时间线: WorkflowTimeline, WorkflowNode (User/Thinking/Tool/Result/Reply/Confirm)
-│  │  ├─ sidebar/        右侧栏: FileTreeSection, AgentInfoSection, TodoSection, TokenSection
+│  │  ├─ sidebar/        右侧栏: FileTreeSection, AgentInfoSection, TodoSection
 │  │  ├─ preview/        文档预览浮层: PreviewOverlay, MarkdownPreview, PdfCanvasViewer (pdfjs-dist canvas 渲染)
-│  │  ├─ settings/       设置弹窗: SettingsDialog + 9 个标签页 (LLMConfig, WorkspaceTab, SkillsTab,
-│  │  │                      TemplatesTab, TokenUsageTab, AppearanceTab, ShortcutsTab, GeneralTab, HelpTab)
+│  │  ├─ settings/       设置弹窗: SettingsDialog + 8 个标签页 (LLMConfig, WorkspaceTab, SkillsTab,
+│  │  │                      TemplatesTab, AppearanceTab, ShortcutsTab, GeneralTab, HelpTab)
 │  │  │                      + 子弹窗 (ProviderFormDialog, AddWorkspaceDialog, TemplateEditDialog,
 │  │  │                        CustomSkillDialog)
 │  │  ├─ session/        历史会话面板: HistoryPanel
 │  │  └─ common/         通用组件: Button, Icon, ContextMenu, DeleteConfirmDialog, ErrorBoundary,
 │  │                        ToastContainer, TemplatePicker
-│  ├─ stores/            Zustand stores: workflow, session, settings, workspace, fileTree, token, toast
+│  ├─ stores/            Zustand stores: workflow, session, settings, workspace, fileTree, toast
 │  ├─ services/          前端服务层: tauri.ts (invoke封装), event.ts (事件监听/类型定义)
 │  ├─ hooks/             useAgent.ts (Agent交互核心hook: sendMessage, stopAgent, confirmOperation 等)
 │  └─ types/             TypeScript类型定义 (与Rust后端对齐: workflow, session, workspace, document, settings)
@@ -106,7 +106,7 @@ cargo clean
 │  ├─ src/
 │  │  ├─ lib.rs          入口, AppState定义, 命令注册(全部30+命令), 初始化流程
 │  │  ├─ commands/       Tauri命令层 (10个模块): agent, document, llm, log, session,
-│  │  │                       settings, skill, template, token, workspace
+│  │  │                       settings, skill, template, workspace
 │  │  ├─ services/       业务逻辑层
 │  │  │  ├─ agent/       Agent调度引擎: executor (Tool Calling循环), context (对话上下文管理)
 │  │  │  ├─ llm/         LLM多Provider适配: router, provider (trait),
@@ -114,7 +114,7 @@ cargo clean
 │  │  │  ├─ skill/       Skill引擎: registry (注册表+禁用管理), builtin, custom (自定义Skill加载器)
 │  │  │  ├─ document/    Python Sidecar进程管理 (自动重启、超时、重试)
 │  │  │  └─ fs_watcher/  文件系统监听 (notify crate, 递归监听+事件发射)
-│  │  ├─ db/             数据库层: init (迁移), session/message/snapshot/token/template repo
+│  │  ├─ db/             数据库层: init (迁移), session/message/snapshot/template repo
 │  │  ├─ config/         配置管理: app_settings, llm_config, workspace_config, ConfigManager
 │  │  ├─ models/         数据模型: message, session, document, llm, skill, workspace, template
 │  │  ├─ events/         事件系统: types (事件名常量+payload), emitter (事件发射封装)
@@ -145,7 +145,7 @@ cargo clean
 - **`invoke()`**: 请求-响应式调用（查询数据、操作触发），命令名 `snake_case`
 - **`emit()/listen()`**: 事件推送（Agent流式输出、进度更新、需确认操作等），事件名 `namespace:action`
 - Agent 事件: `agent:thinking`, `agent:content`, `agent:tool_call`, `agent:tool_result`, `agent:confirm`, `agent:todo_update`, `agent:done`, `agent:error`, `agent:stopped`
-- 系统事件: `session:updated`, `workspace:change`, `file:change`, `token:update`, `llm:provider_switch`（各事件均有对应 Payload 结构体）
+- 系统事件: `session:updated`, `workspace:change`, `file:change`, `llm:provider_switch`（各事件均有对应 Payload 结构体）
 
 ### Agent 执行流程
 1. 前端 `useAgent` hook 调用 `start_agent` 命令
@@ -251,7 +251,7 @@ AppState {
 - 9000-9999: 工具 (不存在/参数无效/执行失败/路径越界)
 
 ### 应用设置
-`AppSettings` 含以下子配置（JSON 文件存储），前端 SettingsDialog 含 9 个标签页：
+`AppSettings` 含以下子配置（JSON 文件存储），前端 SettingsDialog 含 8 个标签页：
 - `GeneralSettings`: 作者名、确认级别(Always/EditOnly/Never)、语言 → **GeneralTab**
 - `AppearanceSettings`: 主题模式(light/dark/system)、字体缩放 → **AppearanceTab**
 - `VersionSnapshot`: 保留策略(ByCount/ByDays/Both)、最大数量/天数
@@ -272,11 +272,10 @@ AppState {
 - `useWorkspaceStore`: 工作区列表、当前工作区、切换逻辑
 - `useSettingsStore`: 应用设置（弹窗开关等）
 - `useFileTreeStore`: 文件树数据与加载状态
-- `useTokenStore`: Token 用量统计与事件监听
 - `useToastStore`: Toast 通知队列管理（error/success/warning，自动消失）
 
 ### 数据存储
-- SQLite: 会话、消息、版本快照、Token 统计、Prompt 模板
+- SQLite: 会话、消息、版本快照、Prompt 模板
 - JSON 文件: LLM Provider 配置、应用设置、工作区配置、自定义 Skill 配置 (`config/custom_skills/`)
 - 文件系统: 工作区文档和 Sidecar 日志 (`log/docagent.log`)
 - 应用数据目录: `<app_data_dir>/docagent.db` + `config/` 目录
@@ -292,7 +291,7 @@ AppState {
 - CSP 限制严格: 仅允许 `http://localhost:*` 和 `http://127.0.0.1:*` 的 connect-src（用于 LLM API 调用）
 - 使用 `capabilities/` 目录配置插件权限（shell、dialog 等）
 - Tauri 插件: `tauri-plugin-shell`, `tauri-plugin-dialog`；桌面端额外注册 `tauri-plugin-updater` + `tauri-plugin-process`
-- 30+ 注册命令覆盖 LLM 管理、会话 CRUD、工作区操作、文档处理、Skill 管理、工具管理、设置、模板 CRUD、Token 统计、日志读取、DevTools 切换、更新检查/安装等
+- 30+ 注册命令覆盖 LLM 管理、会话 CRUD、工作区操作、文档处理、Skill 管理、工具管理、设置、模板 CRUD、日志读取、DevTools 切换、更新检查/安装等
 
 ### 自动更新
 - 通过 `tauri-plugin-updater` 实现自动更新，NSIS 安装器打包

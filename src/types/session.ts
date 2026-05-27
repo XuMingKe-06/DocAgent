@@ -24,7 +24,6 @@ export interface SessionSummary {
 export interface SessionDetail {
   session: Session;
   messages: Message[];
-  tokenUsage: TokenUsage;
 }
 
 export interface Message {
@@ -41,12 +40,6 @@ export interface ToolCall {
   name: string;
   arguments: Record<string, unknown>;
   result?: unknown;
-}
-
-export interface TokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
 }
 
 export interface CreateSessionParams {

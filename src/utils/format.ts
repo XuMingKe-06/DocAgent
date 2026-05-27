@@ -9,10 +9,6 @@ export function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function formatTokens(n: number): string {
-  return n.toLocaleString();
-}
-
 export function generateToolBrief(toolName: string, input: Record<string, unknown>): string {
   const f = (key: string) => String(input[key] ?? "");
   switch (toolName) {

@@ -29,9 +29,6 @@ import type {
   PromptTemplate,
   CreateTemplateParams,
   UpdateTemplateParams,
-  DailyUsageItem,
-  ProviderUsageItem,
-  TokenUsageOverview,
 } from "../types";
 
 // ================================================================
@@ -455,47 +452,6 @@ export async function updateTemplate(templateId: string, params: UpdateTemplateP
 export async function deleteTemplate(templateId: string): Promise<void> {
   const result = await safeInvoke(() => invoke("delete_template", { templateId }), { context: "deleteTemplate" });
   if (!result.ok) throw result.error.raw;
-}
-
-// ================================================================
-// Token 统计命令
-// ================================================================
-
-/** 获取最近 N 天的 Token 用量趋势 */
-export async function getTokenUsageTrend(
-  workspaceId?: string,
-  days?: number,
-): Promise<DailyUsageItem[]> {
-  const result = await safeInvoke(() => invoke<DailyUsageItem[]>("get_token_usage_trend", {
-    workspaceId: workspaceId ?? null,
-    days: days ?? null,
-  }), { context: "getTokenUsageTrend" });
-  if (!result.ok) throw result.error.raw;
-  return result.data;
-}
-
-/** 按 Provider/Model 分组获取 Token 用量 */
-export async function getTokenProviderUsage(
-  startDate?: string,
-  endDate?: string,
-): Promise<ProviderUsageItem[]> {
-  const result = await safeInvoke(() => invoke<ProviderUsageItem[]>("get_token_provider_usage", {
-    startDate: startDate ?? null,
-    endDate: endDate ?? null,
-  }), { context: "getTokenProviderUsage" });
-  if (!result.ok) throw result.error.raw;
-  return result.data;
-}
-
-/** 获取 Token 用量概览 */
-export async function getTokenUsageOverview(
-  workspaceId?: string,
-): Promise<TokenUsageOverview> {
-  const result = await safeInvoke(() => invoke<TokenUsageOverview>("get_token_usage_overview", {
-    workspaceId: workspaceId ?? null,
-  }), { context: "getTokenUsageOverview" });
-  if (!result.ok) throw result.error.raw;
-  return result.data;
 }
 
 // ================================================================

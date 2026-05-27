@@ -16,7 +16,7 @@
 | 样式方案 | Tailwind CSS | 4.x | 原子化CSS |
 | 状态管理 | Zustand | 5.x | 轻量级全局状态管理 |
 | 后端语言 | Rust | 1.80+ | Tauri后端逻辑 |
-| 本地数据库 | SQLite (rusqlite) | - | 会话历史、版本快照、Token统计 |
+| 本地数据库 | SQLite (rusqlite) | - | 会话历史、版本快照 |
 | 配置存储 | JSON (serde_json) | - | LLM配置、应用设置、工作区配置 |
 | Python Sidecar | Python | 3.12+ | 文档处理脚本运行时 |
 | 文档处理 | python-docx / openpyxl / python-pptx / reportlab | - | Word/Excel/PPT/PDF生成与修改 |
@@ -88,8 +88,7 @@ docagent/
 │   │   │   ├── init.rs           # 数据库初始化与迁移
 │   │   │   ├── session.rs        # 会话表操作
 │   │   │   ├── message.rs        # 消息表操作
-│   │   │   ├── snapshot.rs       # 快照表操作
-│   │   │   └── token_usage.rs    # Token统计表操作
+│   │   │   └── snapshot.rs       # 快照表操作
 │   │   ├── config/               # 配置管理
 │   │   │   ├── mod.rs
 │   │   │   ├── llm_config.rs     # LLM配置读写
@@ -130,8 +129,7 @@ docagent/
 │   │   ├── sidebar/              # 右侧栏组件
 │   │   │   ├── FileTree.tsx
 │   │   │   ├── AgentInfo.tsx
-│   │   │   ├── TodoList.tsx
-│   │   │   └── TokenStats.tsx
+│   │   │   └── TodoList.tsx
 │   │   ├── preview/              # 预览组件
 │   │   │   ├── PreviewPanel.tsx
 │   │   │   ├── MarkdownPreview.tsx
@@ -156,16 +154,14 @@ docagent/
 │   │   ├── useSessionStore.ts    # 会话状态
 │   │   ├── useWorkspaceStore.ts  # 工作区状态
 │   │   ├── useSettingsStore.ts   # 设置状态
-│   │   ├── useFileTreeStore.ts   # 文件树状态
-│   │   └── useTokenStore.ts      # Token统计状态
+│   │   └── useFileTreeStore.ts   # 文件树状态
 │   ├── services/                 # 前端服务层
 │   │   ├── tauri.ts              # Tauri命令调用封装
 │   │   ├── llm.ts                # LLM流式调用封装
 │   │   └── event.ts              # Tauri事件监听封装
 │   ├── hooks/                    # 自定义Hooks
 │   │   ├── useAgent.ts           # Agent交互Hook
-│   │   ├── useFileTree.ts        # 文件树Hook
-│   │   └── useTokenCounter.ts    # Token计数Hook
+│   │   └── useFileTree.ts        # 文件树Hook
 │   ├── types/                    # TypeScript类型定义
 │   │   ├── llm.ts
 │   │   ├── workflow.ts
@@ -257,7 +253,7 @@ docagent/
 | **Document Service** | 管理Python Sidecar生命周期，调度文档处理任务 | `process_document()` |
 | **Version Service** | 文档版本快照的创建、查询、回滚、清理 | `create_snapshot()`, `rollback()` |
 | **Config Manager** | JSON配置文件的读写、验证、热更新 | `load_config()`, `save_config()` |
-| **DB Layer** | SQLite数据库操作，会话/消息/快照/Token统计的CRUD | 各表对应的Repository |
+| **DB Layer** | SQLite数据库操作，会话/消息/快照的CRUD | 各表对应的Repository |
 
 ---
 
@@ -304,7 +300,6 @@ LLM Adapter → HTTP请求 → LLM API
   │
   ├─→ emit("agent:done", summary)
   ├─→ 保存消息到SQLite
-  ├─→ 更新Token统计
   │
   ▼
 [前端] 事件监听 → 更新Workflow Store → UI刷新
@@ -373,7 +368,7 @@ Sidecar管理器
 - Tauri命令：`snake_case`，如 `start_agent`, `list_workspaces`
 - 前端调用封装：`camelCase`，如 `startAgent()`, `listWorkspaces()`
 - 事件名：`namespace:action`，如 `agent:thinking`, `session:updated`
-- Store action：`camelCase`，如 `addWorkflowNode()`, `updateTokenUsage()`
+- Store action：`camelCase`，如 `addWorkflowNode()`
 
 ---
 

@@ -233,8 +233,6 @@ fn persist_messages_to_db(
             tool_result_ref,
             None,
             msg.reasoning_content.as_deref(),
-            0,
-            0,
         )?;
     }
     Ok(())
@@ -330,15 +328,6 @@ async fn run_agent(
                 }
                 ctx.mark_persisted();
             }
-
-            // 发射 Token 用量更新事件
-            emitter.emit_token_update(crate::events::types::TokenUpdatePayload {
-                session_id: session_id.to_string(),
-                provider_id: String::new(),
-                prompt_tokens: result.total_input_tokens,
-                completion_tokens: result.total_output_tokens,
-                total_cost: 0.0,
-            }).ok();
 
             Ok(())
         }

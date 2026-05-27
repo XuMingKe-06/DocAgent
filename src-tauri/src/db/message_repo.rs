@@ -15,15 +15,13 @@ pub fn create_message(
     tool_result: Option<&str>,
     thinking_content: Option<&str>,
     reasoning_content: Option<&str>,
-    input_tokens: i64,
-    output_tokens: i64,
 ) -> Result<(), CommandError> {
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO session_messages
             (id, session_id, role, content, tool_name, tool_args, tool_result,
-             thinking_content, reasoning_content, input_tokens, output_tokens, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             thinking_content, reasoning_content, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![
             id,
             session_id,
@@ -34,8 +32,6 @@ pub fn create_message(
             tool_result,
             thinking_content,
             reasoning_content,
-            input_tokens,
-            output_tokens,
             now,
         ],
     )?;
@@ -45,7 +41,7 @@ pub fn create_message(
 pub fn list_messages(conn: &Connection, session_id: &str) -> Vec<Message> {
     let mut stmt = match conn.prepare(
         "SELECT id, session_id, role, content, tool_name, tool_args, tool_result,
-                thinking_content, reasoning_content, input_tokens, output_tokens, created_at
+                thinking_content, reasoning_content, created_at
          FROM session_messages
          WHERE session_id = ?1
          ORDER BY created_at ASC",
@@ -77,7 +73,7 @@ pub fn list_messages(conn: &Connection, session_id: &str) -> Vec<Message> {
             Ok(v) => v,
             Err(_) => continue,
         };
-        let created_at: String = match row.get(11) {
+        let created_at: String = match row.get(9) {
             Ok(v) => v,
             Err(_) => continue,
         };

@@ -84,7 +84,6 @@ export interface DonePayload {
   sessionId: string;
   summary: string;
   totalSteps: number;
-  totalTokens: number;
   durationMs: number;
 }
 
@@ -127,15 +126,6 @@ export interface FileChangePayload {
   changeType: string;
   path: string;
   oldPath?: string;
-}
-
-/** Token 用量更新事件 */
-export interface TokenUpdatePayload {
-  sessionId: string;
-  providerId: string;
-  promptTokens: number;
-  completionTokens: number;
-  totalCost: number;
 }
 
 // ================================================================
@@ -275,15 +265,6 @@ export function onFileChange(
   handler: (payload: FileChangePayload) => void,
 ): Promise<UnlistenFn> {
   return listen<FileChangePayload>("file:change", (event) => {
-    handler(event.payload);
-  });
-}
-
-/** 监听 Token 用量更新事件 */
-export function onTokenUpdate(
-  handler: (payload: TokenUpdatePayload) => void,
-): Promise<UnlistenFn> {
-  return listen<TokenUpdatePayload>("token:update", (event) => {
     handler(event.payload);
   });
 }

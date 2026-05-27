@@ -143,30 +143,6 @@ pub fn update_session_title(conn: &Connection, id: &str, title: &str) -> Result<
     Ok(())
 }
 
-/// 更新会话的 Token 统计（累加）
-pub fn update_session_tokens(
-    conn: &Connection,
-    id: &str,
-    input_tokens: i64,
-    output_tokens: i64,
-) -> Result<(), CommandError> {
-    let now = Utc::now().to_rfc3339();
-    let affected = conn.execute(
-        "UPDATE sessions SET total_input_tokens = total_input_tokens + ?1,
-                             total_output_tokens = total_output_tokens + ?2,
-                             updated_at = ?3
-         WHERE id = ?4",
-        rusqlite::params![input_tokens, output_tokens, now, id],
-    )?;
-    if affected == 0 {
-        return Err(CommandError::db(
-            crate::errors::DB_RECORD_NOT_FOUND,
-            format!("会话不存在: {}", id),
-        ));
-    }
-    Ok(())
-}
-
 /// 更新会话的 updated_at 时间戳
 pub fn update_session_timestamp(conn: &Connection, id: &str) -> Result<(), CommandError> {
     let now = Utc::now().to_rfc3339();
@@ -203,7 +179,7 @@ pub fn delete_session(conn: &Connection, id: &str) -> Result<(), CommandError> {
     Ok(())
 }
 
-/// 清除所有会话（同时删除所有关联的消息记录和 Token 统计）
+/// 清除所有会话（同时删除所有关联的消息记录）
 pub fn clear_all_sessions(conn: &Connection) -> Result<u64, CommandError> {
     // 先统计要删除的会话数量
     let count: u64 = conn
@@ -212,8 +188,6 @@ pub fn clear_all_sessions(conn: &Connection) -> Result<u64, CommandError> {
 
     // 删除所有消息记录
     conn.execute("DELETE FROM session_messages", [])?;
-    // 删除所有 Token 统计记录
-    conn.execute("DELETE FROM token_usage", [])?;
     // 删除所有会话
     conn.execute("DELETE FROM sessions", [])?;
 

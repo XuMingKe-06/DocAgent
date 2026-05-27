@@ -1,14 +1,13 @@
 use rusqlite::Connection;
 use crate::errors::CommandError;
 
-/// 执行数据库初始化：建表、创建索引、插入版本记录、运行迁移
+/// 执行数据库初始化：建表、创建索引、插入版本记录
 pub fn initialize_database(conn: &Connection) -> Result<(), CommandError> {
     log::info!("开始初始化数据库结构");
 
     create_tables(conn)?;
     create_indexes(conn)?;
     insert_initial_version(conn)?;
-    run_migrations(conn)?;
 
     log::info!("数据库结构初始化完成");
     Ok(())
@@ -33,8 +32,6 @@ fn create_tables(conn: &Connection) -> Result<(), CommandError> {
             title               TEXT        NOT NULL DEFAULT '新会话',
             created_at          TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
             updated_at          TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-            total_input_tokens  INTEGER     NOT NULL DEFAULT 0,
-            total_output_tokens INTEGER     NOT NULL DEFAULT 0,
             llm_provider        TEXT        NOT NULL DEFAULT '',
             llm_model           TEXT        NOT NULL DEFAULT ''
         );"
@@ -52,8 +49,6 @@ fn create_tables(conn: &Connection) -> Result<(), CommandError> {
             tool_result       TEXT        DEFAULT NULL,
             thinking_content  TEXT        DEFAULT NULL,
             reasoning_content TEXT        DEFAULT NULL,
-            input_tokens      INTEGER     NOT NULL DEFAULT 0,
-            output_tokens     INTEGER     NOT NULL DEFAULT 0,
             created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         );"
     )?;
@@ -67,20 +62,6 @@ fn create_tables(conn: &Connection) -> Result<(), CommandError> {
             file_path         TEXT        NOT NULL,
             snapshot_path     TEXT        NOT NULL,
             operation         TEXT        NOT NULL DEFAULT '',
-            created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-        );"
-    )?;
-
-    // token_usage Token统计表
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS token_usage (
-            id                TEXT        NOT NULL PRIMARY KEY,
-            session_id        TEXT        NOT NULL,
-            workspace_id      TEXT        NOT NULL,
-            llm_provider      TEXT        NOT NULL DEFAULT '',
-            llm_model         TEXT        NOT NULL DEFAULT '',
-            input_tokens      INTEGER     NOT NULL DEFAULT 0,
-            output_tokens     INTEGER     NOT NULL DEFAULT 0,
             created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
         );"
     )?;
@@ -130,17 +111,6 @@ fn create_indexes(conn: &Connection) -> Result<(), CommandError> {
         CREATE INDEX IF NOT EXISTS idx_version_snapshots_created_at
             ON version_snapshots (created_at DESC);
 
-        CREATE INDEX IF NOT EXISTS idx_token_usage_session_id
-            ON token_usage (session_id);
-        CREATE INDEX IF NOT EXISTS idx_token_usage_workspace_id
-            ON token_usage (workspace_id);
-        CREATE INDEX IF NOT EXISTS idx_token_usage_created_at
-            ON token_usage (created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_token_usage_workspace_created
-            ON token_usage (workspace_id, created_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_token_usage_provider_model
-            ON token_usage (llm_provider, llm_model);
-
         CREATE INDEX IF NOT EXISTS idx_prompt_templates_category
             ON prompt_templates (category);
         CREATE INDEX IF NOT EXISTS idx_prompt_templates_is_builtin
@@ -164,7 +134,7 @@ fn insert_initial_version(conn: &Connection) -> Result<(), CommandError> {
     if count == 0 {
         conn.execute(
             "INSERT INTO schema_version (version, description) VALUES (?1, ?2)",
-            rusqlite::params![1, "初始建表：sessions, session_messages, version_snapshots, token_usage, prompt_templates"],
+            rusqlite::params![1, "初始建表：sessions, session_messages, version_snapshots, prompt_templates"],
         )?;
         log::info!("已插入初始版本记录 (version=1)");
     } else {
@@ -247,20 +217,5 @@ fn seed_builtin_templates(conn: &Connection) -> Result<(), CommandError> {
     }
 
     log::info!("已插入 {} 个内置模板", builtin_templates.len());
-    Ok(())
-}
-
-fn run_migrations(conn: &Connection) -> Result<(), CommandError> {
-    let has_reasoning_content: bool = conn
-        .prepare("SELECT reasoning_content FROM session_messages LIMIT 0")
-        .is_ok();
-
-    if !has_reasoning_content {
-        conn.execute_batch(
-            "ALTER TABLE session_messages ADD COLUMN reasoning_content TEXT DEFAULT NULL;"
-        )?;
-        log::info!("迁移: 已添加 reasoning_content 列到 session_messages 表");
-    }
-
     Ok(())
 }

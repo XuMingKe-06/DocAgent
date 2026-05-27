@@ -7,14 +7,12 @@ import { WorkflowTimeline } from "./components/workflow/WorkflowTimeline";
 import { FileTreeSection } from "./components/sidebar/FileTreeSection";
 import { AgentInfoSection } from "./components/sidebar/AgentInfoSection";
 import { TodoSection } from "./components/sidebar/TodoSection";
-import { TokenSection } from "./components/sidebar/TokenSection";
 import { ToastContainer } from "./components/common/Toast";
 import { useWorkflowStore } from "./stores/useWorkflowStore";
 import { useSessionStore } from "./stores/useSessionStore";
 import { useSettingsStore } from "./stores/useSettingsStore";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { useFileTreeStore } from "./stores/useFileTreeStore";
-import { useTokenStore } from "./stores/useTokenStore";
 import { useAgent } from "./hooks/useAgent";
 import { parseError } from "./services/errorHandler";
 import { generateToolBrief } from "./utils/format";
@@ -68,7 +66,6 @@ export default function App() {
   const settings = useSettingsStore((s) => s.settings);
   const { loadWorkspaces, currentWorkspaceId, workspaces } = useWorkspaceStore();
   const { loadTree, initFileChangeListener, destroyFileChangeListener } = useFileTreeStore();
-  const { initTokenListener, destroyTokenListener } = useTokenStore();
 
   const {
     error: agentError,
@@ -149,14 +146,6 @@ export default function App() {
       destroyFileChangeListener();
     };
   }, [initFileChangeListener, destroyFileChangeListener]);
-
-  // 初始化 Token 用量更新事件监听（由 store 统一管理）
-  useEffect(() => {
-    initTokenListener();
-    return () => {
-      destroyTokenListener();
-    };
-  }, [initTokenListener, destroyTokenListener]);
 
   useEffect(() => {
     if (deepThinking) {
@@ -594,7 +583,6 @@ export default function App() {
                 active: t.status === "in_progress",
               }))}
             />
-            <TokenSection />
           </>
         }
       />

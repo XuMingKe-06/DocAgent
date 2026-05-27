@@ -49,7 +49,6 @@ App
 │       │   ├── AuthorName          // 作者名
 │       │   └── ConfirmLevel        // 确认级别
 │       ├── TodoSection             // 任务列表区域
-│       └── TokenSection            // Token 统计区域
 ├── PreviewOverlay                  // 预览覆盖层
 │   └── PreviewPanel                // 预览面板
 │       ├── MarkdownPreview         // Markdown 预览
@@ -357,7 +356,6 @@ interface SendButtonProps {
 - 支持 `Ctrl+Enter` 快捷键发送
 - 输入框自适应高度（最大 200px 后出现滚动条）
 - 附件拖拽上传
-- Token 实时计数显示
 
 ---
 
@@ -467,25 +465,6 @@ interface TodoItemProps {
 }
 
 type TodoStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
-```
-
----
-
-### 2.13 TokenSection
-
-Token 统计区域。
-
-```typescript
-interface TokenSectionProps {
-  className?: string;
-}
-
-interface TokenStatsProps {
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  usagePercent: number;
-}
 ```
 
 ---
@@ -841,8 +820,6 @@ interface Session {
 }
 
 interface SessionMetadata {
-  totalTokens: number;
-  totalCost: number;
   tags: string[];
   isPinned: boolean;
 }
@@ -944,54 +921,6 @@ interface FileTreeState {
   setSearchKeyword: (keyword: string) => void;
   refreshTree: () => Promise<void>;
   getNodeByPath: (path: string) => FileTreeNode | undefined;
-}
-```
-
----
-
-### 3.6 useTokenStore
-
-管理 Token 统计。
-
-```typescript
-interface TokenState {
-  // 状态
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  sessionTokens: SessionTokenBreakdown[];
-
-  // 计算属性
-  usagePercent: number;
-
-  // 操作
-  addTokenUsage: (usage: TokenUsage) => void;
-  resetSessionTokens: () => void;
-  getTokenStats: () => TokenStats;
-}
-
-interface TokenUsage {
-  promptTokens: number;
-  completionTokens: number;
-  model: string;
-  nodeId: string;
-  timestamp: number;
-}
-
-interface SessionTokenBreakdown {
-  model: string;
-  promptTokens: number;
-  completionTokens: number;
-  totalTokens: number;
-  requestCount: number;
-}
-
-interface TokenStats {
-  totalPromptTokens: number;
-  totalCompletionTokens: number;
-  totalTokens: number;
-  estimatedCost: number;
-  breakdown: SessionTokenBreakdown[];
 }
 ```
 
@@ -1123,40 +1052,6 @@ function useFileTree(options: UseFileTreeOptions): UseFileTreeReturn;
 
 ---
 
-### 4.3 useTokenCounter
-
-实时 Token 计数 Hook。
-
-```typescript
-interface UseTokenCounterOptions {
-  model: string;
-  debounceMs?: number;
-}
-
-interface UseTokenCounterReturn {
-  // 状态
-  tokenCount: number;
-  isCounting: boolean;
-
-  // 操作
-  countTokens: (text: string) => void;
-  resetCount: () => void;
-
-  // 便捷方法
-  estimateTokens: (text: string) => number;
-}
-
-function useTokenCounter(options: UseTokenCounterOptions): UseTokenCounterReturn;
-```
-
-**实现要点：**
-- 使用 `tiktoken` 或类似库进行精确 Token 计数
-- 计数过程在 Web Worker 中执行，避免阻塞 UI
-- 输入变化时防抖计数（默认 500ms）
-- `estimateTokens` 提供快速但不精确的估算（字符数 / 4）
-
----
-
 ## 5. 组件间通信方式
 
 ### 5.1 通信架构总览
@@ -1214,8 +1109,6 @@ InputArea.onSend(payload)
     → IPC: main → renderer (流式返回节点数据)
       → useWorkflowStore.addNode(node)
         → WorkflowTimeline 重新渲染
-      → useTokenStore.addTokenUsage(usage)
-        → TokenSection 更新统计
 ```
 
 #### 流程二：确认操作
@@ -1264,13 +1157,11 @@ useWorkspaceStore ──────→ useFileTreeStore
 useSettingsStore ──────→ useWorkflowStore
        │                       │
        ↓                       ↓
-useTokenStore ←────────────────┘
 ```
 
 **依赖说明：**
 - 切换工作区时需要重新加载文件树和会话列表
-- 工作流执行消耗 Token，需同步更新 Token 统计
-- LLM 配置变更影响工作流执行和 Token 计数
+- LLM 配置变更影响工作流执行
 - 会话切换时需要清空并重新加载工作流节点
 
 ### 5.5 性能优化策略
@@ -1287,9 +1178,7 @@ useTokenStore ←────────────────┘
 
 4. **防抖搜索**：FileTreeSection 和 HistoryPanel 的搜索输入使用防抖
 
-5. **Web Worker**：Token 计数在 Web Worker 中执行
-
-6. **懒加载**：PreviewOverlay 和 SettingsOverlay 使用 `React.lazy` 按需加载
+5. **懒加载**：PreviewOverlay 和 SettingsOverlay 使用 `React.lazy` 按需加载
 
 ---
 

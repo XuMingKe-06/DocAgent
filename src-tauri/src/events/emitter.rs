@@ -95,11 +95,6 @@ impl<R: Runtime> AgentEmitter<R> {
         self.emit_event(types::AGENT_STOPPED, payload, true)
     }
 
-    /// 发射 Token 用量更新事件（非关键）
-    pub fn emit_token_update(&self, payload: types::TokenUpdatePayload) -> Result<(), CommandError> {
-        self.emit_event(types::TOKEN_UPDATE, payload, false)
-    }
-
     /// 发射会话更新事件（关键 - 前端依赖此事件刷新会话列表）
     pub fn emit_session_updated(&self, payload: types::SessionUpdatePayload) -> Result<(), CommandError> {
         self.emit_event(types::SESSION_UPDATED, payload, true)

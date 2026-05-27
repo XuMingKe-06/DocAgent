@@ -22,7 +22,6 @@ pub const AGENT_STOPPED: &str = "agent:stopped";
 pub const SESSION_UPDATED: &str = "session:updated";
 pub const WORKSPACE_CHANGE: &str = "workspace:change";
 pub const FILE_CHANGE: &str = "file:change";
-pub const TOKEN_UPDATE: &str = "token:update";
 pub const LLM_PROVIDER_SWITCH: &str = "llm:provider_switch";
 
 // ================================================================
@@ -130,7 +129,6 @@ pub struct DonePayload {
     pub session_id: String,
     pub summary: String,
     pub total_steps: u32,
-    pub total_tokens: u64,
     /// 总耗时（毫秒）
     pub duration_ms: u64,
 }
@@ -188,17 +186,6 @@ pub struct FileChangePayload {
     pub path: String,
     /// 重命名时的旧路径
     pub old_path: Option<String>,
-}
-
-/// Token 用量更新事件
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TokenUpdatePayload {
-    pub session_id: String,
-    pub provider_id: String,
-    pub prompt_tokens: u64,
-    pub completion_tokens: u64,
-    pub total_cost: f64,
 }
 
 // ================================================================

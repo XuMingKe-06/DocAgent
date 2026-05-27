@@ -50,20 +50,10 @@ pub struct SessionSummary {
     pub updated_at: String,
 }
 
-/// 会话详情，包含消息历史和 Token 用量
+/// 会话详情，包含消息历史
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionDetail {
     pub session: Session,
     pub messages: Vec<super::Message>,
-    pub token_usage: TokenUsage,
-}
-
-/// Token 用量统计
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TokenUsage {
-    pub prompt_tokens: u64,
-    pub completion_tokens: u64,
-    pub total_tokens: u64,
 }
