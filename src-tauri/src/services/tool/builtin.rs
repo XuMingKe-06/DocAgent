@@ -43,7 +43,7 @@ struct ListDirectoryTool;
 #[async_trait]
 impl Tool for ListDirectoryTool {
     fn tool_name(&self) -> &str { "list_directory" }
-    fn description(&self) -> &str { "列出指定目录中的文件和子目录结构" }
+    fn description(&self) -> &str { "列出指定目录中的文件和子目录结构。使用场景：浏览工作区内容、查找文件位置、了解目录层级。支持深度控制和扩展名过滤。" }
     fn category(&self) -> &str { "filesystem" }
     fn parameters(&self) -> Value {
         json!({
@@ -239,7 +239,7 @@ struct SearchFilesTool;
 #[async_trait]
 impl Tool for SearchFilesTool {
     fn tool_name(&self) -> &str { "search_files" }
-    fn description(&self) -> &str { "在指定目录中搜索文件，支持按文件名或内容搜索" }
+    fn description(&self) -> &str { "在指定目录中搜索文件，支持按文件名或内容搜索。使用场景：按名称查找文件、按内容关键词搜索、按扩展名筛选。设置include_content=true可搜索文件内容。" }
     fn category(&self) -> &str { "filesystem" }
     fn parameters(&self) -> Value {
         json!({
@@ -476,7 +476,7 @@ struct ReadFileTool;
 #[async_trait]
 impl Tool for ReadFileTool {
     fn tool_name(&self) -> &str { "read_file" }
-    fn description(&self) -> &str { "读取纯文本文件内容（.txt/.md/.csv/.json/.xml 等），不依赖 Sidecar" }
+    fn description(&self) -> &str { "读取纯文本文件内容（.txt/.md/.csv/.json/.xml等），不依赖Sidecar，速度更快。注意：仅适用于纯文本文件，读取Word/Excel/PPT/PDF等结构化文档请使用read_document。文件大小限制1MB。" }
     fn category(&self) -> &str { "filesystem" }
     fn parameters(&self) -> Value {
         json!({
@@ -825,7 +825,7 @@ struct FileInfoTool;
 #[async_trait]
 impl Tool for FileInfoTool {
     fn tool_name(&self) -> &str { "file_info" }
-    fn description(&self) -> &str { "获取文件元数据（大小、修改时间、类型等）" }
+    fn description(&self) -> &str { "获取文件元数据（大小、修改时间、类型等）。使用场景：在读取文件前了解文件信息、检查文件类型、确认文件是否存在且可访问。不需要读取文件内容时优先使用此工具。" }
     fn category(&self) -> &str { "filesystem" }
     fn parameters(&self) -> Value {
         json!({
@@ -968,7 +968,7 @@ struct FileExistsTool;
 #[async_trait]
 impl Tool for FileExistsTool {
     fn tool_name(&self) -> &str { "file_exists" }
-    fn description(&self) -> &str { "检查文件或目录是否存在" }
+    fn description(&self) -> &str { "检查文件或目录是否存在。使用场景：在读取或修改文件前验证路径、避免对不存在的文件执行操作。比list_directory更轻量。" }
     fn category(&self) -> &str { "filesystem" }
     fn parameters(&self) -> Value {
         json!({
@@ -1042,7 +1042,7 @@ struct DeleteFileTool;
 #[async_trait]
 impl Tool for DeleteFileTool {
     fn tool_name(&self) -> &str { "delete_file" }
-    fn description(&self) -> &str { "删除指定文件，删除前可选创建备份" }
+    fn description(&self) -> &str { "删除指定文件，删除前可选创建备份。注意：此操作不可逆，会自动触发用户确认。建议在删除前先创建版本快照。" }
     fn category(&self) -> &str { "filesystem" }
     fn parameters(&self) -> Value {
         json!({
@@ -1185,7 +1185,7 @@ struct CreateDirectoryTool;
 #[async_trait]
 impl Tool for CreateDirectoryTool {
     fn tool_name(&self) -> &str { "create_directory" }
-    fn description(&self) -> &str { "创建目录（支持递归创建）" }
+    fn description(&self) -> &str { "创建目录（支持递归创建）。使用场景：在写入文件前确保目标目录存在、组织文件结构。默认递归创建父目录。" }
     fn category(&self) -> &str { "filesystem" }
     fn parameters(&self) -> Value {
         json!({
@@ -1363,7 +1363,7 @@ struct WriteTextFileTool;
 #[async_trait]
 impl Tool for WriteTextFileTool {
     fn tool_name(&self) -> &str { "write_text_file" }
-    fn description(&self) -> &str { "写入纯文本文件内容（.txt/.md/.csv/.json 等），不依赖 Sidecar" }
+    fn description(&self) -> &str { "写入纯文本文件内容（.txt/.md/.csv/.json等），不依赖Sidecar。使用场景：创建纯文本文件、修改Markdown文件、保存JSON配置。支持追加模式。注意：仅适用于纯文本，生成结构化文档请使用generate_document。" }
     fn category(&self) -> &str { "filesystem" }
     fn parameters(&self) -> Value {
         json!({

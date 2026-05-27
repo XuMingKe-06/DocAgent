@@ -464,6 +464,12 @@ impl<R: Runtime> AgentExecutor<R> {
                     let params = serde_json::from_str(&tool_call.arguments)
                         .unwrap_or(json!({}));
 
+                    // 更新任务类型（基于已调用的工具）
+                    ctx.update_task_type_from_tool(&tool_call.name, Some(&params));
+
+                    // 记录当前执行的步骤
+                    ctx.set_current_step(format!("执行 {}", tool_call.name));
+
                     if Self::is_high_risk_skill(&tool_call.name) {
                         self.emitter.emit_tool_call(ToolCallPayload {
                             session_id: ctx.session_id.clone(),
@@ -614,9 +620,17 @@ impl<R: Runtime> AgentExecutor<R> {
                     let result_content = if result.success {
                         serde_json::to_string(&result.output).unwrap_or_default()
                     } else {
-                        format!("错误: {}", result.error.unwrap_or_default())
+                        format!("错误: {}", result.error.clone().unwrap_or_default())
                     };
                     ctx.add_tool_result(&tool_call.id, &result_content);
+
+                    // 记录已完成的步骤
+                    let step_desc = if result.success {
+                        format!("{} - 成功", tool_call.name)
+                    } else {
+                        format!("{} - 失败: {}", tool_call.name, result.error.as_deref().unwrap_or("未知错误"))
+                    };
+                    ctx.record_completed_step(step_desc);
                 }
 
                 // 每轮迭代后增量持久化，防止崩溃丢失消息

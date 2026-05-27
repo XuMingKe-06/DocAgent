@@ -275,6 +275,23 @@ async fn run_agent(
     ctx.max_iterations = max_iterations;
     ctx.workspace_path = workspace_path.to_string();
     ctx.workspace_id = workspace_id.to_string();
+
+    // 根据用户首条消息识别任务类型，动态重建系统提示词
+    let task_type = crate::services::agent::prompts::task_type::TaskType::from_user_message(prompt);
+    let tool_count = tool_registry.list_tools().len();
+    let skill_count = {
+        let reg = skill_registry.lock().await;
+        reg.list_skills().len()
+    };
+    let dynamic_prompt = AgentContext::build_system_prompt_with_task(
+        workspace_path,
+        &task_type,
+        tool_count,
+        skill_count,
+    );
+    ctx.system_prompt = dynamic_prompt;
+    log::info!("任务类型: {:?}, 系统提示词已动态构建", task_type);
+
     ctx.add_user_message(prompt);
 
     // 创建增量持久化回调，每轮迭代后自动持久化新增消息

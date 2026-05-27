@@ -94,8 +94,14 @@ pub fn register_builtin_skills(
     registry.register_builtin(Box::new(ModifyDocumentSkill::new(doc_service.clone())));
     registry.register_builtin(Box::new(ConvertFormatSkill::new(doc_service.clone())));
     registry.register_builtin(Box::new(AnalyzeDocumentSkill::new(doc_service.clone())));
-    registry.register_builtin(Box::new(BatchProcessSkill::new(doc_service)));
-    log::info!("内置技能注册完成, 共注册 6 个技能");
+    registry.register_builtin(Box::new(BatchProcessSkill::new(doc_service.clone())));
+    // 格式专用生成技能
+    registry.register_builtin(Box::new(GenerateWordDocumentSkill::new(doc_service.clone())));
+    registry.register_builtin(Box::new(GenerateExcelDocumentSkill::new(doc_service.clone())));
+    registry.register_builtin(Box::new(GeneratePptDocumentSkill::new(doc_service.clone())));
+    registry.register_builtin(Box::new(GeneratePdfDocumentSkill::new(doc_service.clone())));
+    registry.register_builtin(Box::new(GenerateMarkdownSkill::new(doc_service)));
+    log::info!("内置技能注册完成, 共注册 11 个技能");
 }
 
 /// 生成文档技能
@@ -474,7 +480,7 @@ impl ReadDocumentSkill {
 #[async_trait]
 impl Skill for ReadDocumentSkill {
     fn skill_name(&self) -> &str { "read_document" }
-    fn description(&self) -> &str { "读取结构化文档内容（Word/Excel/PPT/PDF），提取文本、表格、属性" }
+    fn description(&self) -> &str { "读取结构化文档内容（Word/Excel/PPT/PDF），提取文本、表格、属性。使用场景：查看文档内容、提取数据、了解文档结构。注意：纯文本文件请使用read_file，速度更快。" }
     fn category(&self) -> &str { "document" }
     fn is_builtin(&self) -> bool { true }
     fn supported_types(&self) -> Vec<String> {
@@ -551,7 +557,7 @@ impl ModifyDocumentSkill {
 #[async_trait]
 impl Skill for ModifyDocumentSkill {
     fn skill_name(&self) -> &str { "modify_document" }
-    fn description(&self) -> &str { "修改已有文档，支持文本替换、添加段落、添加表格等操作" }
+    fn description(&self) -> &str { "修改已有文档，支持文本替换、添加段落、添加表格等30+操作类型。注意：此操作会触发用户确认。支持Word/Excel/PPT/PDF各类操作。" }
     fn category(&self) -> &str { "document" }
     fn is_builtin(&self) -> bool { true }
     fn supported_types(&self) -> Vec<String> {
@@ -779,7 +785,7 @@ impl ConvertFormatSkill {
 #[async_trait]
 impl Skill for ConvertFormatSkill {
     fn skill_name(&self) -> &str { "convert_format" }
-    fn description(&self) -> &str { "文档格式转换，如 Word 转 PDF、Markdown 转 Word 等" }
+    fn description(&self) -> &str { "文档格式转换，如Word转PDF、Markdown转Word等。使用场景：将文档转换为其他格式、批量格式转换。支持docx/xlsx/pptx/pdf/md/txt/csv/html互转。" }
     fn category(&self) -> &str { "document" }
     fn is_builtin(&self) -> bool { true }
     fn supported_types(&self) -> Vec<String> {
@@ -875,7 +881,7 @@ impl AnalyzeDocumentSkill {
 #[async_trait]
 impl Skill for AnalyzeDocumentSkill {
     fn skill_name(&self) -> &str { "analyze_document" }
-    fn description(&self) -> &str { "分析文档结构和统计信息，如字数、段落数、标题层级等" }
+    fn description(&self) -> &str { "分析文档结构和统计信息，如字数、段落数、标题层级等。使用场景：了解文档概况、统计文档信息、检查文档结构。" }
     fn category(&self) -> &str { "document" }
     fn is_builtin(&self) -> bool { true }
     fn supported_types(&self) -> Vec<String> {
@@ -946,7 +952,7 @@ impl BatchProcessSkill {
 #[async_trait]
 impl Skill for BatchProcessSkill {
     fn skill_name(&self) -> &str { "batch_process" }
-    fn description(&self) -> &str { "批量处理多个文档，支持批量转换、修改、分析等操作" }
+    fn description(&self) -> &str { "批量处理多个文档，支持批量转换、修改、分析等操作。注意：此操作会触发用户确认。使用场景：批量格式转换、批量修改、批量分析。" }
     fn category(&self) -> &str { "document" }
     fn is_builtin(&self) -> bool { true }
     fn supported_types(&self) -> Vec<String> {
@@ -1053,5 +1059,595 @@ impl Skill for BatchProcessSkill {
             error: if all_success { None } else { Some("部分文件处理失败".to_string()) },
             duration_ms: start.elapsed().as_millis() as u64,
         }
+    }
+}
+
+/// 格式专用生成技能的共享执行逻辑
+/// 注入固定的 format 字段后，委托给 doc_service.process("generate", ...) 执行
+async fn execute_format_generate(
+    doc_service: &DocumentService,
+    format: &str,
+    params: Value,
+) -> SkillResult {
+    let start = Instant::now();
+    let output_path = params["path"].as_str().unwrap_or("");
+    let title = params["title"].as_str().unwrap_or("");
+    let workspace_root = params["workspace_root"].as_str().unwrap_or("");
+
+    let resolved_path = resolve_path(output_path, workspace_root);
+
+    let content = match params["content"].as_str() {
+        Some(s) => s.to_string(),
+        None => {
+            if !params["content"].is_null() {
+                serde_json::to_string(&params["content"]).unwrap_or_default()
+            } else {
+                String::new()
+            }
+        }
+    };
+
+    let mut sidecar_params = json!({
+        "path": resolved_path,
+        "title": title,
+        "content": content,
+    });
+
+    // 传递模板参数
+    if let Some(template) = params["template"].as_str() {
+        if !template.is_empty() {
+            sidecar_params["template"] = json!(template);
+        }
+    }
+
+    // Word 专用参数
+    if let Some(page_size) = params["pageSize"].as_str() {
+        sidecar_params["pageSize"] = json!(page_size);
+    }
+    if let Some(header) = params["header"].as_str() {
+        sidecar_params["header"] = json!(header);
+    }
+    if let Some(footer) = params["footer"].as_str() {
+        sidecar_params["footer"] = json!(footer);
+    }
+    if !params["pageNumber"].is_null() {
+        sidecar_params["pageNumber"] = json!(params["pageNumber"].as_bool().unwrap_or(true));
+    }
+    if !params["includeToc"].is_null() {
+        sidecar_params["includeToc"] = json!(params["includeToc"].as_bool().unwrap_or(false));
+    }
+    if !params["colorCoding"].is_null() {
+        sidecar_params["colorCoding"] = json!(params["colorCoding"].as_bool().unwrap_or(true));
+    }
+    if !params["bookmarks"].is_null() {
+        sidecar_params["bookmarks"] = params["bookmarks"].clone();
+    }
+    if !params["hyperlinks"].is_null() {
+        sidecar_params["hyperlinks"] = params["hyperlinks"].clone();
+    }
+
+    // Excel 专用参数
+    if !params["sheets"].is_null() {
+        sidecar_params["sheets"] = params["sheets"].clone();
+    }
+    if !params["useFormulas"].is_null() {
+        sidecar_params["useFormulas"] = json!(params["useFormulas"].as_bool().unwrap_or(true));
+    }
+    if !params["numberFormats"].is_null() {
+        sidecar_params["numberFormats"] = params["numberFormats"].clone();
+    }
+    if !params["conditionalFormats"].is_null() {
+        sidecar_params["conditionalFormats"] = params["conditionalFormats"].clone();
+    }
+
+    // PPT 专用参数
+    if !params["slides"].is_null() {
+        sidecar_params["slides"] = params["slides"].clone();
+    }
+    if let Some(color_scheme) = params["colorScheme"].as_str() {
+        sidecar_params["colorScheme"] = json!(color_scheme);
+    }
+    if !params["fonts"].is_null() {
+        sidecar_params["fonts"] = params["fonts"].clone();
+    }
+    if !params["margins"].is_null() {
+        sidecar_params["margins"] = params["margins"].clone();
+    }
+
+    // PDF 专用参数
+    if !params["subscripts"].is_null() {
+        sidecar_params["subscripts"] = params["subscripts"].clone();
+    }
+    if !params["superscripts"].is_null() {
+        sidecar_params["superscripts"] = params["superscripts"].clone();
+    }
+
+    match doc_service.process("generate", format, sidecar_params).await {
+        Ok(data) => {
+            // 生成成功后执行文档验证（可选，默认关闭）
+            let enable_validation = params["validate"].as_bool().unwrap_or(false);
+            let mut output = data;
+            if enable_validation {
+                if let Some(path) = output.get("path").and_then(|p| p.as_str()) {
+                    let validate_params = json!({
+                        "path": path,
+                    });
+                    match doc_service.process("validate", format, validate_params).await {
+                        Ok(validation_data) => {
+                            output["validation"] = validation_data;
+                        }
+                        Err(_) => {
+                            // 验证失败不影响主流程
+                        }
+                    }
+                }
+            }
+            SkillResult {
+                success: true,
+                output: Some(output),
+                error: None,
+                duration_ms: start.elapsed().as_millis() as u64,
+            }
+        }
+        Err(e) => SkillResult {
+            success: false,
+            output: None,
+            error: Some(e.message),
+            duration_ms: start.elapsed().as_millis() as u64,
+        },
+    }
+}
+
+/// 生成 Word 文档技能（格式专用）
+struct GenerateWordDocumentSkill {
+    doc_service: Arc<DocumentService>,
+}
+
+impl GenerateWordDocumentSkill {
+    fn new(doc_service: Arc<DocumentService>) -> Self {
+        Self { doc_service }
+    }
+}
+
+#[async_trait]
+impl Skill for GenerateWordDocumentSkill {
+    fn skill_name(&self) -> &str { "generate_word_document" }
+    fn description(&self) -> &str { "生成Word文档(.docx)，支持页面设置、目录、页眉页脚、书签、超链接等专业排版功能。使用场景：创建报告、合同、周报、会议纪要等正式文档。" }
+    fn category(&self) -> &str { "document" }
+    fn is_builtin(&self) -> bool { true }
+    fn supported_types(&self) -> Vec<String> {
+        vec!["docx".into()]
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "输出文件路径（相对于工作区）"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "文档标题"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "文档内容（纯文本或结构化 JSON）"
+                },
+                "template": {
+                    "type": "string",
+                    "description": "模板文件路径（可选）"
+                },
+                "pageSize": {
+                    "type": "string",
+                    "enum": ["letter", "a4"],
+                    "description": "页面尺寸（letter=US Letter, a4=A4，默认 a4）"
+                },
+                "includeToc": {
+                    "type": "boolean",
+                    "description": "是否包含目录，默认 false",
+                    "default": false
+                },
+                "header": {
+                    "type": "string",
+                    "description": "页眉文本"
+                },
+                "footer": {
+                    "type": "string",
+                    "description": "页脚文本"
+                },
+                "pageNumber": {
+                    "type": "boolean",
+                    "description": "是否显示页码，默认 true",
+                    "default": true
+                },
+                "colorCoding": {
+                    "type": "boolean",
+                    "description": "是否启用颜色编码（蓝色=输入值、黑色=公式、绿色=跨表引用、红色=外部链接），默认 true",
+                    "default": true
+                },
+                "bookmarks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": { "type": "string", "description": "书签 ID" },
+                            "text": { "type": "string", "description": "书签文本" }
+                        }
+                    },
+                    "description": "书签列表"
+                },
+                "hyperlinks": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "description": "链接显示文本" },
+                            "url": { "type": "string", "description": "外部链接 URL" },
+                            "anchor": { "type": "string", "description": "内部书签锚点" }
+                        }
+                    },
+                    "description": "超链接列表"
+                },
+                "validate": {
+                    "type": "boolean",
+                    "description": "生成后是否执行文档质量验证，默认 false",
+                    "default": false
+                }
+            },
+            "required": ["path", "content"]
+        })
+    }
+    async fn execute(&self, params: Value) -> SkillResult {
+        execute_format_generate(&self.doc_service, "docx", params).await
+    }
+}
+
+/// 生成 Excel 文档技能（格式专用）
+struct GenerateExcelDocumentSkill {
+    doc_service: Arc<DocumentService>,
+}
+
+impl GenerateExcelDocumentSkill {
+    fn new(doc_service: Arc<DocumentService>) -> Self {
+        Self { doc_service }
+    }
+}
+
+#[async_trait]
+impl Skill for GenerateExcelDocumentSkill {
+    fn skill_name(&self) -> &str { "generate_excel_document" }
+    fn description(&self) -> &str { "生成Excel文档(.xlsx)，支持公式、数字格式、条件格式、颜色编码等专业数据功能。使用场景：创建数据表、财务报表、统计表格。注意：默认使用公式而非硬编码值。" }
+    fn category(&self) -> &str { "document" }
+    fn is_builtin(&self) -> bool { true }
+    fn supported_types(&self) -> Vec<String> {
+        vec!["xlsx".into()]
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "输出文件路径（相对于工作区）"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "文档标题"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "文档内容（纯文本或结构化 JSON）"
+                },
+                "template": {
+                    "type": "string",
+                    "description": "模板文件路径（可选）"
+                },
+                "sheets": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": { "type": "string", "description": "工作表名称" },
+                            "data": { "type": "array", "description": "行数据（二维数组）" },
+                            "headers": { "type": "array", "description": "表头行" },
+                            "cells": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "row": { "type": "integer", "description": "行号" },
+                                        "col": { "type": "integer", "description": "列号" },
+                                        "value": { "description": "单元格值" },
+                                        "formula": { "type": "string", "description": "Excel 公式" }
+                                    }
+                                },
+                                "description": "单元格列表（支持公式）"
+                            },
+                            "formulas": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "row": { "type": "integer", "description": "行号" },
+                                        "col": { "type": "integer", "description": "列号" },
+                                        "formula": { "type": "string", "description": "Excel 公式" }
+                                    }
+                                },
+                                "description": "公式列表"
+                            }
+                        }
+                    },
+                    "description": "工作表列表（结构化数据，优先于 content）"
+                },
+                "useFormulas": {
+                    "type": "boolean",
+                    "description": "是否使用公式而非硬编码值，默认 true",
+                    "default": true
+                },
+                "numberFormats": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "range": { "type": "string", "description": "单元格范围，如 B2:B10" },
+                            "format": { "type": "string", "description": "格式类型: currency/percent/text/number/zero_dash/custom" }
+                        }
+                    },
+                    "description": "数字格式列表"
+                },
+                "conditionalFormats": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "range": { "type": "string", "description": "单元格范围" },
+                            "rule": { "type": "string", "description": "规则: greaterThan/lessThan/equal/between 等" },
+                            "value": { "type": "string", "description": "规则值" },
+                            "color": { "type": "string", "description": "高亮颜色（十六进制）" }
+                        }
+                    },
+                    "description": "条件格式列表"
+                },
+                "colorCoding": {
+                    "type": "boolean",
+                    "description": "是否启用颜色编码（蓝色=输入值、黑色=公式、绿色=跨表引用、红色=外部链接），默认 true",
+                    "default": true
+                },
+                "validate": {
+                    "type": "boolean",
+                    "description": "生成后是否执行文档质量验证，默认 false",
+                    "default": false
+                }
+            },
+            "required": ["path", "content"]
+        })
+    }
+    async fn execute(&self, params: Value) -> SkillResult {
+        execute_format_generate(&self.doc_service, "xlsx", params).await
+    }
+}
+
+/// 生成 PPT 文档技能（格式专用）
+struct GeneratePptDocumentSkill {
+    doc_service: Arc<DocumentService>,
+}
+
+impl GeneratePptDocumentSkill {
+    fn new(doc_service: Arc<DocumentService>) -> Self {
+        Self { doc_service }
+    }
+}
+
+#[async_trait]
+impl Skill for GeneratePptDocumentSkill {
+    fn skill_name(&self) -> &str { "generate_ppt_document" }
+    fn description(&self) -> &str { "生成PPT演示文稿(.pptx)，支持颜色方案、字体配置、边距设置等专业设计功能。使用场景：创建演示文稿、产品介绍、培训材料。" }
+    fn category(&self) -> &str { "document" }
+    fn is_builtin(&self) -> bool { true }
+    fn supported_types(&self) -> Vec<String> {
+        vec!["pptx".into()]
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "输出文件路径（相对于工作区）"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "文档标题"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "文档内容（纯文本或结构化 JSON）"
+                },
+                "template": {
+                    "type": "string",
+                    "description": "模板文件路径（可选）"
+                },
+                "slides": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": { "type": "string", "description": "幻灯片标题" },
+                            "content": { "type": "string", "description": "幻灯片内容" },
+                            "layout": { "type": "string", "description": "布局名称" }
+                        }
+                    },
+                    "description": "幻灯片列表（结构化数据，优先于 content）"
+                },
+                "colorScheme": {
+                    "type": "string",
+                    "enum": ["midnight", "forest", "coral", "ocean", "charcoal"],
+                    "description": "颜色方案: midnight(深蓝)/forest(森林)/coral(珊瑚)/ocean(海洋)/charcoal(炭灰)"
+                },
+                "fonts": {
+                    "type": "object",
+                    "properties": {
+                        "title": { "type": "string", "description": "标题字体" },
+                        "body": { "type": "string", "description": "正文字体" }
+                    },
+                    "description": "字体配置"
+                },
+                "margins": {
+                    "type": "object",
+                    "properties": {
+                        "top": { "type": "number", "description": "上边距（inch）" },
+                        "right": { "type": "number", "description": "右边距（inch）" },
+                        "bottom": { "type": "number", "description": "下边距（inch）" },
+                        "left": { "type": "number", "description": "左边距（inch）" }
+                    },
+                    "description": "边距配置（单位: inch，默认 0.5）"
+                },
+                "validate": {
+                    "type": "boolean",
+                    "description": "生成后是否执行文档质量验证，默认 false",
+                    "default": false
+                }
+            },
+            "required": ["path", "content"]
+        })
+    }
+    async fn execute(&self, params: Value) -> SkillResult {
+        execute_format_generate(&self.doc_service, "pptx", params).await
+    }
+}
+
+/// 生成 PDF 文档技能（格式专用）
+struct GeneratePdfDocumentSkill {
+    doc_service: Arc<DocumentService>,
+}
+
+impl GeneratePdfDocumentSkill {
+    fn new(doc_service: Arc<DocumentService>) -> Self {
+        Self { doc_service }
+    }
+}
+
+#[async_trait]
+impl Skill for GeneratePdfDocumentSkill {
+    fn skill_name(&self) -> &str { "generate_pdf_document" }
+    fn description(&self) -> &str { "生成PDF文档(.pdf)，支持下标上标、页面设置等专业排版功能。使用场景：创建不可编辑的正式文档、表单。" }
+    fn category(&self) -> &str { "document" }
+    fn is_builtin(&self) -> bool { true }
+    fn supported_types(&self) -> Vec<String> {
+        vec!["pdf".into()]
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "输出文件路径（相对于工作区）"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "文档标题"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "文档内容（纯文本或结构化 JSON）"
+                },
+                "template": {
+                    "type": "string",
+                    "description": "模板文件路径（可选）"
+                },
+                "pageSize": {
+                    "type": "string",
+                    "enum": ["letter", "a4"],
+                    "description": "页面尺寸（letter=US Letter, a4=A4，默认 a4）"
+                },
+                "subscripts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "description": "下标文本" },
+                            "position": { "type": "integer", "description": "插入位置" }
+                        }
+                    },
+                    "description": "下标列表，使用 <sub> XML 标签"
+                },
+                "superscripts": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string", "description": "上标文本" },
+                            "position": { "type": "integer", "description": "插入位置" }
+                        }
+                    },
+                    "description": "上标列表，使用 <super> XML 标签"
+                },
+                "validate": {
+                    "type": "boolean",
+                    "description": "生成后是否执行文档质量验证，默认 false",
+                    "default": false
+                }
+            },
+            "required": ["path", "content"]
+        })
+    }
+    async fn execute(&self, params: Value) -> SkillResult {
+        execute_format_generate(&self.doc_service, "pdf", params).await
+    }
+}
+
+/// 生成 Markdown 文档技能（格式专用）
+struct GenerateMarkdownSkill {
+    doc_service: Arc<DocumentService>,
+}
+
+impl GenerateMarkdownSkill {
+    fn new(doc_service: Arc<DocumentService>) -> Self {
+        Self { doc_service }
+    }
+}
+
+#[async_trait]
+impl Skill for GenerateMarkdownSkill {
+    fn skill_name(&self) -> &str { "generate_markdown" }
+    fn description(&self) -> &str { "生成Markdown文档(.md)，支持标题、列表、代码块等标准Markdown语法。使用场景：创建README、技术文档、笔记。" }
+    fn category(&self) -> &str { "document" }
+    fn is_builtin(&self) -> bool { true }
+    fn supported_types(&self) -> Vec<String> {
+        vec!["md".into()]
+    }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "输出文件路径（相对于工作区）"
+                },
+                "title": {
+                    "type": "string",
+                    "description": "文档标题"
+                },
+                "content": {
+                    "type": "string",
+                    "description": "文档内容（Markdown 文本）"
+                },
+                "template": {
+                    "type": "string",
+                    "description": "模板文件路径（可选）"
+                },
+                "validate": {
+                    "type": "boolean",
+                    "description": "生成后是否执行文档质量验证，默认 false",
+                    "default": false
+                }
+            },
+            "required": ["path", "content"]
+        })
+    }
+    async fn execute(&self, params: Value) -> SkillResult {
+        execute_format_generate(&self.doc_service, "md", params).await
     }
 }
