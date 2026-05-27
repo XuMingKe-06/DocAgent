@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { Icon } from "../common/Icon";
 import { useSessionStore } from "../../stores/useSessionStore";
+import { useToastStore } from "../../stores/useToastStore";
 
 interface HistoryPanelProps {
   open: boolean;
@@ -11,7 +12,8 @@ interface HistoryPanelProps {
 }
 
 export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSession }: HistoryPanelProps) {
-  const { sessions, currentSessionId, loadSessions, deleteSession, updateSessionTitle } = useSessionStore();
+  const { sessions, currentSessionId, loadSessions, deleteSession, updateSessionTitle, clearAllSessions } = useSessionStore();
+  const addToast = useToastStore((s) => s.addToast);
 
   // 正在编辑的会话ID
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -22,6 +24,9 @@ export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSe
   // 删除确认弹窗状态
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deleteConfirmTitle, setDeleteConfirmTitle] = useState("");
+
+  // 清除所有会话数据的确认弹窗状态
+  const [clearConfirm, setClearConfirm] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -130,6 +135,45 @@ export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSe
         </div>
       )}
 
+      {/* 清除所有会话数据确认弹窗 */}
+      {clearConfirm && (
+        <div className="delete-confirm-overlay" onClick={() => setClearConfirm(false)} role="dialog" aria-label="确认清除会话数据" aria-modal="true">
+          <div className="delete-confirm-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="delete-confirm-icon">
+              <Icon name="warning" size={24} />
+            </div>
+            <div className="delete-confirm-title">确认清除所有会话数据</div>
+            <div className="delete-confirm-desc">
+              确定要清除所有会话记录和消息吗？此操作不可撤销。
+            </div>
+            <div className="delete-confirm-actions">
+              <button className="btn btn-ghost" onClick={() => setClearConfirm(false)}>
+                取消
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={async () => {
+                  try {
+                    await clearAllSessions();
+                    addToast("success", "已清除所有会话数据");
+                    // 通知父组件清空工作流
+                    if (onDeleteCurrentSession) {
+                      onDeleteCurrentSession(null);
+                    }
+                  } catch (error) {
+                    console.error("[HistoryPanel] 清除会话数据失败:", error);
+                    addToast("error", "清除会话数据失败");
+                  }
+                  setClearConfirm(false);
+                }}
+              >
+                确认清除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 从右侧滑入，完全覆盖右侧栏 */}
       <div
         className={`history-panel-container fixed top-[52px] right-0 w-[300px] bottom-0 z-[150] flex flex-col transition-transform duration-300 ease-out ${
@@ -140,13 +184,25 @@ export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSe
       >
         <div className="history-header">
           <h3 className="history-title">历史会话</h3>
-          <button
-            className="history-close-btn"
-            onClick={onClose}
-            aria-label="关闭历史面板"
-          >
-            <Icon name="close" size={16} />
-          </button>
+          <div className="history-header-actions">
+            {/* 清除所有会话数据按钮 */}
+            <button
+              className="history-clear-btn"
+              title="清除所有会话数据"
+              aria-label="清除所有会话数据"
+              disabled={sessions.length === 0}
+              onClick={() => setClearConfirm(true)}
+            >
+              <Icon name="trash" size={15} />
+            </button>
+            <button
+              className="history-close-btn"
+              onClick={onClose}
+              aria-label="关闭历史面板"
+            >
+              <Icon name="close" size={16} />
+            </button>
+          </div>
         </div>
 
         <div className="history-list" role="list" aria-label="会话列表">
@@ -246,6 +302,29 @@ export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSe
           .history-close-btn:hover {
             background: var(--color-bg-hover);
             color: var(--color-text-primary);
+          }
+          .history-header-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+          }
+          .history-clear-btn {
+            width: 28px;
+            height: 28px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: var(--radius-sm);
+            color: var(--color-text-tertiary);
+            transition: all 0.15s;
+          }
+          .history-clear-btn:hover:not(:disabled) {
+            background: var(--color-error-bg);
+            color: var(--color-error);
+          }
+          .history-clear-btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
           }
           .history-list {
             flex: 1;
