@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use tauri::{AppHandle, State};
 
+use crate::db::session_repo;
 use crate::errors::{CommandError, AGENT_ALREADY_RUNNING, AGENT_NOT_RUNNING, AGENT_SESSION_NOT_FOUND};
 use crate::events::AgentEmitter;
-use crate::models::llm::ChatMessage;
+use crate::events::types;
+use crate::models::llm::{ChatMessage, ToolDefinition};
 use crate::services::agent::context::AgentContext;
 use crate::services::agent::executor::AgentExecutor;
+use crate::services::llm::router::LlmRouter;
 use crate::AppState;
 
 /// 启动 Agent 执行，在后台 spawn 一个 tokio task
@@ -114,8 +117,149 @@ pub async fn start_agent(
         }
     });
 
+    // 自动生成会话标题（后台任务，不阻塞主流程）
+    // 仅当会话标题为默认值（"新会话"开头）时才生成
+    {
+        let title_sid = session_id.clone();
+        let title_prompt = prompt.clone();
+        let title_db = Arc::clone(&state.db);
+        let title_emitter = AgentEmitter::new(app_handle.clone());
+        let title_llm_router = Arc::clone(&state.llm_router);
+
+        tokio::spawn(async move {
+            // 延迟2秒，避免与主Agent的首次LLM调用竞争
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            // 检查当前会话标题是否为默认标题，仅对默认标题的会话生成新标题
+            let should_generate = match title_db.conn() {
+                Ok(conn) => {
+                    match session_repo::get_session(&conn, &title_sid) {
+                        Ok(session) => session.title.starts_with("新会话"),
+                        Err(_) => false,
+                    }
+                }
+                Err(_) => false,
+            };
+
+            if !should_generate {
+                log::debug!("会话标题已自定义，跳过自动生成: session_id={}", title_sid);
+                return;
+            }
+
+            // 读取当前 LlmRouter 快照
+            let router_snapshot = {
+                let guard = title_llm_router.read().await;
+                Arc::clone(&guard)
+            };
+
+            // 尝试使用LLM生成标题，失败时降级为规则生成
+            let title = match generate_session_title(&title_prompt, &router_snapshot).await {
+                Ok(t) => t,
+                Err(e) => {
+                    log::warn!("LLM生成标题失败，使用降级方案: {}", e.message);
+                    generate_fallback_title(&title_prompt)
+                }
+            };
+
+            // 更新数据库中的标题
+            match title_db.conn() {
+                Ok(conn) => {
+                    if let Err(e) = session_repo::update_session_title(&conn, &title_sid, &title) {
+                        log::warn!("更新会话标题失败: session_id={}, 错误: {}", title_sid, e.message);
+                        return;
+                    }
+                }
+                Err(e) => {
+                    log::warn!("获取数据库连接失败: {}", e.message);
+                    return;
+                }
+            }
+
+            // 发射会话更新事件，通知前端标题已变更
+            let _ = title_emitter.emit_session_updated(types::SessionUpdatePayload {
+                session_id: title_sid.clone(),
+                change_type: "title_updated".to_string(),
+                data: Some(serde_json::json!({ "title": title })),
+            });
+
+            log::info!("会话标题已自动生成: session_id={}, title={}", title_sid, title);
+        });
+    }
+
     log::info!("start_agent 成功: session_id={}", session_id);
     Ok(())
+}
+
+/// 使用 LLM 自动生成会话标题
+/// 根据用户的首条消息，调用 LLM 生成简短准确的标题
+async fn generate_session_title(
+    user_message: &str,
+    llm_router: &Arc<LlmRouter>,
+) -> Result<String, CommandError> {
+    let system_prompt = "你是一个会话标题生成器。根据用户的消息，生成一个简短、准确的会话标题。要求：1) 不超过20个字；2) 直接输出标题文本；3) 不要加引号；4) 不要加任何额外说明；5) 不要使用emoji。";
+
+    let messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: system_prompt.to_string(),
+            tool_calls: None,
+            tool_call_id: None,
+            reasoning_content: None,
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: format!("请为以下对话生成标题：\n\n{}", user_message),
+            tool_calls: None,
+            tool_call_id: None,
+            reasoning_content: None,
+        },
+    ];
+
+    let tools: Vec<ToolDefinition> = vec![];
+    let response = llm_router.chat(&messages, &tools).await?;
+
+    // 从响应中提取标题
+    let title = response.choices
+        .first()
+        .map(|c| c.message.content.trim().to_string())
+        .unwrap_or_default();
+
+    if title.is_empty() {
+        return Err(CommandError::agent(2001, "LLM 返回空标题".to_string()));
+    }
+
+    // 限制标题长度（最多50个字符）
+    let title = if title.chars().count() > 50 {
+        let truncated: String = title.chars().take(25).collect();
+        format!("{}...", truncated)
+    } else {
+        title
+    };
+
+    Ok(title)
+}
+
+/// 降级方案：基于规则生成会话标题
+/// 去除常见前缀后截取用户消息的前20个字符
+fn generate_fallback_title(user_message: &str) -> String {
+    // 去除常见中文前缀（长前缀优先匹配）
+    let cleaned = user_message
+        .trim()
+        .trim_start_matches("能不能帮我")
+        .trim_start_matches("可以帮我")
+        .trim_start_matches("帮我")
+        .trim_start_matches("能不能")
+        .trim_start_matches("麻烦")
+        .trim_start_matches("请")
+        .trim();
+
+    // 截取前20个字符
+    if cleaned.chars().count() <= 20 {
+        cleaned.to_string()
+    } else {
+        let truncated: String = cleaned.chars().take(20).collect();
+        format!("{}...", truncated)
+    }
 }
 
 /// 生成会话摘要并持久化到数据库（情景记忆）

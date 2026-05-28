@@ -16,6 +16,7 @@ import { useFileTreeStore } from "./stores/useFileTreeStore";
 import { useAgent } from "./hooks/useAgent";
 import { parseError } from "./services/errorHandler";
 import { generateToolBrief } from "./utils/format";
+import { onSessionUpdated } from "./services/event";
 import * as tauriCmd from "./services/tauri";
 
 // 懒加载浮层组件：这些组件体积较大且仅在用户打开时才需要，延迟加载可减少首屏 bundle 体积
@@ -62,6 +63,7 @@ export default function App() {
 
   const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler, loadFromMessages, executionStatus } = useWorkflowStore();
   const { switchSession, loadSessions, clearCurrentSession } = useSessionStore();
+  const updateSessionTitleLocal = useSessionStore((s) => s.updateSessionTitleLocal);
   const { loadSettings, initThemeListener } = useSettingsStore();
   const settings = useSettingsStore((s) => s.settings);
   const { loadWorkspaces, currentWorkspaceId, workspaces } = useWorkspaceStore();
@@ -105,6 +107,26 @@ export default function App() {
     const cleanup = initThemeListener();
     return cleanup;
   }, []);
+
+  // 监听会话标题自动更新事件（后端生成标题后通知前端）
+  useEffect(() => {
+    let unlistenFn: (() => void) | null = null;
+
+    onSessionUpdated((payload) => {
+      if (payload.changeType === "title_updated" && payload.data) {
+        const data = payload.data as { title?: string };
+        if (data.title) {
+          updateSessionTitleLocal(payload.sessionId, data.title);
+        }
+      }
+    }).then((unlisten) => {
+      unlistenFn = unlisten;
+    });
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
+  }, [updateSessionTitleLocal]);
 
   // 应用启动后自动检查更新（延迟5秒，避免启动时阻塞）
   useEffect(() => {

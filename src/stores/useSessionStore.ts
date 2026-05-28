@@ -12,6 +12,7 @@ interface SessionState {
   clearCurrentSession: () => void;
   deleteSession: (sessionId: string) => Promise<void>;
   updateSessionTitle: (sessionId: string, title: string) => Promise<void>;
+  updateSessionTitleLocal: (sessionId: string, title: string) => void;
   loadSessions: (workspaceId?: string) => Promise<void>;
   clearAllSessions: () => Promise<number>;
 }
@@ -93,6 +94,15 @@ export const useSessionStore = create<SessionState>((set) => ({
       console.error("[SessionStore] 更新会话标题失败:", error);
       throw error;
     }
+  },
+
+  // 仅更新本地状态中的会话标题（不调用后端API，用于接收后端事件通知）
+  updateSessionTitleLocal: (sessionId, title) => {
+    set((state) => ({
+      sessions: state.sessions.map((s) =>
+        s.id === sessionId ? { ...s, title } : s
+      ),
+    }));
   },
 
   // 从后端加载会话列表
