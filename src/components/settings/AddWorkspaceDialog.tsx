@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
-import * as tauriCmd from "../../services/tauri";
+import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 
 interface AddWorkspaceDialogProps {
   onClose: () => void;
@@ -8,10 +8,13 @@ interface AddWorkspaceDialogProps {
 }
 
 export function AddWorkspaceDialog({ onClose, onSaved }: AddWorkspaceDialogProps) {
+  const { addWorkspace } = useWorkspaceStore();
   const [name, setName] = useState("");
   const [path, setPath] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /* 追踪名称是否由用户手动修改，用于判断选择新目录时是否自动更新名称 */
+  const [nameUserModified, setNameUserModified] = useState(false);
 
   const handleBrowse = async () => {
     setError(null);
@@ -23,7 +26,8 @@ export function AddWorkspaceDialog({ onClose, onSaved }: AddWorkspaceDialogProps
       });
       if (selected) {
         setPath(selected);
-        if (!name.trim()) {
+        /* 只有用户未手动修改名称时，才自动更新为新目录名 */
+        if (!nameUserModified) {
           const dirName = selected.split(/[/\\]/).filter(Boolean).pop() || "";
           setName(dirName);
         }
@@ -42,7 +46,7 @@ export function AddWorkspaceDialog({ onClose, onSaved }: AddWorkspaceDialogProps
     setSaving(true);
     setError(null);
     try {
-      await tauriCmd.addWorkspace(path.trim(), name.trim() || undefined);
+      await addWorkspace(path.trim(), name.trim() || undefined);
       onSaved();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "添加工作区失败";
@@ -92,7 +96,7 @@ export function AddWorkspaceDialog({ onClose, onSaved }: AddWorkspaceDialogProps
               className="form-input"
               placeholder="留空则使用目录名"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => { setName(e.target.value); setNameUserModified(true); }}
             />
           </div>
 

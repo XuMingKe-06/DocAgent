@@ -3,7 +3,7 @@ import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { AddWorkspaceDialog } from "./AddWorkspaceDialog";
 
 export function WorkspaceTab() {
-  const { workspaces, currentWorkspaceId, switchWorkspace, removeWorkspace, loadWorkspaces } = useWorkspaceStore();
+  const { workspaces, currentWorkspaceId, switchWorkspace, removeWorkspace } = useWorkspaceStore();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -17,15 +17,13 @@ export function WorkspaceTab() {
     try {
       await removeWorkspace(id);
       setRemovingId(null);
-      await loadWorkspaces();
     } catch (err) {
       setRemoveError(err instanceof Error ? err.message : String(err));
     }
   };
 
-  const handleAddSaved = async () => {
+  const handleAddSaved = () => {
     setShowAddDialog(false);
-    await loadWorkspaces();
   };
 
   return (

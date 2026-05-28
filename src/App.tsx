@@ -67,7 +67,7 @@ export default function App() {
   const { loadSettings, initThemeListener } = useSettingsStore();
   const settings = useSettingsStore((s) => s.settings);
   const { loadWorkspaces, currentWorkspaceId, workspaces } = useWorkspaceStore();
-  const { loadTree, initFileChangeListener, destroyFileChangeListener } = useFileTreeStore();
+  const { loadTree, clearTree, initFileChangeListener, destroyFileChangeListener } = useFileTreeStore();
 
   const {
     error: agentError,
@@ -154,12 +154,15 @@ export default function App() {
     prevAgentSessionIdRef.current = agentSessionId;
   }, [agentSessionId, loadSessions, switchSession]);
 
-  // 工作区切换时自动加载文件树
+  // 工作区切换时自动加载文件树，工作区被清空时清空文件树
   useEffect(() => {
     if (currentWorkspaceId) {
       loadTree(currentWorkspaceId);
+    } else {
+      // 当前没有工作区时，清空文件树显示
+      clearTree();
     }
-  }, [currentWorkspaceId, loadTree]);
+  }, [currentWorkspaceId, loadTree, clearTree]);
 
   // 初始化文件变更事件监听（由 store 统一管理）
   useEffect(() => {

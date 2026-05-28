@@ -38,6 +38,8 @@ interface FileTreeState {
   selectNode: (key: string) => void;
   setSearchKeyword: (keyword: string) => void;
   loadTree: (workspaceId: string) => Promise<void>;
+  /** 清空文件树数据（用于工作区被删除后） */
+  clearTree: () => void;
   /** 获取经过搜索过滤后的文件树 */
   getFilteredTree: () => FileNode[];
   /** 初始化文件变更事件监听 */
@@ -86,6 +88,17 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       console.error("[FileTreeStore] 加载文件树失败:", error);
       set({ isLoading: false });
     }
+  },
+
+  // 清空文件树数据（用于工作区被删除后）
+  clearTree: () => {
+    set({
+      treeData: [],
+      expandedKeys: new Set(),
+      selectedKey: null,
+      searchKeyword: "",
+      activeWorkspaceId: null,
+    });
   },
 
   // 获取经过搜索过滤后的文件树

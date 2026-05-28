@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::errors::{CommandError, FS_PATH_NOT_FOUND};
+use crate::errors::{CommandError, FS_PATH_NOT_FOUND, CONFIG_WORKSPACE_PATH_EXISTS};
 
 /// 工作区条目
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -60,11 +60,32 @@ pub fn save_workspaces(data_dir: &Path, config: &WorkspacesConfig) -> Result<(),
 }
 
 /// 添加工作区，返回新创建的工作区条目
+/// 如果路径已存在于其他工作区，返回错误
 pub fn add_workspace(
     config: &mut WorkspacesConfig,
     path: &str,
     name: &str,
 ) -> Result<WorkspaceEntry, CommandError> {
+    // 检查路径是否已存在于其他工作区
+    // 使用规范化的绝对路径进行比较，避免路径格式差异导致的误判
+    let normalized_path = std::fs::canonicalize(Path::new(path))
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| path.to_string());
+
+    for existing in &config.workspaces {
+        let existing_normalized = std::fs::canonicalize(Path::new(&existing.path))
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| existing.path.clone());
+        
+        if normalized_path == existing_normalized {
+            log::warn!("添加工作区失败，路径已存在: {} (已注册为: {})", path, existing.name);
+            return Err(CommandError::config(
+                CONFIG_WORKSPACE_PATH_EXISTS,
+                format!("工作区路径已存在: {} (已注册为 '{}')", path, existing.name),
+            ));
+        }
+    }
+
     let id = uuid::Uuid::new_v4().to_string();
     let created_at = chrono::Utc::now().to_rfc3339();
 

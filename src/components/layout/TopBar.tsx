@@ -1,7 +1,7 @@
 import { Icon } from "../common/Icon";
-import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { WindowControls } from "./WindowControls";
+import { WorkspaceSelector } from "./WorkspaceSelector";
 import { toggleDevtools } from "../../services/tauri";
 
 interface TopBarProps {
@@ -10,9 +10,7 @@ interface TopBarProps {
 }
 
 export function TopBar({ onToggleHistory, onNewSession }: TopBarProps) {
-  const { currentWorkspaceId, workspaces } = useWorkspaceStore();
   const { openSettings, llmProviders, activeProviderId } = useSettingsStore();
-  const currentWs = workspaces.find((w) => w.id === currentWorkspaceId);
   const activeProvider = llmProviders.find((p) => p.id === activeProviderId);
 
   const hasProvider = !!activeProvider;
@@ -31,17 +29,7 @@ export function TopBar({ onToggleHistory, onNewSession }: TopBarProps) {
   return (
     <div role="banner" data-tauri-drag-region className="flex items-center h-[52px] pr-4 border-b border-border bg-bg flex-shrink-0 gap-3 z-[100]" style={{ paddingLeft: '24px' }}>
       {/* 工作区选择器 */}
-      <div
-        role="button"
-        aria-label="选择工作区"
-        tabIndex={0}
-        className="flex items-center gap-[6px] px-[10px] py-[5px] rounded-[var(--radius-sm)] cursor-pointer transition-colors duration-150 text-[13px] font-medium text-text-secondary whitespace-nowrap hover:bg-bg-sub"
-        onClick={() => openSettings("workspace")}
-      >
-        <span className="w-2 h-2 rounded-full bg-accent" />
-        <span>{currentWs?.name ?? "选择工作区"}</span>
-        <Icon name="chevron-down" size={14} />
-      </div>
+      <WorkspaceSelector />
 
       <div className="flex-1" />
 
