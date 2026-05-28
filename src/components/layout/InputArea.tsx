@@ -168,7 +168,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
           align-items: center;
           gap: 6px;
           border: 1px solid var(--color-border-light);
-          border-radius: var(--radius-lg);
+          border-radius: 9px;
           padding: 6px 10px 6px 12px;
           transition: all 0.2s;
           background: var(--color-bg);

@@ -2,7 +2,6 @@ import { useEffect, useRef, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useWorkflowStore } from "../../stores/useWorkflowStore";
 import { WorkflowNodeRenderer } from "./WorkflowNode";
-import { Icon, type IconName } from "../common/Icon";
 
 interface WorkflowTimelineProps {
   /** 错误节点重试回调 */
@@ -68,27 +67,12 @@ export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
 
   // 空状态：展示引导性的快速开始提示
   if (nodes.length === 0) {
-    const quickStarts: { icon: IconName; text: string }[] = [
-      { icon: "doc", text: "生成一份Word文档" },
-      { icon: "xlsx", text: "创建Excel表格" },
-      { icon: "ppt", text: "制作PPT演示" },
-      { icon: "pdf", text: "转换文档格式" },
-    ];
-
     return (
       <div className="wf-empty" role="status" aria-label="空会话">
         <h3 className="wf-empty-title">开始新会话</h3>
         <p className="wf-empty-desc">
           在下方输入指令，Agent 将协助你处理文档
         </p>
-        <div className="wf-empty-quick">
-          {quickStarts.map((item) => (
-            <div key={item.text} className="wf-empty-quick-item">
-              <Icon name={item.icon} size={14} />
-              <span>{item.text}</span>
-            </div>
-          ))}
-        </div>
       </div>
     );
   }
