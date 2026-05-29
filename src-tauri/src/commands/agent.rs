@@ -595,40 +595,9 @@ async fn run_agent(
         ctx.load_history_messages(history_messages);
     }
 
-    // 加载同工作区的历史会话摘要（情景记忆）
-    // 仅在当前会话已有历史消息时（即续写已有会话）才注入，避免全新会话跨会话泄密
-    let historical_summaries_text = if is_new_session {
-        log::info!(
-            "当前会话无历史消息，跳过历史会话摘要注入: session_id={}",
-            session_id
-        );
-        String::new()
-    } else {
-        match db.conn() {
-            Ok(conn) => {
-                // 排除当前会话自身的摘要，避免循环引用
-                let summaries = crate::db::session_summary_repo::list_summaries_by_workspace(
-                    &conn, workspace_id, 3, Some(session_id),
-                );
-                if summaries.is_empty() {
-                    String::new()
-                } else {
-                    let text = summaries.iter()
-                        .map(|s| {
-                            let files = s.get_files_involved();
-                            format!(
-                                "- 用户目标: {} | 结果: {} | 涉及文件: {:?}",
-                                s.user_goal, s.result_summary, files
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    format!("\n<historical_context>\n## 近期历史会话摘要\n{}\n</historical_context>", text)
-                }
-            }
-            Err(_) => String::new(),
-        }
-    };
+    // 历史会话摘要注入已禁用
+    // 用户明确要求：新对话中不应该存在上文，每个会话应该是完全独立的
+    // 历史消息在同一会话续写时已通过上下文加载提供，无需额外注入跨会话摘要
 
     // 加载高置信度用户偏好（语义记忆）
     let user_preferences_text = {
@@ -651,17 +620,10 @@ async fn run_agent(
         }
     };
 
-    // 将历史摘要和用户偏好追加到系统提示词
-    if !historical_summaries_text.is_empty() || !user_preferences_text.is_empty() {
-        let mut prompt_extension = String::new();
-        if !historical_summaries_text.is_empty() {
-            prompt_extension.push_str(&historical_summaries_text);
-        }
-        if !user_preferences_text.is_empty() {
-            prompt_extension.push_str(&user_preferences_text);
-        }
-        ctx.system_prompt = format!("{}{}", ctx.system_prompt, prompt_extension);
-        log::info!("已注入历史摘要和用户偏好到系统提示词, session_id={}", session_id);
+    // 将用户偏好追加到系统提示词（历史会话摘要已禁用注入）
+    if !user_preferences_text.is_empty() {
+        ctx.system_prompt = format!("{}{}", ctx.system_prompt, user_preferences_text);
+        log::info!("已注入用户偏好到系统提示词, session_id={}", session_id);
     }
 
     ctx.add_user_message(prompt);

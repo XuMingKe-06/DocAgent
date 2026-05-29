@@ -423,6 +423,36 @@ impl<R: Runtime> AgentExecutor<R> {
                 .collect::<Vec<_>>();
             collected_tool_calls.sort_by_key(|tc| tc.index);
 
+            // 后处理：检测并清理 LLM content 中的 XML 标签和特殊 token
+            // DeepSeek R1 等推理模型可能将 <agent-reasoning> 和 <tool-call>
+            // 标签作为 content 输出（而非通过标准 tool_calls 字段），需要：
+            // 1. 过滤 <agent-reasoning> 等内部推理标签（不应显示给用户）
+            // 2. 从 <tool-call> 标签中提取工具调用信息（补充到 tool_calls）
+            // 3. 清理特殊 token（如 <｜tool▁call▁end｜><｜tool▁calls▁end｜>）
+            let (cleaned_content, extracted_tool_calls) = Self::sanitize_llm_content(&assistant_content);
+
+            if cleaned_content != assistant_content {
+                log::info!(
+                    "已清理 LLM content 中的 XML 标签/特殊 token, session_id={}, 原始长度={}, 清理后长度={}",
+                    ctx.session_id, assistant_content.len(), cleaned_content.len()
+                );
+                assistant_content = cleaned_content;
+            }
+
+            // 将从 content 中提取的 tool_calls 合并到已有列表
+            for tc in extracted_tool_calls {
+                let next_index = collected_tool_calls.iter()
+                    .map(|t| t.index)
+                    .max()
+                    .map_or(0, |max_idx| max_idx + 1);
+                collected_tool_calls.push(LlmToolCall {
+                    index: next_index,
+                    id: format!("extracted_{}", uuid::Uuid::new_v4()),
+                    name: tc.name,
+                    arguments: tc.arguments,
+                });
+            }
+
             if !reasoning_content.is_empty() {
                 self.emitter.emit_deep_thinking(DeepThinkingPayload {
                     session_id: ctx.session_id.clone(),
@@ -433,15 +463,15 @@ impl<R: Runtime> AgentExecutor<R> {
                 }).ok();
             }
 
-            if !assistant_content.is_empty() {
-                self.emitter.emit_content(ContentPayload {
-                    session_id: ctx.session_id.clone(),
-                    message_id: message_id.clone(),
-                    content: String::new(),
-                    is_streaming: false,
-                    iteration: Some(current_iteration),
-                }).ok();
-            }
+            // 发送流式结束事件，携带清理后的完整内容
+            // 即使内容为空也需要发送，以便前端清除之前流式显示的 XML 标签片段
+            self.emitter.emit_content(ContentPayload {
+                session_id: ctx.session_id.clone(),
+                message_id: message_id.clone(),
+                content: assistant_content.clone(),
+                is_streaming: false,
+                iteration: Some(current_iteration),
+            }).ok();
 
             // 检查是否有 tool_calls
             let has_tool_calls = !collected_tool_calls.is_empty();
@@ -744,5 +774,230 @@ impl<R: Runtime> AgentExecutor<R> {
         }).ok();
 
         Err(error)
+    }
+}
+
+/// 从 LLM content 中提取的工具调用信息
+struct ExtractedToolCall {
+    name: String,
+    arguments: String,
+}
+
+impl<R: Runtime> AgentExecutor<R> {
+    /// 清理 LLM content 中的 XML 标签和特殊 token，并尝试提取嵌入的 tool_call
+    ///
+    /// DeepSeek R1 等推理模型有时会将 <agent-reasoning> 和 <tool-call> 标签
+    /// 作为 content 字段输出（而非通过标准 tool_calls 字段），此方法负责：
+    /// 1. 过滤 <agent-reasoning> 等内部推理标签（不应显示给用户）
+    /// 2. 从 <tool-call> 标签中提取工具调用信息
+    /// 3. 清理特殊 token（如 <｜tool▁call▁end｜><｜tool▁calls▁end｜>）
+    ///
+    /// 返回 (清理后的 content, 提取的 tool_calls 列表)
+    fn sanitize_llm_content(content: &str) -> (String, Vec<ExtractedToolCall>) {
+        let mut result = content.to_string();
+        let mut extracted_calls = Vec::new();
+
+        // 步骤1：提取并移除 <tool-call> 标签中的工具调用
+        // 匹配格式：<tool-call>\n```json\n{...}\n```\n</tool-call>
+        // 或 <tool-call>\n```json\n{"function": "xxx", "arguments": {...}}\n```\n</tool-call>
+        result = Self::extract_and_remove_tool_call_tags(&result, &mut extracted_calls);
+
+        // 步骤2：移除 <agent-reasoning> 标签及其内容
+        result = Self::remove_xml_tag_with_content(&result, "agent-reasoning");
+
+        // 步骤3：移除其他已知的 LLM 内部标签
+        for tag in &["think", "reflection", "scratchpad"] {
+            result = Self::remove_xml_tag_with_content(&result, tag);
+        }
+
+        // 步骤4：清理特殊 token
+        // DeepSeek R1 模型可能输出 <｜tool▁call▁end｜> 和 <｜tool▁calls▁end｜> 等特殊 token
+        result = Self::remove_special_tokens(&result);
+
+        // 步骤5：清理残留空行（连续多个空行压缩为最多两个换行）
+        while result.contains("\n\n\n") {
+            result = result.replace("\n\n\n", "\n\n");
+        }
+
+        // 步骤6：去除首尾空白
+        result = result.trim().to_string();
+
+        (result, extracted_calls)
+    }
+
+    /// 提取并移除 <tool-call>...</tool-call> 块，从中解析出工具调用信息
+    /// 也处理未闭合的 <tool-call> 标签（DeepSeek R1 等模型可能用特殊 token 替代闭合标签）
+    fn extract_and_remove_tool_call_tags(content: &str, extracted: &mut Vec<ExtractedToolCall>) -> String {
+        let open_tag = "<tool-call>";
+        let close_tag = "</tool-call>";
+        let mut result = content.to_string();
+        let mut search_from = 0;
+
+        loop {
+            let start = match result[search_from..].find(open_tag) {
+                Some(pos) => search_from + pos,
+                None => break,
+            };
+
+            // 尝试查找闭合标签
+            let (block_end, content_end) = if let Some(pos) = result[start + open_tag.len()..].find(close_tag) {
+                // 正常闭合：block_end 是闭合标签结束位置，content_end 是内容结束位置
+                (start + open_tag.len() + pos + close_tag.len(), start + open_tag.len() + pos)
+            } else {
+                // 未闭合：尝试在特殊 token 之前截断内容
+                // DeepSeek R1 可能输出 <tool-call>...<｜tool▁call▁end｜> 而非 <tool-call>...</tool-call>
+                let after_open = &result[start + open_tag.len()..];
+                let (content_end_offset, block_end_offset) = Self::find_tool_call_content_end(after_open);
+                (start + open_tag.len() + block_end_offset, start + open_tag.len() + content_end_offset)
+            };
+
+            // 提取块内容
+            let block_content = result[start + open_tag.len()..content_end].to_string();
+            // 从代码块中提取 JSON 内容
+            if let Some(json_str) = Self::extract_json_from_code_block(&block_content) {
+                if let Some(tc) = Self::parse_tool_call_json(&json_str) {
+                    extracted.push(tc);
+                }
+            }
+
+            result = format!("{}{}", &result[..start], &result[block_end..]);
+            search_from = start.min(result.len());
+        }
+
+        result
+    }
+
+    /// 在未闭合的 <tool-call> 内容中查找有效内容的结束位置
+    /// 返回 (content_end, block_end)，其中：
+    /// - content_end: 有效内容（JSON）的结束位置
+    /// - block_end: 整个块的结束位置（包含特殊 token），用于从原文中移除
+    fn find_tool_call_content_end(content: &str) -> (usize, usize) {
+        // 已知的特殊 token 模式（用于定位内容边界）
+        let special_patterns: &[&str] = &[
+            "<｜tool▁call▁end｜>",
+            "<｜tool▁calls▁end｜>",
+            "<|tool_call_end|>",
+            "<|tool_calls_end|>",
+        ];
+
+        // 查找最早出现的特殊 token
+        let (special_pos, special_end) = special_patterns.iter()
+            .filter_map(|pattern| {
+                content.find(pattern).map(|pos| (pos, pos + pattern.len()))
+            })
+            .min_by_key(|(pos, _)| *pos)
+            .unwrap_or((content.len(), content.len()));
+
+        // 查找代码块结束标记（第二个 ```）
+        let code_block_content_end = content.find("```")
+            .map(|first_pos| {
+                content[first_pos + 3..].find("```")
+                    .map(|p| first_pos + 3 + p)
+                    .unwrap_or(first_pos + 3)
+            })
+            .unwrap_or(content.len());
+
+        // content_end 取特殊token位置和代码块内容结束位置的较小值
+        let content_end = special_pos.min(code_block_content_end);
+        // block_end 取特殊token结束位置和代码块内容结束位置的较大值
+        let block_end = special_end.max(code_block_content_end);
+
+        (content_end, block_end)
+    }
+
+    /// 从代码块内容中提取 JSON 字符串（去除 ```json 和 ``` 包裹）
+    fn extract_json_from_code_block(block_content: &str) -> Option<String> {
+        let trimmed = block_content.trim();
+        if !trimmed.starts_with("```") {
+            return Some(trimmed.to_string());
+        }
+        let after_open = trimmed[3..].trim();
+        let inner = if let Some(stripped) = after_open.strip_prefix("json") {
+            stripped.trim()
+        } else {
+            after_open
+        };
+        if let Some(close_pos) = inner.rfind("```") {
+            Some(inner[..close_pos].to_string())
+        } else {
+            Some(inner.to_string())
+        }
+    }
+
+    /// 移除指定名称的 XML 标签及其内容
+    fn remove_xml_tag_with_content(content: &str, tag_name: &str) -> String {
+        let open_tag = format!("<{}>", tag_name);
+        let close_tag = format!("</{}>", tag_name);
+        let mut result = content.to_string();
+
+        while let Some(start) = result.find(&open_tag) {
+            let end = match result[start + open_tag.len()..].find(&close_tag) {
+                Some(pos) => start + open_tag.len() + pos + close_tag.len(),
+                None => start + open_tag.len(),
+            };
+            result = format!("{}{}", &result[..start], &result[end..]);
+        }
+
+        result
+    }
+
+    /// 清理特殊 token（全角和半角版本）
+    /// 仅移除已知的 LLM 特殊 token 模式，避免误匹配正常文本
+    fn remove_special_tokens(content: &str) -> String {
+        let mut result = content.to_string();
+        // 已知的 DeepSeek R1 特殊 token 模式（全角版本）
+        let fullwidth_patterns = &[
+            "<｜tool▁calls▁begin｜>",
+            "<｜tool▁call▁begin｜>",
+            "<｜tool▁call▁end｜>",
+            "<｜tool▁calls▁end｜>",
+        ];
+        for pattern in fullwidth_patterns {
+            result = result.replace(*pattern, "");
+        }
+        // 已知的半角版本特殊 token
+        let halfwidth_patterns = &[
+            "<|tool_calls_begin|>",
+            "<|tool_call_begin|>",
+            "<|tool_call_end|>",
+            "<|tool_calls_end|>",
+        ];
+        for pattern in halfwidth_patterns {
+            result = result.replace(*pattern, "");
+        }
+        result
+    }
+
+    /// 从 JSON 字符串中解析工具调用信息
+    /// 支持两种格式：
+    /// 1. {"function": "tool_name", "arguments": {...}}
+    /// 2. {"name": "tool_name", "arguments": {...}}
+    fn parse_tool_call_json(json_str: &str) -> Option<ExtractedToolCall> {
+        let value: serde_json::Value = serde_json::from_str(json_str).ok()?;
+
+        // 尝试从 "function" 或 "name" 字段获取工具名称
+        let name = value.get("function")
+            .or_else(|| value.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("").to_string();
+
+        if name.is_empty() {
+            return None;
+        }
+
+        // 获取 arguments，可能是对象或字符串
+        let arguments = if let Some(args) = value.get("arguments") {
+            if args.is_object() {
+                serde_json::to_string(args).unwrap_or_default()
+            } else if args.is_string() {
+                args.as_str().unwrap_or("").to_string()
+            } else {
+                serde_json::to_string(args).unwrap_or_default()
+            }
+        } else {
+            "{}".to_string()
+        };
+
+        Some(ExtractedToolCall { name, arguments })
     }
 }

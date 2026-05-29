@@ -115,6 +115,11 @@ export function useAgent(): UseAgentReturn {
           if (contentEpochRef.current !== lastContentEpochRef.current) {
             lastContentEpochRef.current = contentEpochRef.current;
             setContent(payload.content);
+          } else if (!payload.isStreaming) {
+            // 流式结束时收到完整内容（后端可能清理了 XML 标签/特殊 token），
+            // 用完整内容替换之前累积的流式内容
+            // 即使内容为空也要替换，因为之前的流式内容可能是 XML 标签片段
+            setContent(payload.content);
           } else {
             setContent((prev) => prev + payload.content);
           }

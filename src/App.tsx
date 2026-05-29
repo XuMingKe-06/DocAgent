@@ -256,17 +256,19 @@ export default function App() {
   }, [lastToolResult, updateNode]);
 
   useEffect(() => {
-    if (content) {
+    if (content !== undefined && content !== null) {
       if (thinkingNodeIdRef.current) {
         updateNode(thinkingNodeIdRef.current, { status: "completed" });
         thinkingNodeIdRef.current = null;
       }
       if (!streamingNodeIdRef.current) {
-        const nodeId = addNode("content", {
-          content,
-          isStreaming: true,
-        }, "running", currentIterationRef.current);
-        streamingNodeIdRef.current = nodeId;
+        if (content) {
+          const nodeId = addNode("content", {
+            content,
+            isStreaming: true,
+          }, "running", currentIterationRef.current);
+          streamingNodeIdRef.current = nodeId;
+        }
       } else {
         updateNode(streamingNodeIdRef.current, {
           data: { content, isStreaming: true },
