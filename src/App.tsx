@@ -226,7 +226,11 @@ export default function App() {
   useEffect(() => {
     if (currentToolCall) {
       if (thinkingNodeIdRef.current) {
-        updateNode(thinkingNodeIdRef.current, { status: "completed" });
+        const node = useWorkflowStore.getState().nodes.find((n) => n.id === thinkingNodeIdRef.current);
+        updateNode(thinkingNodeIdRef.current, {
+          status: "completed",
+          data: { content: (node?.data as { content: string })?.content ?? "", duration: 0, isStreaming: false },
+        });
         thinkingNodeIdRef.current = null;
       }
       if (streamingNodeIdRef.current) {
@@ -267,7 +271,11 @@ export default function App() {
   useEffect(() => {
     if (content !== undefined && content !== null) {
       if (thinkingNodeIdRef.current) {
-        updateNode(thinkingNodeIdRef.current, { status: "completed" });
+        const node = useWorkflowStore.getState().nodes.find((n) => n.id === thinkingNodeIdRef.current);
+        updateNode(thinkingNodeIdRef.current, {
+          status: "completed",
+          data: { content: (node?.data as { content: string })?.content ?? "", duration: 0, isStreaming: false },
+        });
         thinkingNodeIdRef.current = null;
       }
       if (!streamingNodeIdRef.current) {
@@ -289,7 +297,11 @@ export default function App() {
   useEffect(() => {
     if (doneResult) {
       if (thinkingNodeIdRef.current) {
-        updateNode(thinkingNodeIdRef.current, { status: "completed" });
+        const node = useWorkflowStore.getState().nodes.find((n) => n.id === thinkingNodeIdRef.current);
+        updateNode(thinkingNodeIdRef.current, {
+          status: "completed",
+          data: { content: (node?.data as { content: string })?.content ?? "", duration: 0, isStreaming: false },
+        });
         thinkingNodeIdRef.current = null;
       }
       if (streamingNodeIdRef.current) {
@@ -312,7 +324,11 @@ export default function App() {
   useEffect(() => {
     if (agentError) {
       if (thinkingNodeIdRef.current) {
-        updateNode(thinkingNodeIdRef.current, { status: "failed" });
+        const node = useWorkflowStore.getState().nodes.find((n) => n.id === thinkingNodeIdRef.current);
+        updateNode(thinkingNodeIdRef.current, {
+          status: "failed",
+          data: { content: (node?.data as { content: string })?.content ?? "", duration: 0, isStreaming: false },
+        });
         thinkingNodeIdRef.current = null;
       }
       if (streamingNodeIdRef.current) {
@@ -335,7 +351,11 @@ export default function App() {
   useEffect(() => {
     if (isStopped) {
       if (thinkingNodeIdRef.current) {
-        updateNode(thinkingNodeIdRef.current, { status: "cancelled" });
+        const node = useWorkflowStore.getState().nodes.find((n) => n.id === thinkingNodeIdRef.current);
+        updateNode(thinkingNodeIdRef.current, {
+          status: "cancelled",
+          data: { content: (node?.data as { content: string })?.content ?? "", duration: 0, isStreaming: false },
+        });
         thinkingNodeIdRef.current = null;
       }
       if (streamingNodeIdRef.current) {
