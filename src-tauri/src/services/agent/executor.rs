@@ -403,6 +403,9 @@ impl<R: Runtime> AgentExecutor<R> {
             // 跟踪流式响应的 finish_reason，用于检测响应截断（DeepSeek R1 等推理模型
             // 的 reasoning_content 可能耗尽 max_tokens 导致实际响应被截断）
             let mut finish_reason: Option<String> = None;
+            // 追踪已在流式阶段提前发射 agent:tool_call 事件的工具索引
+            // 避免 LLM 流式输出工具参数期间前端无反馈，也避免流结束后重复发射
+            let mut early_announced_tool_indices: HashSet<u32> = HashSet::new();
 
             while let Some(chunk_result) = stream_rx.recv().await {
                 match chunk_result {
@@ -434,9 +437,9 @@ impl<R: Runtime> AgentExecutor<R> {
                             // 收集 tool_calls 增量，按 index 合并
                             if let Some(delta_tool_calls) = choice.delta.tool_calls {
                                 for tc in delta_tool_calls {
-                                    match collected_tool_calls.get_mut(&tc.index) {
+                                    let tc_index = tc.index;
+                                    match collected_tool_calls.get_mut(&tc_index) {
                                         Some(existing) => {
-                                            // 后续增量：追加 name 和 arguments
                                             if !tc.id.is_empty() {
                                                 existing.id = tc.id;
                                             }
@@ -444,8 +447,29 @@ impl<R: Runtime> AgentExecutor<R> {
                                             existing.arguments.push_str(&tc.arguments);
                                         }
                                         None => {
-                                            // 首次出现的 index，直接插入
-                                            collected_tool_calls.insert(tc.index, tc);
+                                            collected_tool_calls.insert(tc_index, tc);
+                                        }
+                                    }
+
+                                    // 尽早发射 tool_call 事件：当检测到工具名称时立即通知前端
+                                    // 避免 LLM 流式输出工具参数（可能很长）期间前端无反馈
+                                    if !early_announced_tool_indices.contains(&tc_index) {
+                                        if let Some(collected) = collected_tool_calls.get(&tc_index) {
+                                            if !collected.name.is_empty() {
+                                                early_announced_tool_indices.insert(tc_index);
+                                                let early_params = serde_json::from_str(&collected.arguments).unwrap_or(json!({}));
+                                                log::debug!(
+                                                    "流式阶段提前发射 tool_call 事件, session_id={}, tool={}, call_id={}",
+                                                    ctx.session_id, collected.name, collected.id
+                                                );
+                                                self.emitter.emit_tool_call(ToolCallPayload {
+                                                    session_id: ctx.session_id.clone(),
+                                                    call_id: if collected.id.is_empty() { format!("streaming_{}", tc_index) } else { collected.id.clone() },
+                                                    tool_name: collected.name.clone(),
+                                                    arguments: early_params,
+                                                    iteration: Some(current_iteration),
+                                                }).ok();
+                                            }
                                         }
                                     }
                                 }
@@ -506,6 +530,9 @@ impl<R: Runtime> AgentExecutor<R> {
                 });
             }
 
+            // 检查是否有 tool_calls（需在发射最终 content 事件前判断）
+            let has_tool_calls = !collected_tool_calls.is_empty();
+
             if !reasoning_content.is_empty() {
                 self.emitter.emit_deep_thinking(DeepThinkingPayload {
                     session_id: ctx.session_id.clone(),
@@ -517,17 +544,19 @@ impl<R: Runtime> AgentExecutor<R> {
             }
 
             // 发送流式结束事件，携带清理后的完整内容
-            // 即使内容为空也需要发送，以便前端清除之前流式显示的 XML 标签片段
-            self.emitter.emit_content(ContentPayload {
-                session_id: ctx.session_id.clone(),
-                message_id: message_id.clone(),
-                content: assistant_content.clone(),
-                is_streaming: false,
-                iteration: Some(current_iteration),
-            }).ok();
-
-            // 检查是否有 tool_calls
-            let has_tool_calls = !collected_tool_calls.is_empty();
+            // 当存在 tool_calls 时不发射此事件，因为：
+            // 1. 流式阶段已通过增量 content 事件将文本内容展示给用户
+            // 2. 此时再发射 is_streaming=false 的完整内容会触发前端创建新的内容节点，导致重复显示
+            // 3. 无 tool_calls 时仍需发射，以便前端清除之前流式显示的 XML 标签片段
+            if !has_tool_calls {
+                self.emitter.emit_content(ContentPayload {
+                    session_id: ctx.session_id.clone(),
+                    message_id: message_id.clone(),
+                    content: assistant_content.clone(),
+                    is_streaming: false,
+                    iteration: Some(current_iteration),
+                }).ok();
+            }
             // 检测响应是否因 max_tokens 不足被截断（DeepSeek R1 等推理模型的
             // reasoning_content 可能消耗大量 token 导致实际响应被截断）
             let is_truncated = finish_reason.as_deref() == Some("length");
@@ -575,6 +604,8 @@ impl<R: Runtime> AgentExecutor<R> {
                     ctx.set_current_step(format!("执行 {}", tool_call.name));
 
                     if Self::is_high_risk_skill(&tool_call.name, &params) {
+                        // 高风险技能：始终发射 tool_call 事件
+                        // 若流式阶段已提前发射，此处携带完整参数重新发射，前端通过 callId 去重更新
                         self.emitter.emit_tool_call(ToolCallPayload {
                             session_id: ctx.session_id.clone(),
                             call_id: tool_call.id.clone(),
@@ -606,6 +637,8 @@ impl<R: Runtime> AgentExecutor<R> {
                             continue;
                         }
                     } else {
+                        // 普通工具：始终发射 tool_call 事件
+                        // 若流式阶段已提前发射，此处携带完整参数重新发射，前端通过 callId 去重更新
                         self.emitter.emit_tool_call(ToolCallPayload {
                             session_id: ctx.session_id.clone(),
                             call_id: tool_call.id.clone(),

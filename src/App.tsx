@@ -17,6 +17,7 @@ import { useFileTreeStore } from "./stores/useFileTreeStore";
 import { useAgent } from "./hooks/useAgent";
 import { parseError } from "./services/errorHandler";
 import { generateToolBrief } from "./utils/format";
+import type { ToolNodeData } from "./types";
 import { onSessionUpdated } from "./services/event";
 import * as tauriCmd from "./services/tauri";
 
@@ -225,41 +226,70 @@ export default function App() {
 
   useEffect(() => {
     if (currentToolCall) {
-      if (thinkingNodeIdRef.current) {
-        const node = useWorkflowStore.getState().nodes.find((n) => n.id === thinkingNodeIdRef.current);
-        updateNode(thinkingNodeIdRef.current, {
-          status: "completed",
-          data: { content: (node?.data as { content: string })?.content ?? "", duration: 0, isStreaming: false },
+      // 通过 callId 去重：如果已存在相同 callId 的工具节点，仅更新参数和简要描述
+      // 这处理了流式阶段提前发射（参数不完整）后，流式结束重新发射（参数完整）的场景
+      // 重新发射时不应关闭 thinking/streaming 节点，因为它们可能属于下一迭代
+      const existingToolNode = currentToolCall.callId
+        ? useWorkflowStore.getState().nodes.find(
+            (n) => n.type === "tool" && (n.data as ToolNodeData).callId === currentToolCall.callId
+          )
+        : undefined;
+
+      if (existingToolNode) {
+        updateNode(existingToolNode.id, {
+          data: {
+            ...existingToolNode.data,
+            toolName: currentToolCall.toolName,
+            input: currentToolCall.arguments,
+            briefDescription: generateToolBrief(currentToolCall.toolName, currentToolCall.arguments),
+          } as ToolNodeData,
         });
-        thinkingNodeIdRef.current = null;
+      } else {
+        // 首次收到 tool_call：关闭当前 thinking/streaming 节点，创建工具节点
+        if (thinkingNodeIdRef.current) {
+          const node = useWorkflowStore.getState().nodes.find((n) => n.id === thinkingNodeIdRef.current);
+          updateNode(thinkingNodeIdRef.current, {
+            status: "completed",
+            data: { content: (node?.data as { content: string })?.content ?? "", duration: 0, isStreaming: false },
+          });
+          thinkingNodeIdRef.current = null;
+        }
+        if (streamingNodeIdRef.current) {
+          const node = useWorkflowStore.getState().nodes.find((n) => n.id === streamingNodeIdRef.current);
+          updateNode(streamingNodeIdRef.current, {
+            status: "completed",
+            data: { content: (node?.data as { content: string })?.content ?? "", isStreaming: false },
+          });
+          streamingNodeIdRef.current = null;
+        }
+        const toolIteration = currentToolCall.iteration ?? currentIterationRef.current;
+        addNode("tool", {
+          toolName: currentToolCall.toolName,
+          input: currentToolCall.arguments,
+          briefDescription: generateToolBrief(currentToolCall.toolName, currentToolCall.arguments),
+          callId: currentToolCall.callId,
+        }, "running", toolIteration);
       }
-      if (streamingNodeIdRef.current) {
-        const node = useWorkflowStore.getState().nodes.find((n) => n.id === streamingNodeIdRef.current);
-        updateNode(streamingNodeIdRef.current, {
-          status: "completed",
-          data: { content: (node?.data as { content: string })?.content ?? "", isStreaming: false },
-        });
-        streamingNodeIdRef.current = null;
-      }
-      // 优先使用 ToolCallPayload 中的 iteration，否则使用当前追踪的 iteration
-      const toolIteration = currentToolCall.iteration ?? currentIterationRef.current;
-      addNode("tool", {
-        toolName: currentToolCall.toolName,
-        input: currentToolCall.arguments,
-        briefDescription: generateToolBrief(currentToolCall.toolName, currentToolCall.arguments),
-      }, "running", toolIteration);
     }
   }, [currentToolCall, addNode, updateNode]);
 
   useEffect(() => {
     if (lastToolResult) {
-      const toolNodes = useWorkflowStore.getState().nodes.filter((n) => n.type === "tool" && n.status === "running");
-      if (toolNodes.length > 0) {
-        const lastToolNode = toolNodes[toolNodes.length - 1];
-        updateNode(lastToolNode.id, {
+      // 优先通过 callId 精确匹配工具节点，回退到最后一个 running 的工具节点
+      const toolNode = lastToolResult.callId
+        ? useWorkflowStore.getState().nodes.find(
+            (n) => n.type === "tool" && n.status === "running" && (n.data as ToolNodeData).callId === lastToolResult.callId
+          )
+        : undefined;
+      const targetNode = toolNode ?? (() => {
+        const runningTools = useWorkflowStore.getState().nodes.filter((n) => n.type === "tool" && n.status === "running");
+        return runningTools.length > 0 ? runningTools[runningTools.length - 1] : undefined;
+      })();
+      if (targetNode) {
+        updateNode(targetNode.id, {
           status: lastToolResult.success ? "completed" : "failed",
           data: {
-            ...lastToolNode.data,
+            ...targetNode.data,
             success: lastToolResult.success,
             error: lastToolResult.success ? undefined : (lastToolResult.error || "执行失败"),
           },

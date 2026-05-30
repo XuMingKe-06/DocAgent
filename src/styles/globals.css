@@ -682,6 +682,55 @@
   font-size: 12px;
 }
 
+/* 工具执行中状态 - 圆点背景色 */
+.wf-tool-dot-running {
+  background: var(--color-accent-light, rgba(59, 130, 246, 0.12));
+  color: var(--color-accent, #3b82f6);
+}
+
+/* 工具执行中状态 - 旋转加载图标 */
+.wf-tool-spinner {
+  width: 12px;
+  height: 12px;
+  animation: wf-tool-spin 1s linear infinite;
+}
+
+.wf-tool-spinner-track {
+  opacity: 0.25;
+}
+
+.wf-tool-spinner-arc {
+  opacity: 0.75;
+}
+
+@keyframes wf-tool-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 工具执行中状态 - 提示文字 */
+.wf-tool-status-running {
+  color: var(--color-accent, #3b82f6);
+  font-size: 12px;
+  margin-left: 4px;
+  animation: wf-tool-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes wf-tool-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* 工具执行中状态 - 整行轻微脉冲效果 */
+.wf-tool-running {
+  animation: wf-node-in 0.2s ease-out, wf-tool-row-pulse 2s ease-in-out infinite;
+}
+
+@keyframes wf-tool-row-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
 .wf-confirm-flat {
   padding: 2px 0;
   flex: 1;

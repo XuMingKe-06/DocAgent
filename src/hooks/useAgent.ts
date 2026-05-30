@@ -78,6 +78,8 @@ export function useAgent(): UseAgentReturn {
   const deepThinkingContentRef = useRef("");
   // 追踪上一次深度思考的 step，用于检测新一轮思考开始
   const lastDeepThinkingStepRef = useRef(0);
+  // 追踪当前迭代已发射的 tool_call callId，避免流式阶段提前发射后流式结束重新发射时 epoch 多余递增
+  const seenToolCallIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -126,7 +128,12 @@ export function useAgent(): UseAgentReturn {
         }),
         onAgentToolCall((payload) => {
           if (payload.sessionId !== sessionIdRef.current) return;
-          contentEpochRef.current += 1;
+          // 仅在首次见到此 callId 时递增 epoch，避免流式结束后重新发射导致多余递增
+          // 多余递增会使下一个迭代的 content 事件被错误地替换而非追加
+          if (!seenToolCallIdsRef.current.has(payload.callId)) {
+            seenToolCallIdsRef.current.add(payload.callId);
+            contentEpochRef.current += 1;
+          }
           setCurrentToolCall(payload);
         }),
         onAgentToolResult((payload) => {
@@ -192,6 +199,7 @@ export function useAgent(): UseAgentReturn {
       lastContentEpochRef.current = contentEpochRef.current;
       deepThinkingContentRef.current = "";
       lastDeepThinkingStepRef.current = 0;
+      seenToolCallIdsRef.current.clear();
 
       try {
         let sid = sessionId;

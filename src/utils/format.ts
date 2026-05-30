@@ -31,7 +31,11 @@ export function generateToolBrief(toolName: string, input: Record<string, unknow
     case "xlsx_skill":
     case "pptx_skill":
     case "pdf_skill":
-      return `${action} ${format} ${f("path") || "文档"}`;
+      // 流式阶段提前发射时参数可能为空，此时只显示格式名称
+      if (action) {
+        return `${action} ${format} ${f("path") || "文档"}`;
+      }
+      return `${format} ${f("path") || "文档"}`;
     case "delete_file":
       return `删除 ${f("path") || "文件"}`;
     case "search_files":

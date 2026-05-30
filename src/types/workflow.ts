@@ -32,6 +32,8 @@ export interface ToolNodeData {
   toolName: string;
   briefDescription: string;
   input: Record<string, unknown>;
+  /** 工具调用的唯一标识，用于流式阶段提前发射后去重更新 */
+  callId?: string;
   success?: boolean;
   error?: string;
 }

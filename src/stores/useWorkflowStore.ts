@@ -160,6 +160,7 @@ export const useWorkflowStore = create<WorkflowState>((set) => ({
                 toolName: tc.name,
                 briefDescription: generateToolBrief(tc.name, (tc.arguments ?? {}) as Record<string, unknown>),
                 input: (tc.arguments ?? {}) as Record<string, unknown>,
+                callId: tc.id,
                 success: true,
               },
               isExpanded: true,
