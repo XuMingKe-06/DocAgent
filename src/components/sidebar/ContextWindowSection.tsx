@@ -72,6 +72,14 @@ export function ContextWindowSection() {
     return (
       <SidebarSection title="上下文窗口">
         <div className="cw-grid" role="region" aria-label="上下文窗口使用信息">
+          {/* 总计行 */}
+          <div className="cw-token-total">
+            <span className="cw-total-label">已使用 / 总窗口</span>
+            <span className="cw-total-value" style={compressionStatus === "critical" ? { color: "var(--color-error)" } : undefined}>
+              {formatTokens(totalUsedTokens)} / {formatTokens(contextWindow)}
+            </span>
+          </div>
+
           {/* 总览分段横条：系统/工具/历史/响应 四色横条 */}
           <div className="cw-bar-container">
             <div className="cw-bar-track">
@@ -105,14 +113,6 @@ export function ContextWindowSection() {
             ))}
           </div>
 
-          {/* 总计行 */}
-          <div className="cw-token-total">
-            <span className="cw-total-label">已使用 / 总窗口</span>
-            <span className="cw-total-value" style={compressionStatus === "critical" ? { color: "var(--color-error)" } : undefined}>
-              {formatTokens(totalUsedTokens)} / {formatTokens(contextWindow)}
-            </span>
-          </div>
-
           {/* 压缩状态标记 */}
           {(compressionStatus === "compressed" || compressionStatus === "critical") && (
             <div className="cw-compressed-badge">
@@ -135,6 +135,12 @@ export function ContextWindowSection() {
   return (
     <SidebarSection title="上下文窗口">
       <div className="cw-grid">
+        {/* 窗口大小 */}
+        <div className="cw-token-total">
+          <span className="cw-total-label">总窗口</span>
+          <span className="cw-total-value">{formatTokens(defaultProvider!.contextWindow)} tokens</span>
+        </div>
+
         {/* 空状态总览横条 */}
         <div className="cw-bar-container">
           <div className="cw-bar-track">
@@ -146,12 +152,6 @@ export function ContextWindowSection() {
             </span>
             <span className="cw-usage-percent">0%</span>
           </div>
-        </div>
-
-        {/* 窗口大小 */}
-        <div className="cw-token-total">
-          <span className="cw-total-label">总窗口</span>
-          <span className="cw-total-value">{formatTokens(defaultProvider!.contextWindow)} tokens</span>
         </div>
       </div>
 
