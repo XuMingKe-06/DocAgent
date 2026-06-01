@@ -211,11 +211,13 @@ impl AgentContext {
     }
 
     /// 添加带附件的用户消息
+    /// supports_vision: 当前模型是否支持视觉，影响图片附件的摘要标注
     pub fn add_user_message_with_attachments(
         &mut self,
         content: &str,
         content_parts: Option<Vec<crate::models::llm::ContentPart>>,
         attachments: &[crate::models::message::AttachmentMeta],
+        supports_vision: bool,
     ) {
         // 首条用户消息时识别任务类型
         if self.completed_steps.is_empty() && self.task_type == TaskType::Unknown {
@@ -224,7 +226,14 @@ impl AgentContext {
         }
         // 构建附件摘要文本，追加到 content 中
         let attachment_summary = if !attachments.is_empty() {
-            let names: Vec<&str> = attachments.iter().map(|a| a.name.as_str()).collect();
+            let names: Vec<String> = attachments.iter().map(|a| {
+                // 不支持视觉时，图片附件标注为不可见
+                if !supports_vision && matches!(a.attachment_type, crate::models::message::AttachmentType::Image) {
+                    format!("{} (图片-模型不可见)", a.name)
+                } else {
+                    a.name.clone()
+                }
+            }).collect();
             format!("\n\n[附件: {}]", names.join(", "))
         } else {
             String::new()

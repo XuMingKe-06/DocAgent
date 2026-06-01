@@ -7,7 +7,7 @@ use crate::db::session_repo;
 use crate::errors::{CommandError, AGENT_ALREADY_RUNNING, AGENT_NOT_RUNNING, AGENT_SESSION_NOT_FOUND};
 use crate::events::AgentEmitter;
 use crate::events::types;
-use crate::models::llm::{ChatMessage, ToolDefinition};
+use crate::models::llm::{ChatMessage, ContentPart, ToolDefinition};
 use crate::models::message::AttachmentMeta;
 use crate::services::agent::context::AgentContext;
 use crate::services::agent::executor::AgentExecutor;
@@ -822,23 +822,68 @@ async fn run_agent(
     // 检查是否包含图片附件，用于幻觉防护
     let has_image_attachments = AttachmentService::has_image_attachments(attachments);
 
-    ctx.add_user_message_with_attachments(prompt, content_parts, attachments);
+    // 获取当前 Provider 是否支持视觉（提前获取，用于数据层面处理）
+    let supports_vision = if has_image_attachments {
+        let providers = llm_router.list_providers();
+        providers.iter().find(|p| p.is_default)
+            .map(|p| p.supports_vision)
+            .unwrap_or(false)
+    } else {
+        true
+    };
 
-    // 如果有图片附件但当前 Provider 不支持视觉，注入幻觉防护提示
+    // 如果有图片附件但当前 Provider 不支持视觉，在数据层面剥离图片 ContentPart
+    let filtered_content_parts = if !supports_vision && has_image_attachments {
+        let mut text_parts = Vec::new();
+        let mut image_count = 0usize;
+
+        if let Some(ref parts) = content_parts {
+            for part in parts {
+                match part {
+                    ContentPart::Image { .. } => {
+                        image_count += 1;
+                    }
+                    ContentPart::Text { text } => {
+                        text_parts.push(ContentPart::Text { text: text.clone() });
+                    }
+                }
+            }
+        }
+
+        if image_count > 0 {
+            log::warn!(
+                "当前 Provider 不支持视觉，已剥离 {} 张图片 ContentPart: session_id={}",
+                image_count, session_id
+            );
+
+            // 剥离图片后，如果剩余的只有文本 ContentPart，将它们合并回 content 字段，
+            // 设 content_parts 为 None，避免适配器使用 content_parts 而忽略 content 字段
+            // （用户实际输入的文字在 content 字段中，content_parts 非空时会被适配器优先使用）
+            if text_parts.is_empty() {
+                None
+            } else {
+                // 仍有文档/文本附件的 ContentPart，保留它们
+                Some(text_parts)
+            }
+        } else {
+            // content_parts 中没有图片（可能图片解析失败），保持原样
+            content_parts.clone()
+        }
+    } else {
+        content_parts.clone()
+    };
+
+    ctx.add_user_message_with_attachments(prompt, filtered_content_parts, attachments, supports_vision);
+
+    // 如果有图片附件，注入视觉相关提示词
     if has_image_attachments {
-        let supports_vision = {
-            let providers = llm_router.list_providers();
-            providers.iter().find(|p| p.is_default)
-                .map(|p| p.supports_vision)
-                .unwrap_or(false)
-        };
         if !supports_vision {
-            // 注入视觉约束提示
+            // 不支持视觉：注入增强版约束提示词
             ctx.system_prompt = format!(
-                "{}\n\n<vision_constraint>\n注意：当前模型不支持图片理解。虽然用户发送了图片附件，但你无法看到图片内容。请不要假装能够看到或分析图片。如果用户的问题依赖图片内容，请诚实地告知你无法查看图片，并建议用户用文字描述图片内容。\n</vision_constraint>",
+                "{}\n\n<vision_constraint>\n当前模型不支持图片理解功能。用户发送了图片附件，但图片数据已被系统移除，你无法看到图片内容。\n\n你必须遵守以下规则：\n1. 绝对不要假装能够看到或分析图片内容\n2. 绝对不要基于图片附件猜测用户意图或编造图片内容\n3. 绝对不要因为无法查看图片而自行执行与用户请求无关的操作（如生成文档、调用工具等）\n4. 如果用户的问题依赖图片内容，直接告知你无法查看图片，并建议用户用文字描述图片内容\n5. 如果用户只是发送了图片但没有文字说明，询问用户希望你对图片做什么\n</vision_constraint>",
                 ctx.system_prompt
             );
-            log::warn!("当前 Provider 不支持视觉，已注入幻觉防护提示: session_id={}", session_id);
+            log::warn!("当前 Provider 不支持视觉，已注入增强版幻觉防护提示: session_id={}", session_id);
         } else {
             // 支持视觉时注入图片可见性提示
             ctx.system_prompt = format!(
