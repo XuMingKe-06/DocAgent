@@ -1,6 +1,10 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useWorkflowStore } from "../../stores/useWorkflowStore";
+import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
+import { Icon } from "../common/Icon";
+import { AddWorkspaceDialog } from "../settings/AddWorkspaceDialog";
 import { WorkflowNodeRenderer } from "./WorkflowNode";
 
 interface WorkflowTimelineProps {
@@ -11,10 +15,14 @@ interface WorkflowTimelineProps {
 /**
  * 工作流时间线组件（虚拟滚动版）
  * 使用 @tanstack/react-virtual 实现虚拟滚动，仅渲染可视区域内的节点
- * 支持动态高度测量和自动滚动到底部
+ * 支持动态高度测量和自动滚动
  */
 export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
   const { nodes } = useWorkflowStore();
+  const currentWorkspaceId = useWorkspaceStore((s) => s.currentWorkspaceId);
+  const llmProviders = useSettingsStore((s) => s.llmProviders);
+  const openSettings = useSettingsStore((s) => s.openSettings);
+  const [showAddWorkspace, setShowAddWorkspace] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   // 追踪是否应自动滚动（用户未手动上滚时自动跟随）
   const autoScrollRef = useRef(true);
@@ -65,14 +73,75 @@ export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
     }
   }, [nodes.length, virtualizer]);
 
-  // 空状态：展示引导性的快速开始提示
+  // 空状态：根据工作区和服务商配置情况展示引导提示
+  const hasWorkspace = !!currentWorkspaceId;
+  const hasProvider = llmProviders.length > 0;
+
   if (nodes.length === 0) {
     return (
       <div className="wf-empty" role="status" aria-label="空会话">
-        <h3 className="wf-empty-title">开始新会话</h3>
-        <p className="wf-empty-desc">
-          在下方输入指令，Agent 将协助你处理文档
-        </p>
+        {/* 无工作区时的引导 */}
+        {!hasWorkspace && (
+          <div className="wf-empty-guide">
+            <div className="wf-empty-guide-icon">
+              <Icon name="folder" size={28} />
+            </div>
+            <h3 className="wf-empty-title">选择工作区</h3>
+            <p className="wf-empty-desc">
+              请先选择一个文件夹作为工作区，Agent 将在该目录下操作文档
+            </p>
+            <button
+              className="wf-empty-guide-btn"
+              onClick={() => setShowAddWorkspace(true)}
+            >
+              <Icon name="folder-plus" size={16} />
+              <span>添加工作区</span>
+            </button>
+          </div>
+        )}
+
+        {/* 两个引导区域之间的分割线 */}
+        {!hasWorkspace && !hasProvider && (
+          <div className="wf-empty-divider" />
+        )}
+
+        {/* 无服务商时的引导 */}
+        {!hasProvider && (
+          <div className="wf-empty-guide">
+            <div className="wf-empty-guide-icon wf-empty-guide-icon-secondary">
+              <Icon name="settings" size={28} />
+            </div>
+            <h3 className="wf-empty-title">配置服务商</h3>
+            <p className="wf-empty-desc">
+              请先配置大模型服务商，Agent 需要通过大模型来理解和处理你的指令
+            </p>
+            <button
+              className="wf-empty-guide-btn wf-empty-guide-btn-secondary"
+              onClick={() => openSettings("llm")}
+            >
+              <Icon name="plus" size={16} />
+              <span>添加服务商</span>
+            </button>
+          </div>
+        )}
+
+        {/* 工作区和服务商均已就绪，显示默认开始提示 */}
+        {hasWorkspace && hasProvider && (
+          <>
+            <h3 className="wf-empty-title">开始新会话</h3>
+            <p className="wf-empty-desc">
+              在下方输入指令，Agent 将协助你处理文档
+            </p>
+          </>
+        )}
+
+        {/* 添加工作区弹窗 */}
+        {showAddWorkspace && (
+          <AddWorkspaceDialog
+            onClose={() => setShowAddWorkspace(false)}
+            onSaved={() => setShowAddWorkspace(false)}
+          />
+        )}
       </div>
     );
   }
