@@ -152,9 +152,10 @@ export function useAgent(): UseAgentReturn {
           // 忽略同一迭代中 tool_call 之后的残余 content 事件
           // 当 tool_call 事件已到达（前端已关闭 streaming 节点），
           // 但流式阶段还有残余的 content chunk 到达时，这些 chunk 属于已结束的迭代，
-          // 不应创建新的 content 节点（否则会出现灰色小圆点但无文字内容的空节点）
-          if (payload.isStreaming
-            && lastToolCallIterationRef.current !== null
+          // 不应创建新的 content 节点（否则会出现重复内容节点）
+          // 同时过滤 isStreaming=false 的残余事件（后端有 tool_calls 时不应该发射，
+          // 但作为防御性编程仍然过滤）
+          if (lastToolCallIterationRef.current !== null
             && payload.iteration !== undefined
             && payload.iteration <= lastToolCallIterationRef.current) {
             return;
@@ -391,6 +392,8 @@ export function useAgent(): UseAgentReturn {
     setNetworkRetry(initialState.networkRetry);
     deepThinkingContentRef.current = "";
     lastDeepThinkingStepRef.current = 0;
+    seenToolCallIdsRef.current.clear();
+    lastToolCallIterationRef.current = null;
   }, []);
 
   const setSessionIdExternal = useCallback((id: string) => {

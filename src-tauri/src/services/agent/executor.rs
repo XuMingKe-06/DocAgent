@@ -474,13 +474,18 @@ impl<R: Runtime> AgentExecutor<R> {
 
                             if let Some(content) = &choice.delta.content {
                                 assistant_content.push_str(content);
-                                self.emitter.emit_content(ContentPayload {
-                                    session_id: ctx.session_id.clone(),
-                                    message_id: message_id.clone(),
-                                    content: content.clone(),
-                                    is_streaming: true,
-                                    iteration: Some(current_iteration),
-                                }).ok();
+                                // 当已检测到 tool_call 时，不再发射 content 事件
+                                // 避免前端在 tool_call 关闭 streaming 节点后，
+                                // 又收到残余 content 创建新的重复节点
+                                if early_announced_tool_indices.is_empty() {
+                                    self.emitter.emit_content(ContentPayload {
+                                        session_id: ctx.session_id.clone(),
+                                        message_id: message_id.clone(),
+                                        content: content.clone(),
+                                        is_streaming: true,
+                                        iteration: Some(current_iteration),
+                                    }).ok();
+                                }
                             }
 
                             // 收集 tool_calls 增量，按 index 合并

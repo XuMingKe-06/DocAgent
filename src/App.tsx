@@ -96,6 +96,9 @@ export default function App() {
   const confirmNodeIdRef = useRef<string | null>(null);
   // 追踪当前迭代轮次，用于将 iteration 传递给 content/tool 节点
   const currentIterationRef = useRef<number | undefined>(undefined);
+  // 追踪最后一次 tool_call 的迭代轮次，用于过滤残余 content 事件
+  // 当 tool_call 已关闭 streaming 节点后，同一迭代的残余 content 不应创建新节点
+  const lastToolCallIterationRef = useRef<number | null>(null);
   // 追踪 Agent 上一次的 sessionId，用于检测新会话创建
   const prevAgentSessionIdRef = useRef<string | null>(null);
   // 保存最后一次发送的文本，用于错误重试
@@ -228,6 +231,10 @@ export default function App() {
 
   useEffect(() => {
     if (currentToolCall) {
+      // 记录最后一次 tool_call 的迭代轮次
+      if (currentToolCall.iteration !== undefined) {
+        lastToolCallIterationRef.current = currentToolCall.iteration;
+      }
       // 通过 callId 去重：如果已存在相同 callId 的工具节点，仅更新参数和简要描述
       // 这处理了流式阶段提前发射（参数不完整）后，流式结束重新发射（参数完整）的场景
       // 重新发射时不应关闭 thinking/streaming 节点，因为它们可能属于下一迭代
@@ -311,7 +318,13 @@ export default function App() {
         thinkingNodeIdRef.current = null;
       }
       if (!streamingNodeIdRef.current) {
-        if (content) {
+        // 防御性检查：当 streaming 节点已被 tool_call 关闭时，
+        // 如果当前迭代的 content 属于已有 tool_call 的同一迭代，不创建新节点
+        // 这防止了 tool_call 之后的残余 content 创建重复节点
+        if (content
+          && !(lastToolCallIterationRef.current !== null
+            && currentIterationRef.current !== undefined
+            && currentIterationRef.current <= lastToolCallIterationRef.current)) {
           const nodeId = addNode("content", {
             content,
             isStreaming: true,
@@ -350,6 +363,7 @@ export default function App() {
         });
       }
       setExecutionStatus("completed");
+      lastToolCallIterationRef.current = null;
     }
   }, [doneResult, addNode, updateNode, setExecutionStatus]);
 
@@ -458,6 +472,7 @@ export default function App() {
     streamingNodeIdRef.current = null;
     thinkingNodeIdRef.current = null;
     confirmNodeIdRef.current = null;
+    lastToolCallIterationRef.current = null;
 
     lastSentTextRef.current = text;
 
@@ -525,6 +540,7 @@ export default function App() {
     thinkingNodeIdRef.current = null;
     confirmNodeIdRef.current = null;
     currentIterationRef.current = undefined;
+    lastToolCallIterationRef.current = null;
   }, [clearNodes, resetAgent, clearCurrentSession, clearContextUsage, saveSessionToCache, currentSessionId, setTodos]);
 
   // 切换到历史会话：先保存当前会话状态到缓存，再从缓存或后端恢复目标会话
@@ -545,6 +561,7 @@ export default function App() {
     thinkingNodeIdRef.current = null;
     confirmNodeIdRef.current = null;
     currentIterationRef.current = undefined;
+    lastToolCallIterationRef.current = null;
 
     // 更新 session store 中的当前会话 ID
     switchSession(sessionId);
@@ -601,6 +618,7 @@ export default function App() {
     thinkingNodeIdRef.current = null;
     confirmNodeIdRef.current = null;
     currentIterationRef.current = undefined;
+    lastToolCallIterationRef.current = null;
 
     if (nextSessionId) {
       // 切换到下一个可用会话
@@ -727,6 +745,7 @@ export default function App() {
     streamingNodeIdRef.current = null;
     thinkingNodeIdRef.current = null;
     confirmNodeIdRef.current = null;
+    lastToolCallIterationRef.current = null;
 
     addNode("user", { content: text, attachments: [] }); // 重试时不带附件
     setExecutionStatus("running");
