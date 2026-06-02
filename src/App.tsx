@@ -49,6 +49,7 @@ export default function App() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [updateNotificationOpen, setUpdateNotificationOpen] = useState(false);
+  const [sidebarVisible, setSidebarVisible] = useState(true);
 
   // 文档预览状态
   const [previewTitle, setPreviewTitle] = useState("");
@@ -761,17 +762,39 @@ export default function App() {
   // 监听键盘快捷键
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // 忽略在输入框/文本域中的快捷键（除了特定的全局快捷键）
+      const target = e.target as HTMLElement;
+      const isInputFocused = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable;
+
       if (e.key === "Escape") {
         setPreviewOpen(false);
       }
+      // Ctrl+N: 新建会话
       if (e.ctrlKey && e.key === "n") {
         e.preventDefault();
         handleNewSession();
       }
+      // Ctrl+W: 关闭当前会话
+      if (e.ctrlKey && e.key === "w") {
+        e.preventDefault();
+        if (currentSessionId) {
+          handleNewSession();
+        }
+      }
+      // Ctrl+B: 切换侧边栏
+      if (e.ctrlKey && e.key === "b") {
+        e.preventDefault();
+        setSidebarVisible((prev) => !prev);
+      }
+      // Ctrl+,: 打开设置（仅在非输入框聚焦时生效）
+      if (e.ctrlKey && e.key === "," && !isInputFocused) {
+        e.preventDefault();
+        useSettingsStore.getState().openSettings();
+      }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [handleNewSession]);
+  }, [handleNewSession, currentSessionId]);
 
   return (
     <div className="app flex flex-col h-screen">
@@ -794,6 +817,7 @@ export default function App() {
             }
           />
         }
+        sidebarVisible={sidebarVisible}
         sidebar={
           <>
             <FileTreeSection onOpenPreview={handleOpenPreview} onOpenVersionHistory={handleOpenVersionHistory} />

@@ -5,7 +5,7 @@ import type { ExecutionStatus } from "../../types/workflow";
 import type { AttachmentMeta } from "../../types/session";
 import { useAttachmentStore, inferAttachmentType, SUPPORTED_ATTACHMENT_MIME_TYPES, MAX_IMAGE_SIZE, MAX_TEXT_SIZE, MAX_DOCUMENT_SIZE, MAX_ATTACHMENT_COUNT, hasImageAttachments } from "../../stores/useAttachmentStore";
 import { useSettingsStore } from "../../stores/useSettingsStore";
-import { formatSize } from "../../utils/format";
+import { formatSize, matchesShortcut, deriveNewLineShortcut } from "../../utils/format";
 
 interface InputAreaProps {
   onSend: (text: string) => void;
@@ -33,6 +33,12 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
   const supportsVision = currentProvider?.supportsVision ?? false;
   const showVisionWarning = hasImageAttachments(attachments) && !supportsVision;
 
+  // 从设置中读取快捷键配置
+  const sendMessageShortcut = useSettingsStore((s) => s.settings.shortcuts.sendMessage);
+  const quickPromptShortcut = useSettingsStore((s) => s.settings.shortcuts.quickPrompt);
+  const toggleSidebarShortcut = useSettingsStore((s) => s.settings.shortcuts.toggleSidebar);
+  const newLineShortcut = deriveNewLineShortcut(sendMessageShortcut);
+
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if ((!trimmed && attachments.length === 0) || disabled) return;
@@ -46,12 +52,13 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      // 发送消息快捷键（从设置中读取）
+      if (matchesShortcut(e, sendMessageShortcut)) {
         e.preventDefault();
         handleSend();
       }
-      // Ctrl+/ 快捷键打开模板选择器
-      if (e.ctrlKey && e.key === "/") {
+      // 快速提示快捷键（从设置中读取）
+      if (matchesShortcut(e, quickPromptShortcut)) {
         e.preventDefault();
         setPickerOpen((prev) => !prev);
       }
@@ -61,7 +68,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
         setPickerOpen(false);
       }
     },
-    [handleSend, pickerOpen]
+    [handleSend, pickerOpen, sendMessageShortcut, quickPromptShortcut]
   );
 
   const handleInput = useCallback(() => {
@@ -263,7 +270,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
           <div className="input-actions-right">
             <button
               className={`input-btn ${pickerOpen ? "input-btn-active" : ""}`}
-              title="Prompt模板 (Ctrl+/)"
+              title={`Prompt模板 (${quickPromptShortcut})`}
               aria-label="Prompt模板"
               aria-expanded={pickerOpen}
               onClick={() => setPickerOpen(!pickerOpen)}
@@ -320,16 +327,19 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
 
       <div className="shortcut-hints" aria-hidden="true">
         <span>
-          <kbd className="kbd">Enter</kbd> 发送
+          <kbd className="kbd">{sendMessageShortcut}</kbd> 发送
         </span>
         <span>
-          <kbd className="kbd">Shift + Enter</kbd> 换行
+          <kbd className="kbd">{newLineShortcut}</kbd> 换行
         </span>
         <span>
-          <kbd className="kbd">Ctrl + /</kbd> 模板
+          <kbd className="kbd">{quickPromptShortcut}</kbd> 模板
         </span>
         <span>
           <kbd className="kbd">Ctrl + V</kbd> 粘贴图片
+        </span>
+        <span>
+          <kbd className="kbd">{toggleSidebarShortcut}</kbd> 侧边栏
         </span>
       </div>
 

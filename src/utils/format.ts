@@ -1,3 +1,49 @@
+// 快捷键组合解析结果
+export interface ParsedShortcut {
+  key: string;
+  ctrlKey: boolean;
+  shiftKey: boolean;
+  altKey: boolean;
+}
+
+// 解析快捷键字符串（如 "Ctrl+Enter"、"Enter"、"Shift+Enter"）为结构化对象
+export function parseShortcut(shortcut: string): ParsedShortcut {
+  const parts = shortcut.split("+").map((p) => p.trim());
+  return {
+    ctrlKey: parts.includes("Ctrl"),
+    shiftKey: parts.includes("Shift"),
+    altKey: parts.includes("Alt"),
+    key: parts[parts.length - 1] || "",
+  };
+}
+
+// 判断键盘事件是否匹配快捷键组合
+export function matchesShortcut(e: { key: string; ctrlKey: boolean; shiftKey: boolean; altKey: boolean }, shortcut: string): boolean {
+  const parsed = parseShortcut(shortcut);
+  return (
+    e.key.toLowerCase() === parsed.key.toLowerCase() &&
+    e.ctrlKey === parsed.ctrlKey &&
+    e.shiftKey === parsed.shiftKey &&
+    e.altKey === parsed.altKey
+  );
+}
+
+// 根据 sendMessage 快捷键推导换行快捷键
+// 如果发送是 Enter，则换行是 Shift+Enter；如果发送是 Ctrl+Enter，则换行是 Enter
+export function deriveNewLineShortcut(sendShortcut: string): string {
+  const parsed = parseShortcut(sendShortcut);
+  if (parsed.key.toLowerCase() === "enter") {
+    if (parsed.ctrlKey) {
+      return "Enter";
+    }
+    if (parsed.shiftKey) {
+      return "Enter";
+    }
+    return "Shift+Enter";
+  }
+  return "Enter";
+}
+
 export function formatTime(ts: number): string {
   const d = new Date(ts);
   return d.toTimeString().slice(0, 8);

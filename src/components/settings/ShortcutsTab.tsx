@@ -27,7 +27,7 @@ export function ShortcutsTab() {
       shortcuts: {
         newSession: "Ctrl+N",
         closeSession: "Ctrl+W",
-        sendMessage: "Ctrl+Enter",
+        sendMessage: "Enter",
         toggleSidebar: "Ctrl+B",
         quickPrompt: "Ctrl+/",
       },

@@ -1,13 +1,10 @@
-// 快捷键列表
-const shortcutList = [
-  { keys: "Ctrl+N", desc: "新建会话" },
-  { keys: "Ctrl+W", desc: "关闭当前会话" },
-  { keys: "Ctrl+Enter", desc: "发送消息" },
-  { keys: "Shift+Enter", desc: "输入框换行" },
-  { keys: "Ctrl+B", desc: "切换侧边栏" },
-  { keys: "Ctrl+/", desc: "快速提示" },
+import { useSettingsStore } from "../../stores/useSettingsStore";
+import { deriveNewLineShortcut } from "../../utils/format";
+
+// 固定的快捷键（非可配置项）
+const fixedShortcuts = [
   { keys: "Escape", desc: "关闭弹窗/取消操作" },
-  { keys: "Ctrl+,", desc: "打开设置" },
+  { keys: "Ctrl+V", desc: "粘贴图片" },
 ];
 
 // 常见问题
@@ -51,6 +48,19 @@ const builtinSkills = [
 ];
 
 export function HelpTab() {
+  const shortcuts = useSettingsStore((s) => s.settings.shortcuts);
+  const newLineShortcut = deriveNewLineShortcut(shortcuts.sendMessage);
+
+  // 从设置中动态生成可配置快捷键列表
+  const configurableShortcuts = [
+    { keys: shortcuts.newSession, desc: "新建会话" },
+    { keys: shortcuts.closeSession, desc: "关闭当前会话" },
+    { keys: shortcuts.sendMessage, desc: "发送消息" },
+    { keys: newLineShortcut, desc: "输入框换行" },
+    { keys: shortcuts.toggleSidebar, desc: "切换侧边栏" },
+    { keys: shortcuts.quickPrompt, desc: "快速提示" },
+    { keys: "Ctrl+,", desc: "打开设置" },
+  ];
 
   return (
     <div>
@@ -90,8 +100,14 @@ export function HelpTab() {
           <span className="section-title">快捷键</span>
         </div>
         <div className="help-shortcut-list">
-          {shortcutList.map((item) => (
-            <div key={item.keys} className="help-shortcut-row">
+          {configurableShortcuts.map((item) => (
+            <div key={item.desc} className="help-shortcut-row">
+              <span className="help-shortcut-desc">{item.desc}</span>
+              <kbd className="help-shortcut-key">{item.keys}</kbd>
+            </div>
+          ))}
+          {fixedShortcuts.map((item) => (
+            <div key={item.desc} className="help-shortcut-row">
               <span className="help-shortcut-desc">{item.desc}</span>
               <kbd className="help-shortcut-key">{item.keys}</kbd>
             </div>

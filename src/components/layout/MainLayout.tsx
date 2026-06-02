@@ -3,9 +3,10 @@ import type { ReactNode } from "react";
 interface MainLayoutProps {
   mainArea: ReactNode;
   sidebar: ReactNode;
+  sidebarVisible?: boolean;
 }
 
-export function MainLayout({ mainArea, sidebar }: MainLayoutProps) {
+export function MainLayout({ mainArea, sidebar, sidebarVisible = true }: MainLayoutProps) {
   return (
     <div className="flex flex-1 overflow-hidden">
       {/* 主界面区 */}
@@ -14,11 +15,13 @@ export function MainLayout({ mainArea, sidebar }: MainLayoutProps) {
       </div>
 
       {/* 右侧栏 */}
-      <div className="sb-container">
-        <div className="sb-scroll">
-          {sidebar}
+      {sidebarVisible && (
+        <div className="sb-container">
+          <div className="sb-scroll">
+            {sidebar}
+          </div>
         </div>
-      </div>
+      )}
 
       <style>{`
         .sb-container {
@@ -29,6 +32,7 @@ export function MainLayout({ mainArea, sidebar }: MainLayoutProps) {
           background: var(--color-bg-sub);
           overflow: hidden;
           position: relative;
+          transition: width 0.2s ease, opacity 0.2s ease;
         }
         .sb-scroll {
           flex: 1;

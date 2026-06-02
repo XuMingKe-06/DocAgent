@@ -146,7 +146,7 @@ fn default_close_session() -> String {
     "Ctrl+W".to_string()
 }
 fn default_send_message() -> String {
-    "Ctrl+Enter".to_string()
+    "Enter".to_string()
 }
 fn default_toggle_sidebar() -> String {
     "Ctrl+B".to_string()
