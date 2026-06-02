@@ -102,6 +102,14 @@ export interface StoppedPayload {
   reason: string;
 }
 
+/** Agent 网络重试事件 */
+export interface NetworkRetryPayload {
+  sessionId: string;
+  attempt: number;
+  maxAttempts: number;
+  reason: string;
+}
+
 // ================================================================
 // 系统事件 Payload 类型
 // ================================================================
@@ -126,6 +134,14 @@ export interface FileChangePayload {
   changeType: string;
   path: string;
   oldPath?: string;
+}
+
+/** 网络状态变化事件 */
+export interface NetworkChangePayload {
+  /** 当前网络状态: "online" | "offline" */
+  status: string;
+  /** 之前的网络状态 */
+  previousStatus: string;
 }
 
 // ================================================================
@@ -245,6 +261,15 @@ export function onAgentStopped(
   });
 }
 
+/** 监听 Agent 网络重试事件 */
+export function onAgentNetworkRetry(
+  handler: (payload: NetworkRetryPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<NetworkRetryPayload>("agent:network_retry", (event) => {
+    handler(event.payload);
+  });
+}
+
 // ================================================================
 // 系统事件监听函数
 // ================================================================
@@ -272,6 +297,15 @@ export function onFileChange(
   handler: (payload: FileChangePayload) => void,
 ): Promise<UnlistenFn> {
   return listen<FileChangePayload>("file:change", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** 监听网络状态变化事件 */
+export function onSystemNetworkChange(
+  handler: (payload: NetworkChangePayload) => void,
+): Promise<UnlistenFn> {
+  return listen<NetworkChangePayload>("system:network_change", (event) => {
     handler(event.payload);
   });
 }

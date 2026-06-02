@@ -9,6 +9,7 @@ import { AgentInfoSection } from "./components/sidebar/AgentInfoSection";
 import { ContextWindowSection } from "./components/sidebar/ContextWindowSection";
 import { TodoSection } from "./components/sidebar/TodoSection";
 import { ToastContainer } from "./components/common/Toast";
+import { NetworkStatusBanner } from "./components/layout/NetworkStatusBanner";
 import { useWorkflowStore } from "./stores/useWorkflowStore";
 import { useAttachmentStore } from "./stores/useAttachmentStore";
 import { useSessionStore } from "./stores/useSessionStore";
@@ -81,6 +82,7 @@ export default function App() {
     pendingConfirmation,
     doneResult,
     isStopped,
+    networkRetry,
     sendMessage,
     stopAgent,
     confirmOperation,
@@ -350,6 +352,26 @@ export default function App() {
       setExecutionStatus("completed");
     }
   }, [doneResult, addNode, updateNode, setExecutionStatus]);
+
+  // 网络重试状态：在工作流中显示"正在重连"提示
+  useEffect(() => {
+    if (!networkRetry) return;
+    // 将当前 thinking 节点更新为重连状态，或创建新的 thinking 节点
+    const retryMessage = `${networkRetry.reason}（第 ${networkRetry.attempt}/${networkRetry.maxAttempts} 次）`;
+    if (thinkingNodeIdRef.current) {
+      updateNode(thinkingNodeIdRef.current, {
+        status: "running",
+        data: { content: retryMessage, duration: 0, isStreaming: true },
+      });
+    } else {
+      const nodeId = addNode("thinking", {
+        content: retryMessage,
+        duration: 0,
+        isStreaming: true,
+      }, "running");
+      thinkingNodeIdRef.current = nodeId;
+    }
+  }, [networkRetry, addNode, updateNode]);
 
   useEffect(() => {
     if (agentError) {
@@ -734,6 +756,7 @@ export default function App() {
 
   return (
     <div className="app flex flex-col h-screen">
+      <NetworkStatusBanner />
       <TopBar
         onToggleHistory={() => setHistoryOpen(!historyOpen)}
         onNewSession={handleNewSession}

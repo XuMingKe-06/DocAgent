@@ -689,7 +689,7 @@ async fn run_agent(
 ) -> Result<(), CommandError> {
     log::info!("run_agent 开始: session_id={}, workspace={}", session_id, workspace_path);
 
-    if llm_router.is_empty() {
+    if llm_router.is_empty().await {
         let error_msg = "未配置 LLM Provider，请在设置中添加至少一个 Provider";
         log::error!("run_agent 失败: {}", error_msg);
         emitter.emit_error(crate::events::types::ErrorPayload {

@@ -66,47 +66,67 @@ pub async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, C
 }
 
 /// 下载并安装更新（通过 Channel 推送进度）
+/// 下载失败时最多重试2次，间隔3秒，重试时重新检查更新
 #[cfg(desktop)]
 #[tauri::command]
 pub async fn download_and_install_update(
     app: tauri::AppHandle,
     on_event: tauri::ipc::Channel<DownloadEvent>,
 ) -> Result<(), CommandError> {
-    let updater = app
-        .updater()
-        .map_err(|e| CommandError::update(UPDATE_DOWNLOAD_FAILED, e.to_string()))?;
+    let max_retries: u32 = 2;
 
-    let update = updater.check().await.map_err(|e| {
-        CommandError::update(UPDATE_DOWNLOAD_FAILED, e.to_string())
-    })?;
+    for retry in 0..=max_retries {
+        if retry > 0 {
+            log::info!("更新下载重试, 第{}次重试, 等待3秒", retry);
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
 
-    let update = update.ok_or_else(|| {
-        CommandError::update(UPDATE_NO_UPDATE_AVAILABLE, "没有可用的更新")
-    })?;
+        let updater = app
+            .updater()
+            .map_err(|e| CommandError::update(UPDATE_DOWNLOAD_FAILED, e.to_string()))?;
 
-    let mut downloaded: u64 = 0;
-    let mut content_length: Option<u64> = None;
-
-    update
-        .download_and_install(
-            |chunk_length, content_len| {
-                downloaded += chunk_length as u64;
-                content_length = content_len;
-                let _ = on_event.send(DownloadEvent::Progress {
-                    downloaded,
-                    content_length: content_len,
-                });
-            },
-            || {
-                let _ = on_event.send(DownloadEvent::Finished);
-            },
-        )
-        .await
-        .map_err(|e| {
-            log::error!("更新安装失败: {}", e);
-            CommandError::update(UPDATE_INSTALL_FAILED, e.to_string())
+        let update = updater.check().await.map_err(|e| {
+            CommandError::update(UPDATE_DOWNLOAD_FAILED, e.to_string())
         })?;
 
-    log::info!("更新安装完成，准备重启");
-    Ok(())
+        let update = match update {
+            Some(u) => u,
+            None => {
+                return Err(CommandError::update(UPDATE_NO_UPDATE_AVAILABLE, "没有可用的更新"));
+            }
+        };
+
+        let mut downloaded: u64 = 0;
+        let mut content_length: Option<u64> = None;
+
+        match update
+            .download_and_install(
+                |chunk_length, content_len| {
+                    downloaded += chunk_length as u64;
+                    content_length = content_len;
+                    let _ = on_event.send(DownloadEvent::Progress {
+                        downloaded,
+                        content_length: content_len,
+                    });
+                },
+                || {
+                    let _ = on_event.send(DownloadEvent::Finished);
+                },
+            )
+            .await
+        {
+            Ok(()) => {
+                log::info!("更新安装完成，准备重启");
+                return Ok(());
+            }
+            Err(e) => {
+                log::error!("更新下载/安装失败 (第{}次尝试): {}", retry + 1, e);
+                if retry >= max_retries {
+                    return Err(CommandError::update(UPDATE_INSTALL_FAILED, e.to_string()));
+                }
+            }
+        }
+    }
+
+    Err(CommandError::update(UPDATE_INSTALL_FAILED, "更新下载失败，重试耗尽".to_string()))
 }

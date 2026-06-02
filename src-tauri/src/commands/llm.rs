@@ -391,3 +391,26 @@ pub async fn health_check_providers(
     log::info!("手动健康检查完成, 检查了 {} 个 Provider", results.len());
     Ok(results)
 }
+
+/// 强制恢复所有 Provider 为可用状态
+/// 用于网络恢复后或用户手动点击"检查连接"时，立即重置所有 Provider 健康状态
+#[tauri::command]
+pub async fn force_recover_providers(
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    log::info!("强制恢复所有 Provider 为可用状态");
+    let router = state.llm_router.read().await;
+    router.force_recover_all().await;
+    router.rebuild_all_clients().await;
+    log::info!("所有 Provider 已恢复为可用状态，HTTP 客户端已重建");
+    Ok(())
+}
+
+/// 获取当前网络状态
+#[tauri::command]
+pub async fn get_network_status(
+    state: State<'_, AppState>,
+) -> Result<String, CommandError> {
+    let status = state.network_monitor.get_status().await;
+    Ok(status.as_str().to_string())
+}

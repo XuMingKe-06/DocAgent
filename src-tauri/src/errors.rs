@@ -13,6 +13,14 @@ pub const LLM_INVALID_REQUEST: u32 = 1007;
 pub const LLM_STREAM_ERROR: u32 = 1008;
 pub const LLM_PROVIDER_UNAVAILABLE: u32 = 1009;
 pub const LLM_RESPONSE_PARSE_ERROR: u32 = 1010;
+/// DNS解析失败
+pub const LLM_DNS_RESOLVE_FAILED: u32 = 1011;
+/// 连接被拒绝
+pub const LLM_CONNECTION_REFUSED: u32 = 1012;
+/// SSL/TLS握手失败
+pub const LLM_SSL_ERROR: u32 = 1013;
+/// 网络不可达
+pub const LLM_NETWORK_UNREACHABLE: u32 = 1014;
 
 // ============================================================
 // Agent 相关错误码 (2000-2999)
@@ -188,21 +196,23 @@ impl From<rusqlite::Error> for CommandError {
 
 impl From<reqwest::Error> for CommandError {
     fn from(err: reqwest::Error) -> Self {
-        let code = if err.is_timeout() {
-            LLM_TIMEOUT
+        if err.is_timeout() {
+            Self::new(LLM_TIMEOUT, err.to_string())
         } else if err.is_connect() {
-            LLM_CONNECTION_FAILED
+            // 连接错误：使用细化分类（DNS/连接被拒绝/SSL/网络不可达）
+            let (code, msg) = crate::services::llm::provider::classify_connection_error(&err);
+            Self::new(code, msg)
         } else if err.is_status() {
-            match err.status() {
+            let code = match err.status() {
                 Some(status) if status.as_u16() == 401 => LLM_AUTH_FAILED,
                 Some(status) if status.as_u16() == 429 => LLM_RATE_LIMITED,
                 Some(status) if status.as_u16() == 404 => LLM_MODEL_NOT_FOUND,
                 _ => LLM_INVALID_REQUEST,
-            }
+            };
+            Self::new(code, err.to_string())
         } else {
-            LLM_CONNECTION_FAILED
-        };
-        Self::new(code, err.to_string())
+            Self::new(LLM_CONNECTION_FAILED, err.to_string())
+        }
     }
 }
 

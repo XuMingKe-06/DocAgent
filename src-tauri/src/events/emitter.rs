@@ -24,6 +24,11 @@ impl<R: Runtime> AgentEmitter<R> {
         Self { app_handle }
     }
 
+    /// 获取内部 AppHandle 的引用，用于直接发射自定义事件
+    pub fn app_handle_ref(&self) -> &AppHandle<R> {
+        &self.app_handle
+    }
+
     /// 内部统一发射方法，根据事件重要性选择日志级别
     fn emit_event<T: Clone + serde::Serialize + std::fmt::Debug>(
         &self,
@@ -93,6 +98,11 @@ impl<R: Runtime> AgentEmitter<R> {
     /// 发射 Agent 执行中断事件（关键 - 前端依赖此事件更新状态）
     pub fn emit_stopped(&self, payload: types::StoppedPayload) -> Result<(), CommandError> {
         self.emit_event(types::AGENT_STOPPED, payload, true)
+    }
+
+    /// 发射网络重试事件（非关键）
+    pub fn emit_network_retry(&self, payload: types::NetworkRetryPayload) -> Result<(), CommandError> {
+        self.emit_event(types::AGENT_NETWORK_RETRY, payload, false)
     }
 
     /// 发射会话更新事件（关键 - 前端依赖此事件刷新会话列表）

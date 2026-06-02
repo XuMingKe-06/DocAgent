@@ -1,4 +1,4 @@
-use std::time::Duration;
+﻿use std::time::Duration;
 use async_trait::async_trait;
 use futures::StreamExt;
 use reqwest::Client;
@@ -53,6 +53,7 @@ impl AnthropicAdapter {
             .no_gzip()
             .no_deflate()
             .no_brotli()
+            .tcp_keepalive(Some(Duration::from_secs(60)))
             .build()
             .unwrap_or_default();
 
@@ -300,6 +301,7 @@ impl AnthropicAdapter {
     /// 2. 必须包含 anthropic-version 头
     /// 3. 额外处理 529 过载错误码（Anthropic 特有）
     /// 4. 额外处理 400 请求参数错误
+    /// 5. DNS 解析失败时使用更短的重试间隔（200ms）并额外增加1次重试机会
     async fn send_with_retry_internal(
         &self,
         url: &str,
@@ -307,23 +309,30 @@ impl AnthropicAdapter {
         client: &Client,
     ) -> Result<reqwest::Response, CommandError> {
         let max_retries = self.advanced.max_retries;
-        let mut last_error = None;
+        let mut _last_error = None;
+        let mut dns_extra_retry = true;
+        let mut is_dns_failure = false;
+        let mut total_attempt: u32 = 0;
 
-        for attempt in 0..=max_retries {
-            if attempt > 0 {
-                let delay = Duration::from_millis(500 * 2u64.pow(attempt - 1));
-                log::warn!("请求重试, model={}, 第{}次重试, 延迟{}ms", self.model, attempt, delay.as_millis());
+        loop {
+            total_attempt += 1;
+
+            if total_attempt > 1 {
+                let delay = if is_dns_failure {
+                    Duration::from_millis(200)
+                } else {
+                    Duration::from_millis(500 * 2u64.pow(total_attempt.saturating_sub(2)))
+                };
+                log::warn!("请求重试, model={}, 第{}次重试, 延迟{}ms", self.model, total_attempt - 1, delay.as_millis());
                 tokio::time::sleep(delay).await;
             }
 
             let mut request = client.post(url);
-            // Anthropic 使用 x-api-key 头认证，而非 Authorization Bearer
             request = request
                 .header("x-api-key", &self.api_key)
                 .header("Content-Type", "application/json")
                 .header("anthropic-version", "2023-06-01");
 
-            // 添加额外请求头
             for (key, value) in &self.advanced.extra_headers {
                 request = request.header(key.as_str(), value.as_str());
             }
@@ -342,9 +351,10 @@ impl AnthropicAdapter {
                         return Err(CommandError::llm(1002, format!("认证失败: {}", error_body)));
                     }
                     if status.as_u16() == 429 {
-                        if attempt < max_retries {
+                        if total_attempt <= max_retries {
                             log::warn!("请求频率受限(429), model={}, 准备重试", self.model);
-                            last_error = Some(CommandError::llm(1003, "请求频率受限，正在重试".to_string()));
+                            _last_error = Some(CommandError::llm(1003, "请求频率受限，正在重试".to_string()));
+                            is_dns_failure = false;
                             continue;
                         }
                         return Err(CommandError::llm(1003, format!("请求频率受限: {}", error_body)));
@@ -359,37 +369,61 @@ impl AnthropicAdapter {
                     }
                     // Anthropic 特有的过载错误码 529
                     if status.as_u16() == 529 {
-                        if attempt < max_retries {
+                        if total_attempt <= max_retries {
                             log::warn!("API 过载(529), model={}, 准备重试", self.model);
-                            last_error = Some(CommandError::llm(1003, "API 过载，正在重试".to_string()));
+                            _last_error = Some(CommandError::llm(1003, "API 过载，正在重试".to_string()));
+                            is_dns_failure = false;
                             continue;
                         }
                         return Err(CommandError::llm(1003, format!("API 过载: {}", error_body)));
                     }
                     // 5xx 服务端错误，可重试
-                    if status.as_u16() >= 500 && status.as_u16() != 529 && attempt < max_retries {
+                    if status.as_u16() >= 500 && status.as_u16() != 529 && total_attempt <= max_retries {
                         log::warn!("服务端错误({}), model={}, 准备重试", status, self.model);
-                        last_error = Some(CommandError::llm(1001, format!("服务端错误 ({}), 正在重试", status)));
+                        _last_error = Some(CommandError::llm(1001, format!("服务端错误 ({}), 正在重试", status)));
+                        is_dns_failure = false;
                         continue;
                     }
 
-                    last_error = Some(CommandError::llm(1000, format!("API 请求失败 ({}): {}", status, error_body)));
+                    _last_error = Some(CommandError::llm(1000, format!("API 请求失败 ({}): {}", status, error_body)));
                 }
                 Err(e) => {
                     if e.is_timeout() {
-                        if attempt < max_retries {
+                        if total_attempt <= max_retries {
                             log::warn!("请求超时, model={}, 准备重试", self.model);
-                            last_error = Some(CommandError::llm(1006, "请求超时，正在重试".to_string()));
+                            _last_error = Some(CommandError::llm(1006, "请求超时，正在重试".to_string()));
+                            is_dns_failure = false;
                             continue;
                         }
                         return Err(CommandError::llm(1006, "请求超时".to_string()));
                     }
-                    last_error = Some(CommandError::llm(1000, format!("网络错误: {}", e)));
+                    // DNS 解析失败特殊处理
+                    if super::provider::is_dns_error(&e) {
+                        if dns_extra_retry {
+                            dns_extra_retry = false;
+                            is_dns_failure = true;
+                            log::warn!("DNS解析失败, model={}, 额外重试1次", self.model);
+                            _last_error = Some(CommandError::llm(
+                                crate::errors::LLM_DNS_RESOLVE_FAILED,
+                                "DNS解析失败，正在重试".to_string(),
+                            ));
+                            continue;
+                        }
+                        return Err(CommandError::llm(
+                            crate::errors::LLM_DNS_RESOLVE_FAILED,
+                            format!("DNS解析失败: {}", e),
+                        ));
+                    }
+                    // 细化连接错误分类：连接被拒绝/SSL/网络不可达
+                    let (code, msg) = super::provider::classify_connection_error(&e);
+                    _last_error = Some(CommandError::llm(code, msg));
                 }
             }
+
+            break;
         }
 
-        let err = last_error.unwrap_or_else(|| CommandError::llm(1000, "未知错误".to_string()));
+        let err = _last_error.unwrap_or_else(|| CommandError::llm(1000, "未知错误".to_string()));
         log::error!("请求最终失败, model={}, 重试耗尽, 错误: {}", self.model, err.message);
         Err(err)
     }
@@ -812,6 +846,75 @@ impl LlmProvider for AnthropicAdapter {
                     model: None,
                     error_message: Some(e.message.clone()),
                     error: Some(e.message.clone()),
+                })
+            }
+        }
+    }
+
+    fn rebuild_client(&mut self) {
+        let timeout = Duration::from_secs(self.advanced.timeout_seconds as u64);
+        self.client = Client::builder()
+            .timeout(timeout)
+            .build()
+            .unwrap_or_default();
+
+        self.streaming_client = Client::builder()
+            .timeout(Duration::from_secs(300))
+            .no_gzip()
+            .no_deflate()
+            .no_brotli()
+            .tcp_keepalive(Some(Duration::from_secs(60)))
+            .build()
+            .unwrap_or_default();
+
+        log::info!("Anthropic 适配器客户端已重建");
+    }
+
+    /// 轻量级健康检查：仅发送 HEAD 请求到 /v1/messages 端点
+    /// 返回 405(方法不允许) 也说明网络可达
+    async fn lightweight_health_check(&self) -> Result<ConnectionResult, CommandError> {
+        let start = std::time::Instant::now();
+        let url = self.build_api_url();
+
+        let result = self.client
+            .head(&url)
+            .header("x-api-key", &self.api_key)
+            .header("anthropic-version", "2023-06-01")
+            .timeout(Duration::from_secs(10))
+            .send()
+            .await;
+
+        match result {
+            Ok(response) => {
+                let latency_ms = start.elapsed().as_millis() as u64;
+                let status = response.status().as_u16();
+                // 200/401/403/404/405 都说明网络可达
+                let reachable = status < 500;
+                log::info!(
+                    "轻量级健康检查, model={}, status={}, 可达={}, 延迟={}ms",
+                    self.model, status, reachable, latency_ms
+                );
+                Ok(ConnectionResult {
+                    success: reachable,
+                    provider_id: None,
+                    latency_ms,
+                    model_info: None,
+                    model: None,
+                    error_message: if reachable { None } else { Some(format!("服务端错误 ({})", status)) },
+                    error: None,
+                })
+            }
+            Err(e) => {
+                let latency_ms = start.elapsed().as_millis() as u64;
+                log::warn!("轻量级健康检查失败, model={}, 错误: {}", self.model, e);
+                Ok(ConnectionResult {
+                    success: false,
+                    provider_id: None,
+                    latency_ms,
+                    model_info: None,
+                    model: None,
+                    error_message: Some(format!("连接失败: {}", e)),
+                    error: None,
                 })
             }
         }

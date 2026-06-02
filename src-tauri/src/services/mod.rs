@@ -5,3 +5,4 @@ pub mod agent;
 pub mod document;
 pub mod fs_watcher;
 pub mod attachment;
+pub mod network_monitor;

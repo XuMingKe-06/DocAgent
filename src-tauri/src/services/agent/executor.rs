@@ -16,9 +16,28 @@ use crate::services::tool::registry::ToolRegistry;
 use crate::ConfirmDecision;
 use super::context::AgentContext;
 
-// 高风险 Skill 名称列表（仅 delete_file，其他 Skill 根据 action 参数动态判断）
-const HIGH_RISK_SKILLS: &[&str] = &["delete_file"];
+const MAX_LLM_RETRIES: u32 = 2;
+const RETRY_DELAY_SECONDS: u64 = 2;
+/// 确认操作超时时间（秒）
 const CONFIRM_TIMEOUT_SECS: u64 = 300;
+/// 始终需要确认的高风险 Skill 列表
+const HIGH_RISK_SKILLS: &[&str] = &["delete_file"];
+
+/// 检查错误码是否可重试
+fn is_retryable_error(code: u32) -> bool {
+    matches!(
+        code,
+        crate::errors::LLM_CONNECTION_FAILED
+            | crate::errors::LLM_RATE_LIMITED
+            | crate::errors::LLM_TIMEOUT
+            | crate::errors::LLM_STREAM_ERROR
+            | crate::errors::LLM_PROVIDER_UNAVAILABLE
+            | crate::errors::LLM_DNS_RESOLVE_FAILED
+            | crate::errors::LLM_CONNECTION_REFUSED
+            | crate::errors::LLM_SSL_ERROR
+            | crate::errors::LLM_NETWORK_UNREACHABLE
+    )
+}
 
 pub struct ExecutionResult {
     pub summary: String,
@@ -373,18 +392,52 @@ impl<R: Runtime> AgentExecutor<R> {
 
             let current_iteration = iteration + 1;
             let messages = ctx.get_messages_for_iteration(current_iteration);
-            log::debug!("调用 LLM 流式接口, session_id={}, 消息数={}", ctx.session_id, messages.len());
-            let mut stream_rx = match self.router.chat_stream(&messages, &tools).await {
-                Ok(rx) => rx,
-                Err(e) => {
-                    log::error!("LLM 流式调用失败, session_id={}, 错误: {}", ctx.session_id, e.message);
-                    self.emitter.emit_error(ErrorPayload {
-                        session_id: ctx.session_id.clone(),
-                        code: e.code,
-                        message: e.message.clone(),
-                        recoverable: true,
-                    }).ok();
-                    return Err(e);
+            
+            let mut llm_retry_count = 0;
+            let mut _last_error: Option<CommandError> = None;
+            let mut stream_rx = loop {
+                if self.check_stopped(&ctx.session_id) {
+                    return Ok(self.handle_stop_if_needed(ctx, total_steps, start_time).unwrap());
+                }
+                
+                log::debug!("调用 LLM 流式接口, session_id={}, 消息数={}, 重试次数={}", ctx.session_id, messages.len(), llm_retry_count);
+                match self.router.chat_stream(&messages, &tools).await {
+                    Ok(rx) => break rx,
+                    Err(e) => {
+                        _last_error = Some(e.clone());
+                        log::error!("LLM 流式调用失败, session_id={}, 错误: {}", ctx.session_id, e.message);
+                        
+                        if !is_retryable_error(e.code) || llm_retry_count >= MAX_LLM_RETRIES {
+                            self.emitter.emit_error(ErrorPayload {
+                                session_id: ctx.session_id.clone(),
+                                code: e.code,
+                                message: "网络连接已断开，请检查网络后重试".to_string(),
+                                recoverable: is_retryable_error(e.code),
+                            }).ok();
+                            return Err(e);
+                        }
+                        
+                        llm_retry_count += 1;
+                        let wait_secs = RETRY_DELAY_SECONDS * (1 << (llm_retry_count - 1));
+                        log::info!("LLM 调用失败，等待 {} 秒后重试 (第 {}/{} 次), session_id={}", wait_secs, llm_retry_count, MAX_LLM_RETRIES, ctx.session_id);
+                        
+                        // 重试前：如果 Provider 被标记不可用，先尝试恢复
+                        // 避免重试时因 Provider 不可用而直接失败
+                        if e.code == crate::errors::LLM_PROVIDER_UNAVAILABLE {
+                            log::info!("Provider 不可用，尝试恢复后重试, session_id={}", ctx.session_id);
+                            self.router.force_recover_all().await;
+                            self.router.rebuild_all_clients().await;
+                        }
+                        
+                        self.emitter.emit_network_retry(NetworkRetryPayload {
+                            session_id: ctx.session_id.clone(),
+                            attempt: llm_retry_count,
+                            max_attempts: MAX_LLM_RETRIES,
+                            reason: e.message.clone(),
+                        }).ok();
+                        
+                        tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                    }
                 }
             };
 
@@ -479,14 +532,75 @@ impl<R: Runtime> AgentExecutor<R> {
                     }
                     Err(e) => {
                         log::warn!("流式响应错误: {}", e.message);
-                        // 向前端发送错误事件，让用户看到错误信息
-                        self.emitter.emit_error(ErrorPayload {
-                            session_id: ctx.session_id.clone(),
-                            code: e.code,
-                            message: format!("LLM 流式响应错误: {}", e.message),
-                            recoverable: true,
-                        }).ok();
-                        break;
+                        
+                        if !is_retryable_error(e.code) {
+                            self.emitter.emit_error(ErrorPayload {
+                                session_id: ctx.session_id.clone(),
+                                code: e.code,
+                                message: format!("LLM 流式响应错误: {}", e.message),
+                                recoverable: false,
+                            }).ok();
+                            break;
+                        }
+                        
+                        if !assistant_content.is_empty() || !collected_tool_calls.is_empty() {
+                            log::info!("流式响应中断但已有部分内容，尝试恢复, session_id={}, 内容长度={}, tool_calls数={}", ctx.session_id, assistant_content.len(), collected_tool_calls.len());
+                            
+                            self.emitter.emit_network_retry(NetworkRetryPayload {
+                                session_id: ctx.session_id.clone(),
+                                attempt: 1,
+                                max_attempts: 1,
+                                reason: "流式响应中断，尝试续写".to_string(),
+                            }).ok();
+                            
+                            let recovered_messages = Self::build_recovery_messages(&messages, &assistant_content, &reasoning_content, &collected_tool_calls);
+                            
+                            match self.router.chat_stream(&recovered_messages, &tools).await {
+                                Ok(new_rx) => {
+                                    log::info!("流式恢复成功，继续接收, session_id={}", ctx.session_id);
+                                    stream_rx = new_rx;
+                                    continue;
+                                }
+                                Err(recover_err) => {
+                                    log::error!("流式恢复失败: {}", recover_err.message);
+                                    self.emitter.emit_error(ErrorPayload {
+                                        session_id: ctx.session_id.clone(),
+                                        code: recover_err.code,
+                                        message: "网络连接已断开，请检查网络后重试".to_string(),
+                                        recoverable: is_retryable_error(recover_err.code),
+                                    }).ok();
+                                    break;
+                                }
+                            }
+                        } else {
+                            // 可重试错误且无部分内容：尝试重新获取流式响应
+                            // 不直接发射 agent:error，而是先尝试重连，避免向用户展示不必要的红色错误
+                            log::info!("流式响应中断且无部分内容，尝试重新请求, session_id={}", ctx.session_id);
+                            self.emitter.emit_network_retry(NetworkRetryPayload {
+                                session_id: ctx.session_id.clone(),
+                                attempt: 1,
+                                max_attempts: 1,
+                                reason: "流式响应中断，尝试重新请求".to_string(),
+                            }).ok();
+
+                            match self.router.chat_stream(&messages, &tools).await {
+                                Ok(new_rx) => {
+                                    log::info!("流式重新请求成功，继续接收, session_id={}", ctx.session_id);
+                                    stream_rx = new_rx;
+                                    continue;
+                                }
+                                Err(recover_err) => {
+                                    log::error!("流式重新请求失败: {}", recover_err.message);
+                                    self.emitter.emit_error(ErrorPayload {
+                                        session_id: ctx.session_id.clone(),
+                                        code: recover_err.code,
+                                        message: "网络连接已断开，请检查网络后重试".to_string(),
+                                        recoverable: is_retryable_error(recover_err.code),
+                                    }).ok();
+                                    break;
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -871,6 +985,41 @@ struct ExtractedToolCall {
 }
 
 impl<R: Runtime> AgentExecutor<R> {
+    /// 构建流式恢复的消息列表
+    /// 当流式响应因网络错误中断但已有部分内容时，构造续写请求让 LLM 继续生成
+    fn build_recovery_messages(
+        original_messages: &[ChatMessage],
+        content: &str,
+        reasoning: &str,
+        tool_calls: &HashMap<u32, LlmToolCall>,
+    ) -> Vec<ChatMessage> {
+        let mut messages = original_messages.to_vec();
+
+        let tool_calls_vec: Vec<LlmToolCall> = tool_calls.values().cloned().collect();
+
+        messages.push(ChatMessage {
+            role: "assistant".to_string(),
+            content: content.to_string(),
+            content_parts: None,
+            reasoning_content: if reasoning.is_empty() { None } else { Some(reasoning.to_string()) },
+            tool_calls: if tool_calls_vec.is_empty() { None } else { Some(tool_calls_vec) },
+            tool_call_id: None,
+            attachments: None,
+        });
+
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: "请继续完成之前的回复，不要重复已输出的内容。".to_string(),
+            content_parts: None,
+            reasoning_content: None,
+            tool_calls: None,
+            tool_call_id: None,
+            attachments: None,
+        });
+
+        messages
+    }
+
     /// 清理 LLM content 中的 XML 标签和特殊 token，并尝试提取嵌入的 tool_call
     ///
     /// DeepSeek R1 等推理模型有时会将 <agent-reasoning> 和 <tool-call> 标签

@@ -32,6 +32,7 @@ pub struct AppState {
     pub tool_registry: Arc<crate::services::tool::registry::ToolRegistry>,
     pub skill_registry: Arc<tokio::sync::Mutex<crate::services::skill::registry::SkillRegistry>>,
     pub fs_watcher: Arc<crate::services::fs_watcher::FsWatcherService<tauri::Wry>>,
+    pub network_monitor: Arc<crate::services::network_monitor::NetworkMonitor<tauri::Wry>>,
 }
 
 pub fn run() {
@@ -112,6 +113,8 @@ pub fn run() {
             });
             let llm_router = crate::services::llm::router::LlmRouter::from_config(&llm_config)
                 .with_app_handle(Some(app.handle().clone()));
+            let llm_router_arc: Arc<tokio::sync::RwLock<Arc<crate::services::llm::router::LlmRouter>>> =
+                Arc::new(tokio::sync::RwLock::new(Arc::new(llm_router)));
 
             let python_path = std::env::var("DOCAGENT_PYTHON")
                 .unwrap_or_else(|_| "python".to_string());
@@ -207,16 +210,23 @@ pub fn run() {
             // 初始化文件监听服务
             let fs_watcher = crate::services::fs_watcher::FsWatcherService::new(app.handle().clone());
 
+            // 初始化网络监控服务
+            let network_monitor = crate::services::network_monitor::NetworkMonitor::new(
+                Arc::clone(&llm_router_arc),
+                crate::events::emitter::AgentEmitter::new(app.handle().clone()),
+            );
+
             let state = AppState {
                 db: Arc::new(database),
                 config: Arc::new(tokio::sync::Mutex::new(config_manager)),
                 active_agents: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 confirm_channels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 doc_service: doc_service_for_skills,
-                llm_router: Arc::new(tokio::sync::RwLock::new(Arc::new(llm_router))),
+                llm_router: llm_router_arc,
                 tool_registry: Arc::new(tool_registry),
                 skill_registry: Arc::new(tokio::sync::Mutex::new(skill_registry)),
                 fs_watcher: Arc::new(fs_watcher),
+                network_monitor: Arc::new(network_monitor),
             };
 
             app.manage(state);
@@ -251,7 +261,7 @@ pub fn run() {
                         let guard = llm_router_for_health.read().await;
                         Arc::clone(&guard)
                     };
-                    if router_snapshot.is_empty() {
+                    if router_snapshot.is_empty().await {
                         continue;
                     }
                     let results = router_snapshot.health_check_all().await;
@@ -276,6 +286,12 @@ pub fn run() {
                 }
             });
 
+            // 启动网络监控服务
+            let network_monitor = app.state::<AppState>().network_monitor.clone();
+            tauri::async_runtime::spawn(async move {
+                network_monitor.start();
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -288,6 +304,8 @@ pub fn run() {
             commands::llm::delete_provider,
             commands::llm::set_default_provider,
             commands::llm::health_check_providers,
+            commands::llm::force_recover_providers,
+            commands::llm::get_network_status,
             // 会话命令
             commands::session::create_session,
             commands::session::list_sessions,

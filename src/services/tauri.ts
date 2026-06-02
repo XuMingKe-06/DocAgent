@@ -87,6 +87,19 @@ export async function healthCheckProviders(): Promise<Record<string, ConnectionR
   return result.data;
 }
 
+/** 强制恢复所有 Provider 为可用状态并重建 HTTP 客户端 */
+export async function forceRecoverProviders(): Promise<void> {
+  const result = await safeInvoke(() => invoke("force_recover_providers"), { context: "forceRecoverProviders" });
+  if (!result.ok) throw result.error.raw;
+}
+
+/** 获取当前网络状态 */
+export async function getNetworkStatus(): Promise<string> {
+  const result = await safeInvoke(() => invoke<string>("get_network_status"), { context: "getNetworkStatus" });
+  if (!result.ok) throw result.error.raw;
+  return result.data;
+}
+
 // ================================================================
 // 会话命令
 // ================================================================

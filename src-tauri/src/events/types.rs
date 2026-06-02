@@ -15,6 +15,7 @@ pub const AGENT_DONE: &str = "agent:done";
 pub const AGENT_ERROR: &str = "agent:error";
 pub const AGENT_STOPPED: &str = "agent:stopped";
 pub const AGENT_CONTEXT_UPDATE: &str = "agent:context_update";
+pub const AGENT_NETWORK_RETRY: &str = "agent:network_retry";
 
 // ================================================================
 // 系统事件名常量
@@ -24,6 +25,7 @@ pub const SESSION_UPDATED: &str = "session:updated";
 pub const WORKSPACE_CHANGE: &str = "workspace:change";
 pub const FILE_CHANGE: &str = "file:change";
 pub const LLM_PROVIDER_SWITCH: &str = "llm:provider_switch";
+pub const SYSTEM_NETWORK_CHANGE: &str = "system:network_change";
 
 // ================================================================
 // Agent 事件 Payload 类型
@@ -145,6 +147,16 @@ pub struct ErrorPayload {
     pub recoverable: bool,
 }
 
+/// Agent 网络重试事件
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkRetryPayload {
+    pub session_id: String,
+    pub attempt: u32,
+    pub max_attempts: u32,
+    pub reason: String,
+}
+
 /// Agent 执行中断
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -187,6 +199,16 @@ pub struct FileChangePayload {
     pub path: String,
     /// 重命名时的旧路径
     pub old_path: Option<String>,
+}
+
+/// 网络状态变化事件
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct NetworkChangePayload {
+    /// 当前网络状态: "online" | "offline"
+    pub status: String,
+    /// 之前的网络状态
+    pub previous_status: String,
 }
 
 // ================================================================
