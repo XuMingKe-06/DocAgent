@@ -632,7 +632,7 @@ impl AttachmentService {
 
         // 路径遍历安全校验：确保解析后的路径在工作区内
         if !workspace_root.is_empty() {
-            let canonical_file = match candidate.canonicalize() {
+            let canonical_file = match crate::utils::canonicalize(&candidate) {
                 Ok(p) => p,
                 Err(_) => {
                     return Err(CommandError::fs(
@@ -641,7 +641,7 @@ impl AttachmentService {
                     ));
                 }
             };
-            let canonical_root = match std::path::Path::new(workspace_root).canonicalize() {
+            let canonical_root = match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                 Ok(p) => p,
                 Err(_) => {
                     return Err(CommandError::fs(

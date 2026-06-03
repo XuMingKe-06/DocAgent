@@ -11,6 +11,10 @@ use tokio::sync::Mutex;
 use crate::errors::CommandError;
 use serde_json::{json, Value};
 
+/// Windows 平台 CREATE_NO_WINDOW 标志，防止子进程弹出命令行窗口
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// 默认请求超时时间（秒）
 const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 120;
 
@@ -51,12 +55,19 @@ impl SidecarManager {
             return Ok(());
         }
 
-        let mut child = Command::new(&self.python_path)
-            .arg(&self.script_path)
+        let mut cmd = Command::new(&self.python_path);
+        cmd.arg(&self.script_path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+
+        // Windows 平台：设置 CREATE_NO_WINDOW 标志，防止 Python 子进程弹出命令行窗口
+        #[cfg(target_os = "windows")]
+        {
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        let mut child = cmd.spawn()
             .map_err(|e| {
                 log::error!("启动 Sidecar 失败: {}", e);
                 CommandError::doc(3010, format!("启动 Sidecar 失败: {}", e))

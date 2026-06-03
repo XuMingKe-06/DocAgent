@@ -68,12 +68,12 @@ pub fn add_workspace(
 ) -> Result<WorkspaceEntry, CommandError> {
     // 检查路径是否已存在于其他工作区
     // 使用规范化的绝对路径进行比较，避免路径格式差异导致的误判
-    let normalized_path = std::fs::canonicalize(Path::new(path))
+    let normalized_path = crate::utils::canonicalize(Path::new(path))
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|_| path.to_string());
 
     for existing in &config.workspaces {
-        let existing_normalized = std::fs::canonicalize(Path::new(&existing.path))
+        let existing_normalized = crate::utils::canonicalize(Path::new(&existing.path))
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|_| existing.path.clone());
         

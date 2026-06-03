@@ -99,7 +99,7 @@ impl Tool for ListDirectoryTool {
 
         // 路径安全校验
         if !workspace_root.is_empty() {
-            let canonical_dir = match dir.canonicalize() {
+            let canonical_dir = match crate::utils::canonicalize(dir) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {
@@ -110,7 +110,7 @@ impl Tool for ListDirectoryTool {
                     };
                 }
             };
-            let canonical_root = match std::path::Path::new(workspace_root).canonicalize() {
+            let canonical_root = match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {
@@ -306,7 +306,7 @@ impl Tool for SearchFilesTool {
         }
 
         if !workspace_root.is_empty() {
-            let canonical_dir = match dir_path.canonicalize() {
+            let canonical_dir = match crate::utils::canonicalize(dir_path) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {
@@ -317,7 +317,7 @@ impl Tool for SearchFilesTool {
                     };
                 }
             };
-            let canonical_root = match std::path::Path::new(workspace_root).canonicalize() {
+            let canonical_root = match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {
@@ -520,7 +520,7 @@ impl Tool for ReadFileTool {
 
         // 路径安全校验
         if !workspace_root.is_empty() {
-            let canonical_file = match path.canonicalize() {
+            let canonical_file = match crate::utils::canonicalize(path) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {
@@ -531,7 +531,7 @@ impl Tool for ReadFileTool {
                     };
                 }
             };
-            let canonical_root = match std::path::Path::new(workspace_root).canonicalize() {
+            let canonical_root = match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {
@@ -858,7 +858,7 @@ impl Tool for FileInfoTool {
 
         // 路径安全校验
         if !workspace_root.is_empty() {
-            let canonical_file = match path.canonicalize() {
+            let canonical_file = match crate::utils::canonicalize(path) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {
@@ -869,7 +869,7 @@ impl Tool for FileInfoTool {
                     };
                 }
             };
-            let canonical_root = match std::path::Path::new(workspace_root).canonicalize() {
+            let canonical_root = match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {
@@ -1001,8 +1001,8 @@ impl Tool for FileExistsTool {
 
         // 路径安全校验
         if !workspace_root.is_empty() {
-            if let Ok(canonical_file) = path.canonicalize() {
-                if let Ok(canonical_root) = std::path::Path::new(workspace_root).canonicalize() {
+            if let Ok(canonical_file) = crate::utils::canonicalize(path) {
+                if let Ok(canonical_root) = crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                     if !canonical_file.starts_with(&canonical_root) {
                         return ToolResult {
                             success: false,
@@ -1087,7 +1087,7 @@ impl Tool for DeleteFileTool {
         let resolved_path = resolve_path(file_path, workspace_root);
 
         // 规范化路径并校验
-        let canonical_file = match std::path::Path::new(&resolved_path).canonicalize() {
+        let canonical_file = match crate::utils::canonicalize(std::path::Path::new(&resolved_path)) {
             Ok(p) => p,
             Err(_) => {
                 return ToolResult {
@@ -1099,7 +1099,7 @@ impl Tool for DeleteFileTool {
             }
         };
 
-        let canonical_root = match std::path::Path::new(workspace_root).canonicalize() {
+        let canonical_root = match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
             Ok(p) => p,
             Err(_) => {
                 return ToolResult {
@@ -1226,7 +1226,7 @@ impl Tool for CreateDirectoryTool {
         if !workspace_root.is_empty() {
             // 对于尚不存在的路径，检查其父目录是否在工作区内
             let check_path = if path.exists() {
-                match path.canonicalize() {
+                match crate::utils::canonicalize(path) {
                     Ok(p) => p,
                     Err(_) => {
                         return ToolResult {
@@ -1241,7 +1241,7 @@ impl Tool for CreateDirectoryTool {
                 // 路径不存在，检查父目录
                 match path.parent() {
                     Some(parent) if parent.exists() => {
-                        match parent.canonicalize() {
+                        match crate::utils::canonicalize(parent) {
                             Ok(p) => p,
                             Err(_) => {
                                 return ToolResult {
@@ -1256,7 +1256,7 @@ impl Tool for CreateDirectoryTool {
                     _ => {
                         // 如果父目录也不存在且 recursive=true，继续尝试
                         // 但仍需校验工作区根目录
-                        match std::path::Path::new(workspace_root).canonicalize() {
+                        match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                             Ok(root) => {
                                 // 检查解析后的路径是否以工作区根目录开头
                                 let resolved_abs = if path.is_absolute() {
@@ -1291,7 +1291,7 @@ impl Tool for CreateDirectoryTool {
                 }
             };
 
-            let canonical_root = match std::path::Path::new(workspace_root).canonicalize() {
+            let canonical_root = match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {
@@ -1415,7 +1415,7 @@ impl Tool for WriteTextFileTool {
             // 如果文件已存在，直接校验
             // 如果文件不存在，校验父目录
             let check_path = if path.exists() {
-                match path.canonicalize() {
+                match crate::utils::canonicalize(path) {
                     Ok(p) => p,
                     Err(_) => {
                         return ToolResult {
@@ -1430,7 +1430,7 @@ impl Tool for WriteTextFileTool {
                 // 文件不存在，校验父目录
                 match path.parent() {
                     Some(parent) if parent.exists() => {
-                        match parent.canonicalize() {
+                        match crate::utils::canonicalize(parent) {
                             Ok(p) => p,
                             Err(_) => {
                                 return ToolResult {
@@ -1444,7 +1444,7 @@ impl Tool for WriteTextFileTool {
                     }
                     _ => {
                         // 父目录也不存在，检查解析路径是否在工作区内
-                        match std::path::Path::new(workspace_root).canonicalize() {
+                        match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                             Ok(root) => {
                                 let resolved_abs = if path.is_absolute() {
                                     path.to_path_buf()
@@ -1476,7 +1476,7 @@ impl Tool for WriteTextFileTool {
                 }
             };
 
-            let canonical_root = match std::path::Path::new(workspace_root).canonicalize() {
+            let canonical_root = match crate::utils::canonicalize(std::path::Path::new(workspace_root)) {
                 Ok(p) => p,
                 Err(_) => {
                     return ToolResult {

@@ -350,8 +350,10 @@ pub async fn show_in_file_manager(
         // 必须使用 raw_arg 避免 Command::arg 对双引号进行转义，
         // 否则 explorer 无法识别 /select 标志，只会打开默认页面
         use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         std::process::Command::new("explorer")
             .raw_arg(format!("/select,\"{}\"", abs_path.to_string_lossy()))
+            .creation_flags(CREATE_NO_WINDOW)
             .spawn()?;
     }
 

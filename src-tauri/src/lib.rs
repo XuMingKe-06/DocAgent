@@ -116,8 +116,40 @@ pub fn run() {
             let llm_router_arc: Arc<tokio::sync::RwLock<Arc<crate::services::llm::router::LlmRouter>>> =
                 Arc::new(tokio::sync::RwLock::new(Arc::new(llm_router)));
 
-            let python_path = std::env::var("DOCAGENT_PYTHON")
-                .unwrap_or_else(|_| "python".to_string());
+            // 解析 Python 可执行文件路径
+            // 优先使用环境变量 DOCAGENT_PYTHON，否则按平台尝试常见命令名
+            let python_path = if let Ok(p) = std::env::var("DOCAGENT_PYTHON") {
+                p
+            } else {
+                // Windows 上优先尝试 py（Python Launcher），再尝试 python 和 python3
+                // py 是 Windows 官方推荐的 Python 启动器，通常随 Python 一起安装
+                #[cfg(target_os = "windows")]
+                {
+                    use std::os::windows::process::CommandExt;
+                    const CREATE_NO_WINDOW: u32 = 0x08000000;
+                    let candidates = ["py", "python", "python3"];
+                    let mut found = "python".to_string();
+                    for candidate in &candidates {
+                        // 使用 --version 检测可执行文件是否存在
+                        let check = std::process::Command::new(candidate)
+                            .arg("--version")
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .creation_flags(CREATE_NO_WINDOW)
+                            .status();
+                        if check.is_ok() {
+                            found = candidate.to_string();
+                            log::info!("检测到 Python 可执行文件: {}", found);
+                            break;
+                        }
+                    }
+                    found
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    "python3".to_string()
+                }
+            };
 
             // 解析 Sidecar 脚本路径：按优先级尝试多个候选位置
             let sidecar_script_str = {
@@ -148,7 +180,7 @@ pub fn run() {
                         let abs_path = if candidate.is_absolute() {
                             candidate.clone()
                         } else {
-                            std::fs::canonicalize(candidate)
+                            crate::utils::canonicalize(candidate)
                                 .unwrap_or_else(|_| candidate.clone())
                         };
                         found = Some(abs_path.to_string_lossy().to_string());
