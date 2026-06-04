@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { check, type Update, type DownloadEvent } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 
@@ -11,6 +12,7 @@ interface UpdateNotificationProps {
 type UpdateState = "idle" | "checking" | "available" | "downloading" | "installing" | "error" | "success";
 
 export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
+  const { t } = useTranslation();
   const [state, setState] = useState<UpdateState>("idle");
   const [updateInfo, setUpdateInfo] = useState<Update | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
@@ -163,7 +165,7 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
               <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
             </svg>
           </div>
-          <div className="update-title">正在检查更新...</div>
+          <div className="update-title">{t("update.checking")}</div>
         </div>
       )}
 
@@ -175,9 +177,9 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
               <path d="M10 2L12.5 7.5L18 8.5L14 12.5L15 18L10 15.5L5 18L6 12.5L2 8.5L7.5 7.5L10 2Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
             </svg>
           </div>
-          <div className="update-title">发现新版本 v{updateInfo.version}</div>
+          <div className="update-title">{t("update.newVersionFound", { version: updateInfo.version })}</div>
           <div className="update-version-info">
-            当前版本: v{updateInfo.currentVersion}
+            {t("update.currentVersionLabel", { version: updateInfo.currentVersion })}
           </div>
           {updateInfo.body && (
             <div className="update-changelog">
@@ -186,10 +188,10 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
           )}
           <div className="update-actions">
             <button className="update-btn update-btn-primary" onClick={handleDownloadAndInstall}>
-              立即更新
+              {t("update.updateNow")}
             </button>
             <button className="update-btn update-btn-ghost" onClick={onClose}>
-              稍后提醒
+              {t("update.later")}
             </button>
           </div>
         </div>
@@ -204,7 +206,7 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
               <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
             </svg>
           </div>
-          <div className="update-title">正在下载更新...</div>
+          <div className="update-title">{t("update.downloadingUpdate")}</div>
           <div className="update-progress-bar">
             <div
               className="update-progress-fill"
@@ -229,8 +231,8 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
               <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
             </svg>
           </div>
-          <div className="update-title">正在安装更新...</div>
-          <div className="update-desc">安装完成后将自动重启应用</div>
+          <div className="update-title">{t("update.installingUpdate")}</div>
+          <div className="update-desc">{t("update.installCompleteRestart")}</div>
         </div>
       )}
 
@@ -243,14 +245,14 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
               <path d="M6 10.5L8.5 13L14 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <div className="update-title">更新安装完成</div>
-          <div className="update-desc">需要重启应用以完成更新</div>
+          <div className="update-title">{t("update.installComplete")}</div>
+          <div className="update-desc">{t("update.needRestart")}</div>
           <div className="update-actions">
             <button className="update-btn update-btn-primary" onClick={handleRelaunch}>
-              立即重启
+              {t("update.restartNow")}
             </button>
             <button className="update-btn update-btn-ghost" onClick={onClose}>
-              稍后重启
+              {t("update.restartLater")}
             </button>
           </div>
         </div>
@@ -265,14 +267,14 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
               <path d="M7 7L13 13M13 7L7 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
             </svg>
           </div>
-          <div className="update-title">更新失败</div>
+          <div className="update-title">{t("update.updateFailed")}</div>
           <div className="update-error-msg">{errorMessage}</div>
           <div className="update-actions">
             <button className="update-btn update-btn-primary" onClick={handleRetry}>
-              重试
+              {t("common.retry")}
             </button>
             <button className="update-btn update-btn-ghost" onClick={onClose}>
-              关闭
+              {t("common.close")}
             </button>
           </div>
         </div>

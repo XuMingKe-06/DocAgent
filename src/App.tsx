@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from "react";
+import { useTranslation } from 'react-i18next';
 import { TopBar } from "./components/layout/TopBar";
 import { MainLayout } from "./components/layout/MainLayout";
 import { MainArea } from "./components/layout/MainArea";
@@ -46,6 +47,7 @@ function LazyFallback() {
 }
 
 export default function App() {
+  const { t } = useTranslation();
   const [historyOpen, setHistoryOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [updateNotificationOpen, setUpdateNotificationOpen] = useState(false);
@@ -303,7 +305,7 @@ export default function App() {
           data: {
             ...targetNode.data,
             success: lastToolResult.success,
-            error: lastToolResult.success ? undefined : (lastToolResult.error || "执行失败"),
+            error: lastToolResult.success ? undefined : (lastToolResult.error || t('toolNode.executionFailed')),
           },
         });
       }
@@ -374,7 +376,7 @@ export default function App() {
   useEffect(() => {
     if (!networkRetry) return;
     // 将当前 thinking 节点更新为重连状态，或创建新的 thinking 节点
-    const retryMessage = `${networkRetry.reason}（第 ${networkRetry.attempt}/${networkRetry.maxAttempts} 次）`;
+    const retryMessage = `${networkRetry.reason}${t('network.retryAttempt', { attempt: networkRetry.attempt, maxAttempts: networkRetry.maxAttempts })}`;
     if (thinkingNodeIdRef.current) {
       updateNode(thinkingNodeIdRef.current, {
         status: "running",
@@ -442,8 +444,8 @@ export default function App() {
       const nodeId = addNode("confirm", {
         title: pendingConfirmation.operationType,
         description: pendingConfirmation.description,
-        confirmLabel: "确认执行",
-        cancelLabel: "取消操作",
+        confirmLabel: t('confirmNode.confirmExecute'),
+        cancelLabel: t('confirmNode.cancelOperation'),
         confirmed: null,
       }, "running");
       confirmNodeIdRef.current = nodeId;
@@ -454,8 +456,8 @@ export default function App() {
             data: {
               title: pendingConfirmation.operationType,
               description: pendingConfirmation.description,
-              confirmLabel: "确认执行",
-              cancelLabel: "取消操作",
+              confirmLabel: t('confirmNode.confirmExecute'),
+              cancelLabel: t('confirmNode.cancelOperation'),
               confirmed: approved,
             },
             status: approved ? "completed" : "cancelled",
@@ -698,7 +700,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("[App] 预览文档失败:", err);
-      setPreviewContent(`[预览失败] ${err instanceof Error ? err.message : String(err)}`);
+      setPreviewContent(`[${t('preview.previewFailed')}] ${err instanceof Error ? err.message : String(err)}`);
       setPreviewFileType(undefined);
     } finally {
       setPreviewLoading(false);
@@ -724,7 +726,7 @@ export default function App() {
 
   // 版本对比回调：将两个版本的内容传入 PreviewOverlay 的 DiffView
   const handleCompareVersions = useCallback((oldContent: string, newContent: string, fileType: string) => {
-    setPreviewTitle("版本差异对比");
+    setPreviewTitle(t('preview.versionDiff'));
     setPreviewContent(newContent);
     setPreviewFileType(fileType);
     setPreviewDiffData({ oldContent, newContent });
@@ -856,7 +858,7 @@ export default function App() {
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            加载预览中...
+            {t('preview.loading')}
           </div>
         </div>
       )}

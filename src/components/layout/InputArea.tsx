@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useRef, useCallback, type KeyboardEvent, type DragEvent, type ClipboardEvent } from "react";
 import { Icon } from "../common/Icon";
 import { TemplatePicker } from "../common/TemplatePicker";
@@ -16,6 +17,7 @@ interface InputAreaProps {
 }
 
 export function InputArea({ onSend, disabled = false, executionStatus = "idle", onStop }: InputAreaProps) {
+  const { t } = useTranslation();
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -42,7 +44,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
     if ((!trimmed && attachments.length === 0) || disabled) return;
-    onSend(trimmed || "[附件]");
+    onSend(trimmed || t('inputArea.attachment'));
     setText("");
     clearAttachments();
     if (textareaRef.current) {
@@ -206,7 +208,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
   const hasContent = text.trim().length > 0 || attachments.length > 0;
 
   return (
-    <div className="input-area-wrapper" role="form" aria-label="消息输入">
+    <div className="input-area-wrapper" role="form" aria-label={t('inputArea.messageInput')}>
       <div className="input-container-wrapper" style={{ position: "relative" }}>
         {/* 附件预览条 */}
         {attachments.length > 0 && (
@@ -219,7 +221,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
                 <button
                   className="attachment-remove"
                   onClick={() => removeAttachment(idx)}
-                  aria-label={`移除 ${att.name}`}
+                  aria-label={t('inputArea.removeAttachment', { name: att.name })}
                 >
                   <Icon name="close" />
                 </button>
@@ -232,7 +234,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
         {showVisionWarning && (
           <div className="vision-warning-bar">
             <Icon name="info" />
-            <span>当前模型不支持图片理解，图片内容将无法被识别。建议用文字描述图片内容。</span>
+            <span>{t('inputArea.visionWarning')}</span>
           </div>
         )}
 
@@ -242,7 +244,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <button className="input-btn" title="附加文件" aria-label="附加文件" onClick={handleFileSelect}>
+          <button className="input-btn" title={t('inputArea.attachFile')} aria-label={t('inputArea.attachFile')} onClick={handleFileSelect}>
             <Icon name="attach" />
           </button>
           <input
@@ -258,8 +260,8 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
             ref={textareaRef}
             className="input-textarea"
             rows={1}
-            placeholder="输入指令，让Agent帮你处理文档..."
-            aria-label="消息输入框"
+            placeholder={t('inputArea.placeholder')}
+            aria-label={t('inputArea.messageInputBox')}
             value={text}
             onChange={(e) => { setText(e.target.value); handleInput(); }}
             onKeyDown={handleKeyDown}
@@ -270,8 +272,8 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
           <div className="input-actions-right">
             <button
               className={`input-btn ${pickerOpen ? "input-btn-active" : ""}`}
-              title={`Prompt模板 (${quickPromptShortcut})`}
-              aria-label="Prompt模板"
+              title={`${t('inputArea.promptTemplate')} (${quickPromptShortcut})`}
+              aria-label={t('inputArea.promptTemplate')}
               aria-expanded={pickerOpen}
               onClick={() => setPickerOpen(!pickerOpen)}
             >
@@ -280,8 +282,8 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
             {executionStatus === "running" && onStop ? (
               <button
                 className="stop-btn"
-                title="停止执行"
-                aria-label="停止执行"
+                title={t('inputArea.stopExecution')}
+                aria-label={t('inputArea.stopExecution')}
                 onClick={onStop}
               >
                 <Icon name="stop" />
@@ -289,7 +291,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
             ) : executionStatus === "stopping" ? (
               <button
                 className="stop-btn stop-btn-loading"
-                title="正在停止..."
+                title={t('inputArea.stopping')}
                 disabled
               >
                 <span className="loading-spinner"></span>
@@ -297,8 +299,8 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
             ) : (
               <button
                 className={`send-btn ${hasContent && !disabled ? "send-btn-active" : ""}`}
-                title="发送"
-                aria-label="发送消息"
+                title={t('inputArea.send')}
+                aria-label={t('inputArea.sendMessage')}
                 aria-disabled={disabled || !hasContent}
                 onClick={handleSend}
                 disabled={disabled || !hasContent}
@@ -313,7 +315,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
         {isDragOver && (
           <div className="drag-overlay">
             <Icon name="attach" />
-            <span>释放以添加附件</span>
+            <span>{t('inputArea.dropToAdd')}</span>
           </div>
         )}
 
@@ -327,19 +329,19 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
 
       <div className="shortcut-hints" aria-hidden="true">
         <span>
-          <kbd className="kbd">{sendMessageShortcut}</kbd> 发送
+          <kbd className="kbd">{sendMessageShortcut}</kbd> {t('inputArea.sendShortcut')}
         </span>
         <span>
-          <kbd className="kbd">{newLineShortcut}</kbd> 换行
+          <kbd className="kbd">{newLineShortcut}</kbd> {t('inputArea.newLineShortcut')}
         </span>
         <span>
-          <kbd className="kbd">{quickPromptShortcut}</kbd> 模板
+          <kbd className="kbd">{quickPromptShortcut}</kbd> {t('inputArea.templateShortcut')}
         </span>
         <span>
-          <kbd className="kbd">Ctrl + V</kbd> 粘贴图片
+          <kbd className="kbd">Ctrl + V</kbd> {t('inputArea.pasteImage')}
         </span>
         <span>
-          <kbd className="kbd">{toggleSidebarShortcut}</kbd> 侧边栏
+          <kbd className="kbd">{toggleSidebarShortcut}</kbd> {t('inputArea.sidebarShortcut')}
         </span>
       </div>
 

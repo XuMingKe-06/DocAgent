@@ -55,14 +55,17 @@ export function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// 直接导入 i18n 实例（i18n 在应用启动时已同步初始化，此处在运行时调用时 i18n 已就绪）
+import i18n from '../i18n';
+
 export function generateToolBrief(toolName: string, input: Record<string, unknown>): string {
   const f = (key: string) => String(input[key] ?? "");
   const actionMap: Record<string, string> = {
-    generate: "生成",
-    read: "读取",
-    modify: "修改",
-    convert: "转换",
-    analyze: "分析",
+    generate: i18n.t('toolBrief.generate'),
+    read: i18n.t('toolBrief.read'),
+    modify: i18n.t('toolBrief.modify'),
+    convert: i18n.t('toolBrief.convert'),
+    analyze: i18n.t('toolBrief.analyze'),
   };
   const formatMap: Record<string, string> = {
     docx_skill: "Word",
@@ -79,19 +82,19 @@ export function generateToolBrief(toolName: string, input: Record<string, unknow
     case "pdf_skill":
       // 流式阶段提前发射时参数可能为空，此时只显示格式名称
       if (action) {
-        return `${action} ${format} ${f("path") || "文档"}`;
+        return `${action} ${format} ${f("path") || i18n.t('toolBrief.document')}`;
       }
-      return `${format} ${f("path") || "文档"}`;
+      return `${format} ${f("path") || i18n.t('toolBrief.document')}`;
     case "delete_file":
-      return `删除 ${f("path") || "文件"}`;
+      return `${i18n.t('toolBrief.delete')} ${f("path") || i18n.t('toolBrief.file')}`;
     case "search_files":
-      return `搜索 ${f("query") ? `"${f("query")}"` : "文件"}`;
+      return `${i18n.t('toolBrief.search')} ${f("query") ? `"${f("query")}"` : i18n.t('toolBrief.file')}`;
     case "list_directory":
-      return "列出目录";
+      return i18n.t('toolBrief.listDirectory');
     case "read_file":
-      return `读取 ${f("path") || "文件"}`;
+      return `${i18n.t('toolBrief.read')} ${f("path") || i18n.t('toolBrief.file')}`;
     case "write_text_file":
-      return `写入 ${f("path") || "文件"}`;
+      return `${i18n.t('toolBrief.write')} ${f("path") || i18n.t('toolBrief.file')}`;
     default:
       return toolName;
   }

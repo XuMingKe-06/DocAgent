@@ -6,6 +6,7 @@ import type { TodoItem } from "../services/event";
 import { generateToolBrief } from "../utils/format";
 import { onAgentContextUpdate } from "../services/event";
 import * as tauriCmd from "../services/tauri";
+import i18n from "../i18n";
 
 /** 按会话缓存的状态条目，切换会话时保存/恢复 */
 export interface SessionCacheEntry {
@@ -586,7 +587,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
                   data: {
                     ...n.data,
                     success: event.success,
-                    error: event.success ? undefined : (event.error || "执行失败"),
+                    error: event.success ? undefined : (event.error || i18n.t("toolNode.executionFailed")),
                   },
                 }
               : n

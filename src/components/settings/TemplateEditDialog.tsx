@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../common/Icon";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import type { PromptTemplate, TemplateVariable, CreateTemplateParams } from "../../types";
@@ -9,23 +10,26 @@ interface TemplateEditDialogProps {
   template?: PromptTemplate | null;
 }
 
-const CATEGORIES = [
-  { value: "document", label: "文档生成" },
-  { value: "analysis", label: "文档分析" },
-  { value: "conversion", label: "格式转换" },
-  { value: "custom", label: "自定义" },
-];
-
-const VAR_TYPES = [
-  { value: "string", label: "文本" },
-  { value: "number", label: "数字" },
-  { value: "boolean", label: "布尔" },
-  { value: "select", label: "选择" },
-];
-
 export function TemplateEditDialog({ open, onClose, template }: TemplateEditDialogProps) {
+  const { t } = useTranslation();
   const { createTemplate, updateTemplate } = useSettingsStore();
   const isEdit = !!template;
+
+  // 分类选项
+  const CATEGORIES = [
+    { value: "document", label: t('settings.templateEdit.categoryDocument') },
+    { value: "analysis", label: t('settings.templateEdit.categoryAnalysis') },
+    { value: "conversion", label: t('settings.templateEdit.categoryConversion') },
+    { value: "custom", label: t('settings.templateEdit.categoryCustom') },
+  ];
+
+  // 变量类型选项
+  const VAR_TYPES = [
+    { value: "string", label: t('settings.templateEdit.varTypeString') },
+    { value: "number", label: t('settings.templateEdit.varTypeNumber') },
+    { value: "boolean", label: t('settings.templateEdit.varTypeBoolean') },
+    { value: "select", label: t('settings.templateEdit.varTypeSelect') },
+  ];
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -144,7 +148,7 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
       >
         {/* 标题栏 */}
         <div className="dialog-header">
-          <h3 className="dialog-title">{isEdit ? "编辑模板" : "创建模板"}</h3>
+          <h3 className="dialog-title">{isEdit ? t('settings.templateEdit.editTitle') : t('settings.templateEdit.createTitle')}</h3>
           <button className="dialog-close-btn" onClick={onClose}>
             <Icon name="close" size={16} />
           </button>
@@ -154,10 +158,10 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
         <div className="dialog-body">
           {/* 模板名称 */}
           <div className="form-group">
-            <label className="form-label">模板名称 <span className="form-required">*</span></label>
+            <label className="form-label">{t('settings.templateEdit.nameRequiredLabel')}</label>
             <input
               className="form-input"
-              placeholder="例如：周报生成"
+              placeholder={t('settings.templateEdit.namePlaceholder')}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -165,10 +169,10 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
 
           {/* 模板描述 */}
           <div className="form-group">
-            <label className="form-label">描述</label>
+            <label className="form-label">{t('settings.templateEdit.descLabel')}</label>
             <input
               className="form-input"
-              placeholder="简要描述模板用途"
+              placeholder={t('settings.templateEdit.descPlaceholder')}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
             />
@@ -176,7 +180,7 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
 
           {/* 分类 */}
           <div className="form-group">
-            <label className="form-label">分类</label>
+            <label className="form-label">{t('settings.templateEdit.categoryLabel')}</label>
             <select
               className="form-select"
               value={category}
@@ -191,38 +195,38 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
           {/* 模板内容 */}
           <div className="form-group">
             <div className="form-label-row">
-              <label className="form-label">模板内容 <span className="form-required">*</span></label>
+              <label className="form-label">{t('settings.templateEdit.contentRequiredLabel')}</label>
               <button className="extract-btn" onClick={extractVariables}>
                 <Icon name="template" size={12} />
-                提取变量
+                {t('settings.templateEdit.extractVariables')}
               </button>
             </div>
             <textarea
               className="form-textarea"
-              placeholder="输入模板内容，使用 {{变量名}} 定义变量占位符&#10;例如：请帮我生成一份{{docType}}，主题是{{topic}}"
+              placeholder={t('settings.templateEdit.contentTextareaPlaceholder')}
               rows={6}
               value={content}
               onChange={(e) => setContent(e.target.value)}
             />
-            <div className="form-hint">使用 {"{{变量名}}"} 语法定义可替换的变量占位符</div>
+            <div className="form-hint">{t('settings.templateEdit.variableHint')}</div>
           </div>
 
           {/* 变量定义 */}
           {variables.length > 0 && (
             <div className="form-group">
-              <label className="form-label">变量定义</label>
+              <label className="form-label">{t('settings.templateEdit.variableDefinition')}</label>
               <div className="variables-list">
                 {variables.map((v, i) => (
                   <div key={i} className="variable-row">
                     <input
                       className="var-input var-input-name"
-                      placeholder="变量名"
+                      placeholder={t('settings.templateEdit.variableName')}
                       value={v.name}
                       onChange={(e) => updateVariable(i, "name", e.target.value)}
                     />
                     <input
                       className="var-input var-input-label"
-                      placeholder="显示标签"
+                      placeholder={t('settings.templateEdit.variableLabel')}
                       value={v.label}
                       onChange={(e) => updateVariable(i, "label", e.target.value)}
                     />
@@ -231,14 +235,14 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
                       value={v.type}
                       onChange={(e) => updateVariable(i, "type", e.target.value)}
                     >
-                      {VAR_TYPES.map((t) => (
-                        <option key={t.value} value={t.value}>{t.label}</option>
+                      {VAR_TYPES.map((vt) => (
+                        <option key={vt.value} value={vt.value}>{vt.label}</option>
                       ))}
                     </select>
                     {v.type === "select" && (
                       <input
                         className="var-input var-input-options"
-                        placeholder="选项1,选项2,选项3"
+                        placeholder={t('settings.templateEdit.optionsPlaceholder')}
                         value={v.options?.join(",") ?? ""}
                         onChange={(e) => updateVariable(i, "options", e.target.value.split(",").map((s) => s.trim()).filter(Boolean))}
                       />
@@ -255,19 +259,19 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
           {/* 添加变量按钮 */}
           <button className="add-var-btn" onClick={addVariable}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            添加变量
+            {t('settings.templateEdit.addVariable')}
           </button>
         </div>
 
         {/* 底部按钮 */}
         <div className="dialog-footer">
-          <button className="btn-cancel" onClick={onClose}>取消</button>
+          <button className="btn-cancel" onClick={onClose}>{t('settings.templateEdit.cancel')}</button>
           <button
             className="btn-save"
             onClick={handleSave}
             disabled={!name.trim() || !content.trim() || saving}
           >
-            {saving ? "保存中..." : isEdit ? "保存修改" : "创建模板"}
+            {saving ? t('settings.templateEdit.saving') : isEdit ? t('settings.templateEdit.saveChanges') : t('settings.templateEdit.createTemplate')}
           </button>
         </div>
 

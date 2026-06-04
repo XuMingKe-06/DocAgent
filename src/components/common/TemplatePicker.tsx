@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../common/Icon";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import type { PromptTemplate, TemplateVariable } from "../../types";
@@ -9,15 +10,17 @@ interface TemplatePickerProps {
   onInsert: (text: string) => void;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  document: "文档生成",
-  analysis: "文档分析",
-  conversion: "格式转换",
-  custom: "自定义",
-};
-
 export function TemplatePicker({ open, onClose, onInsert }: TemplatePickerProps) {
+  const { t } = useTranslation();
   const { templates } = useSettingsStore();
+
+  // 分类标签映射（需要 t() 函数，所以定义在组件内部）
+  const CATEGORY_LABELS: Record<string, string> = {
+    document: t("settings.templates.categoryDocument"),
+    analysis: t("settings.templates.categoryAnalysis"),
+    conversion: t("settings.templates.categoryConversion"),
+    custom: t("settings.templates.categoryCustom"),
+  };
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
   const [varValues, setVarValues] = useState<Record<string, string>>({});
@@ -52,9 +55,9 @@ export function TemplatePicker({ open, onClose, onInsert }: TemplatePickerProps)
 
   // 过滤模板
   const filtered = searchQuery.trim()
-    ? templates.filter((t) => {
+    ? templates.filter((tpl) => {
         const q = searchQuery.toLowerCase();
-        return t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
+        return tpl.name.toLowerCase().includes(q) || tpl.description.toLowerCase().includes(q);
       })
     : templates;
 
@@ -94,7 +97,7 @@ export function TemplatePicker({ open, onClose, onInsert }: TemplatePickerProps)
         <Icon name="search" size={14} />
         <input
           className="picker-search-input"
-          placeholder="搜索模板..."
+          placeholder={t("settings.templates.searchPlaceholder")}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           autoFocus
@@ -105,7 +108,7 @@ export function TemplatePicker({ open, onClose, onInsert }: TemplatePickerProps)
       {!selectedTemplate ? (
         <div className="picker-list">
           {filtered.length === 0 ? (
-            <div className="picker-empty">无匹配模板</div>
+            <div className="picker-empty">{t("settings.templates.noMatch")}</div>
           ) : (
             filtered.map((tpl) => (
               <button
@@ -115,7 +118,7 @@ export function TemplatePicker({ open, onClose, onInsert }: TemplatePickerProps)
               >
                 <div className="picker-item-name">
                   {tpl.name}
-                  {tpl.isBuiltin && <span className="picker-builtin-tag">内置</span>}
+                  {tpl.isBuiltin && <span className="picker-builtin-tag">{t("settings.templates.builtin")}</span>}
                 </div>
                 <div className="picker-item-desc">{tpl.description}</div>
                 <span className="picker-item-category">
@@ -147,7 +150,7 @@ export function TemplatePicker({ open, onClose, onInsert }: TemplatePickerProps)
                       value={varValues[v.name] ?? ""}
                       onChange={(e) => setVarValues({ ...varValues, [v.name]: e.target.value })}
                     >
-                      <option value="">请选择...</option>
+                      <option value="">{t("settings.templateEdit.pleaseSelect")}</option>
                       {v.options.map((opt) => (
                         <option key={opt} value={opt}>{opt}</option>
                       ))}
@@ -158,8 +161,8 @@ export function TemplatePicker({ open, onClose, onInsert }: TemplatePickerProps)
                       value={varValues[v.name] ?? "true"}
                       onChange={(e) => setVarValues({ ...varValues, [v.name]: e.target.value })}
                     >
-                      <option value="true">是</option>
-                      <option value="false">否</option>
+                      <option value="true">{t("common.yes")}</option>
+                      <option value="false">{t("common.no")}</option>
                     </select>
                   ) : (
                     <input
@@ -176,7 +179,7 @@ export function TemplatePicker({ open, onClose, onInsert }: TemplatePickerProps)
 
           {/* 预览 */}
           <div className="picker-preview">
-            <div className="picker-preview-label">预览</div>
+            <div className="picker-preview-label">{t("settings.templateEdit.preview")}</div>
             <div className="picker-preview-content">
               {resolveContent(selectedTemplate)}
             </div>
@@ -184,7 +187,7 @@ export function TemplatePicker({ open, onClose, onInsert }: TemplatePickerProps)
 
           {/* 插入按钮 */}
           <button className="picker-insert-btn" onClick={handleInsert}>
-            插入到输入框
+            {t("settings.templateEdit.insertToInput")}
           </button>
         </div>
       )}

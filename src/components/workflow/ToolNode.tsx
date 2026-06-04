@@ -1,4 +1,5 @@
 import type { WorkflowNode, ToolNodeData } from "../../types";
+import { useTranslation } from 'react-i18next';
 import { Icon } from "../common/Icon";
 
 interface ToolNodeProps {
@@ -6,6 +7,7 @@ interface ToolNodeProps {
 }
 
 export function ToolNode({ node }: ToolNodeProps) {
+  const { t } = useTranslation();
   const data = node.data as ToolNodeData;
   const hasError = data.success === false;
   // 判断工具是否正在执行中
@@ -34,7 +36,7 @@ export function ToolNode({ node }: ToolNodeProps) {
         <span> · </span>
         <span>{data.briefDescription}</span>
         {isRunning && (
-          <span className="wf-tool-status-running">执行中...</span>
+          <span className="wf-tool-status-running">{t('toolNode.executing')}</span>
         )}
         {hasError && data.error && (
           <span className="wf-tool-error"> — {data.error}</span>

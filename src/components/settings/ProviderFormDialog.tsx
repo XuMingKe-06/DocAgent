@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from 'react-i18next';
 import type { ProviderInfo, LLMProviderType, ConnectionResult } from "../../types";
 import * as tauriCmd from "../../services/tauri";
 
@@ -60,15 +61,26 @@ interface ProviderFormDialogProps {
   onSaved: () => void;
 }
 
-const providerTypeOptions: { value: LLMProviderType; label: string; defaultBase: string }[] = [
-  { value: "openai", label: "OpenAI", defaultBase: "https://api.openai.com/v1" },
-  { value: "anthropic", label: "Anthropic", defaultBase: "https://api.anthropic.com" },
-  { value: "gemini", label: "Google Gemini", defaultBase: "https://generativelanguage.googleapis.com/v1beta" },
-  { value: "ollama", label: "Ollama", defaultBase: "http://localhost:11434/v1" },
-  { value: "custom", label: "自定义", defaultBase: "" },
+// 服务商类型选项（不含中文标签，中文标签在组件内通过 t() 获取）
+const providerTypeValues: { value: LLMProviderType; defaultBase: string }[] = [
+  { value: "openai", defaultBase: "https://api.openai.com/v1" },
+  { value: "anthropic", defaultBase: "https://api.anthropic.com" },
+  { value: "gemini", defaultBase: "https://generativelanguage.googleapis.com/v1beta" },
+  { value: "ollama", defaultBase: "http://localhost:11434/v1" },
+  { value: "custom", defaultBase: "" },
 ];
 
+// 服务商类型标签映射
+const providerTypeLabels: Record<LLMProviderType, string> = {
+  openai: "OpenAI",
+  anthropic: "Anthropic",
+  gemini: "Google Gemini",
+  ollama: "Ollama",
+  custom: "", // 自定义标签通过 t() 获取
+};
+
 export function ProviderFormDialog({ mode, provider, onClose, onSaved }: ProviderFormDialogProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState(provider?.name ?? "");
   const [providerType, setProviderType] = useState<LLMProviderType>(provider?.providerType ?? "openai");
   const [apiBase, setApiBase] = useState(provider?.apiBase ?? "https://api.openai.com/v1");
@@ -85,18 +97,24 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
   const [testResult, setTestResult] = useState<ConnectionResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // 获取服务商类型选项（含 i18n 标签）
+  const providerTypeOptions = providerTypeValues.map((opt) => ({
+    ...opt,
+    label: opt.value === "custom" ? t('settings.providerForm.typeCustom') : providerTypeLabels[opt.value],
+  }));
+
   useEffect(() => {
-    const option = providerTypeOptions.find((o) => o.value === providerType);
+    const option = providerTypeValues.find((o) => o.value === providerType);
     if (option && mode === "add") {
       setApiBase(option.defaultBase);
     }
   }, [providerType, mode]);
 
   const handleSave = async () => {
-    if (!name.trim()) { setError("请输入服务商名称"); return; }
-    if (!apiBase.trim()) { setError("请输入 API Base URL"); return; }
-    if (!model.trim()) { setError("请输入模型名称"); return; }
-    if (mode === "add" && !apiKey.trim()) { setError("请输入 API Key"); return; }
+    if (!name.trim()) { setError(t('settings.providerForm.enterProviderName')); return; }
+    if (!apiBase.trim()) { setError(t('settings.providerForm.enterApiBase')); return; }
+    if (!model.trim()) { setError(t('settings.providerForm.enterModelName')); return; }
+    if (mode === "add" && !apiKey.trim()) { setError(t('settings.providerForm.enterApiKey')); return; }
 
     setSaving(true);
     setError(null);
@@ -117,7 +135,7 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
       }
       onSaved();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "保存失败";
+      const msg = err instanceof Error ? err.message : typeof err === "string" ? err : t('settings.providerForm.saveFailed');
       setError(msg);
     } finally {
       setSaving(false);
@@ -127,16 +145,16 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
   const handleTest = async () => {
     // 验证必要参数（添加和编辑模式通用）
     if (!apiBase.trim()) {
-      setError("请输入 API Base URL");
+      setError(t('settings.providerForm.enterApiBase'));
       return;
     }
     if (!model.trim()) {
-      setError("请输入模型名称");
+      setError(t('settings.providerForm.enterModelName'));
       return;
     }
     // 添加模式下 API Key 必填；编辑模式下可留空，后端会从已保存 Provider 查找
     if (mode === "add" && !apiKey.trim()) {
-      setError("请输入 API Key");
+      setError(t('settings.providerForm.enterApiKey'));
       return;
     }
 
@@ -159,7 +177,7 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
       const result = await tauriCmd.testConnectionWithConfig(config, providerId);
       setTestResult(result);
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : typeof err === "string" ? err : "连接测试失败";
+      const msg = err instanceof Error ? err.message : typeof err === "string" ? err : t('settings.providerForm.connectionTestFailed');
       setTestResult({ success: false, latencyMs: 0, errorMessage: msg, error: msg });
     } finally {
       setTesting(false);
@@ -177,24 +195,24 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
       >
         <div className="dialog-header">
           <h3 className="dialog-title">
-            {mode === "add" ? "添加服务商" : "编辑服务商"}
+            {mode === "add" ? t('settings.providerForm.addProvider') : t('settings.providerForm.editProvider')}
           </h3>
           <button className="dialog-close-btn" onClick={onClose}>x</button>
         </div>
 
         <div className="dialog-body">
           <div className="form-group">
-            <label className="form-label">服务商名称</label>
+            <label className="form-label">{t('settings.providerForm.providerName')}</label>
             <input
               className="form-input"
-              placeholder="例如：我的 GPT-4o"
+              placeholder={t('settings.providerForm.providerNamePlaceholder')}
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
           </div>
 
           <div className="form-group">
-            <label className="form-label">服务商类型</label>
+            <label className="form-label">{t('settings.providerForm.providerType')}</label>
             <select
               className="form-select"
               value={providerType}
@@ -207,7 +225,7 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
           </div>
 
           <div className="form-group">
-            <label className="form-label">API Base URL</label>
+            <label className="form-label">{t('settings.providerForm.apiBaseUrl')}</label>
             <input
               className="form-input form-input-mono"
               placeholder="https://api.openai.com/v1"
@@ -218,7 +236,7 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
 
           <div className="form-group">
             <label className="form-label">
-              API Key{mode === "edit" ? "（留空则保持不变）" : ""}
+              {t('settings.providerForm.apiKey')}{mode === "edit" ? t('settings.providerForm.apiKeyEditHint') : ""}
             </label>
             <input
               type="password"
@@ -230,10 +248,10 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
           </div>
 
           <div className="form-group">
-            <label className="form-label">模型名称</label>
+            <label className="form-label">{t('settings.providerForm.modelName')}</label>
             <input
               className="form-input form-input-mono"
-              placeholder="例如：gpt-4o、claude-3-5-sonnet、gemini-1.5-pro"
+              placeholder={t('settings.providerForm.modelNamePlaceholder')}
               value={model}
               onChange={(e) => setModel(e.target.value)}
             />
@@ -241,13 +259,13 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
 
           <div className="form-group">
             <label className="form-label">
-              上下文窗口大小
-              <span className="form-label-hint">支持 K/M 后缀，如 128K、1M；留空则自动推断</span>
+              {t('settings.providerForm.contextWindowSize')}
+              <span className="form-label-hint">{t('settings.providerForm.contextWindowHint')}</span>
             </label>
             <input
               className="form-input form-input-mono"
               type="text"
-              placeholder="例如：128K、200K、1M"
+              placeholder={t('settings.providerForm.contextWindowPlaceholder')}
               value={contextWindow}
               onChange={(e) => setContextWindow(e.target.value)}
             />
@@ -267,24 +285,24 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
 
           <div className="form-group">
             <label className="form-label">
-              视觉能力 (图片理解)
+              {t('settings.providerForm.visionCapability')}
             </label>
             <select
               className="form-select"
               value={supportsVision ? "yes" : "no"}
               onChange={(e) => setSupportsVision(e.target.value === "yes")}
             >
-              <option value="no">不支持</option>
-              <option value="yes">支持</option>
+              <option value="no">{t('settings.providerForm.notSupported')}</option>
+              <option value="yes">{t('settings.providerForm.supported')}</option>
             </select>
           </div>
 
           {testResult && (
             <div className={`test-result ${testResult.success ? "test-success" : "test-error"}`}>
               {testResult.success ? (
-                <span>连接成功 - 延迟: {testResult.latencyMs}ms{testResult.model ? ` | 模型: ${testResult.model}` : ""}</span>
+                <span>{testResult.model ? t('settings.providerForm.testConnectionSuccessWithModel', { latency: testResult.latencyMs, model: testResult.model }) : t('settings.providerForm.testConnectionSuccess', { latency: testResult.latencyMs })}</span>
               ) : (
-                <span>连接失败: {testResult.errorMessage || testResult.error || "未知错误"}</span>
+                <span>{t('settings.providerForm.testConnectionFailed', { error: testResult.errorMessage || testResult.error || t('settings.providerForm.unknownError') })}</span>
               )}
             </div>
           )}
@@ -303,13 +321,13 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
             {testing ? (
               <span className="test-loading">
                 <span className="test-spinner"></span>
-                测试中
+                {t('settings.providerForm.testing')}
               </span>
-            ) : "测试连接"}
+            ) : t('settings.providerForm.testConnection')}
           </button>
-          <button className="dialog-btn dialog-btn-ghost" onClick={onClose}>取消</button>
+          <button className="dialog-btn dialog-btn-ghost" onClick={onClose}>{t('settings.providerForm.cancel')}</button>
           <button className="dialog-btn dialog-btn-primary" onClick={handleSave} disabled={saving}>
-            {saving ? "保存中..." : "保存"}
+            {saving ? t('settings.providerForm.saving') : t('settings.providerForm.save')}
           </button>
         </div>
       </div>

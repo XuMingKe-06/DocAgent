@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useWorkflowStore } from "../../stores/useWorkflowStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
@@ -18,6 +19,7 @@ interface WorkflowTimelineProps {
  * 支持动态高度测量和自动滚动
  */
 export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
+  const { t } = useTranslation();
   const { nodes } = useWorkflowStore();
   const currentWorkspaceId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const llmProviders = useSettingsStore((s) => s.llmProviders);
@@ -79,23 +81,23 @@ export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
 
   if (nodes.length === 0) {
     return (
-      <div className="wf-empty" role="status" aria-label="空会话">
+      <div className="wf-empty" role="status" aria-label={t('workflow.emptySession')}>
         {/* 无工作区时的引导 */}
         {!hasWorkspace && (
           <div className="wf-empty-guide">
             <div className="wf-empty-guide-icon">
               <Icon name="folder" size={28} />
             </div>
-            <h3 className="wf-empty-title">选择工作区</h3>
+            <h3 className="wf-empty-title">{t('workflow.selectWorkspaceTitle')}</h3>
             <p className="wf-empty-desc">
-              请先选择一个文件夹作为工作区，Agent 将在该目录下操作文档
+              {t('workflow.selectWorkspaceDesc')}
             </p>
             <button
               className="wf-empty-guide-btn"
               onClick={() => setShowAddWorkspace(true)}
             >
               <Icon name="folder-plus" size={16} />
-              <span>添加工作区</span>
+              <span>{t('workflow.addWorkspace')}</span>
             </button>
           </div>
         )}
@@ -111,16 +113,16 @@ export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
             <div className="wf-empty-guide-icon wf-empty-guide-icon-secondary">
               <Icon name="settings" size={28} />
             </div>
-            <h3 className="wf-empty-title">配置服务商</h3>
+            <h3 className="wf-empty-title">{t('workflow.configureProviderTitle')}</h3>
             <p className="wf-empty-desc">
-              请先配置大模型服务商，Agent 需要通过大模型来理解和处理你的指令
+              {t('workflow.configureProviderDesc')}
             </p>
             <button
               className="wf-empty-guide-btn wf-empty-guide-btn-secondary"
               onClick={() => openSettings("llm")}
             >
               <Icon name="plus" size={16} />
-              <span>添加服务商</span>
+              <span>{t('workflow.addProvider')}</span>
             </button>
           </div>
         )}
@@ -128,9 +130,9 @@ export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
         {/* 工作区和服务商均已就绪，显示默认开始提示 */}
         {hasWorkspace && hasProvider && (
           <>
-            <h3 className="wf-empty-title">开始新会话</h3>
+            <h3 className="wf-empty-title">{t('workflow.startNewSession')}</h3>
             <p className="wf-empty-desc">
-              在下方输入指令，Agent 将协助你处理文档
+              {t('workflow.startSessionDesc')}
             </p>
           </>
         )}
@@ -152,7 +154,7 @@ export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
       className="workflow-scroll-container"
       onScroll={handleScroll}
       role="log"
-      aria-label="工作流时间线"
+      aria-label={t('workflow.timeline')}
       aria-live="polite"
     >
       <div

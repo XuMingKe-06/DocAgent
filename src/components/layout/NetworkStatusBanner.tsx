@@ -1,9 +1,11 @@
+import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { Icon } from '../common/Icon';
 import { useNetworkStore } from '../../stores/useNetworkStore';
 import { onSystemNetworkChange } from '../../services/event';
 
 export function NetworkStatusBanner() {
+  const { t } = useTranslation();
   const { status, setStatus } = useNetworkStore();
   const [showRecovery, setShowRecovery] = useState(false);
 
@@ -41,12 +43,12 @@ export function NetworkStatusBanner() {
       {status === 'offline' ? (
         <div className="flex items-center justify-center gap-2">
           <Icon name="warning" size={16} />
-          <span>网络已断开，部分功能可能不可用</span>
+          <span>{t('network.offline')}</span>
         </div>
       ) : (
         <div className="flex items-center justify-center gap-2">
           <Icon name="check-circle" size={16} />
-          <span>网络已恢复</span>
+          <span>{t('network.recovered')}</span>
         </div>
       )}
     </div>

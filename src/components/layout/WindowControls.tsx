@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { LogicalSize } from "@tauri-apps/api/dpi";
 import { Icon } from "../common/Icon";
@@ -8,6 +9,7 @@ const MIN_WINDOW_WIDTH = 960;
 const MIN_WINDOW_HEIGHT = 600;
 
 export function WindowControls() {
+  const { t } = useTranslation();
   const [isMaximized, setIsMaximized] = useState(true);
 
   // 检查窗口是否处于最大化状态
@@ -88,7 +90,7 @@ export function WindowControls() {
       {/* 最小化按钮 */}
       <button
         className="w-11 h-8 flex items-center justify-center hover:bg-bg-sub transition-colors"
-        title="最小化"
+        title={t('windowControls.minimize')}
         onClick={handleMinimize}
       >
         <Icon name="minimize" size={16} className="text-text-secondary" />
@@ -97,7 +99,7 @@ export function WindowControls() {
       {/* 最大化/还原按钮 */}
       <button
         className="w-11 h-8 flex items-center justify-center hover:bg-bg-sub transition-colors"
-        title={isMaximized ? "还原" : "最大化"}
+        title={isMaximized ? t('windowControls.restore') : t('windowControls.maximize')}
         onClick={handleToggleMaximize}
       >
         <Icon
@@ -110,7 +112,7 @@ export function WindowControls() {
       {/* 关闭按钮 */}
       <button
         className="w-11 h-8 flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors group"
-        title="关闭"
+        title={t('windowControls.close')}
         onClick={handleClose}
       >
         <Icon name="close" size={16} className="text-text-secondary group-hover:text-white" />

@@ -15,11 +15,14 @@ export interface GeneralSettings {
   /** 作者公司/组织 */
   authorCompany: string;
   confirmationLevel: ConfirmationLevel;
-  language: string;
 }
 
 export interface AppearanceSettings {
   themeMode: ThemeMode;
+  /** 界面语言 */
+  language: string;
+  /** 是否跟随系统语言 */
+  languageFollowSystem: boolean;
 }
 
 export interface VersionSnapshotSettings {

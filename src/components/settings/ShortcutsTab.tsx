@@ -1,25 +1,27 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import type { Shortcuts } from "../../types";
 
-// 快捷键配置项定义
-const shortcutItems: {
-  key: keyof Shortcuts;
-  label: string;
-  description: string;
-}[] = [
-  { key: "newSession", label: "新建会话", description: "创建一个新的对话会话" },
-  { key: "closeSession", label: "关闭会话", description: "关闭当前对话会话" },
-  { key: "sendMessage", label: "发送消息", description: "发送输入框中的消息" },
-  { key: "toggleSidebar", label: "切换侧边栏", description: "显示或隐藏侧边栏" },
-  { key: "quickPrompt", label: "快速提示", description: "打开 Prompt 模板选择器" },
-];
-
 export function ShortcutsTab() {
+  const { t } = useTranslation();
   const { settings, updateSettings } = useSettingsStore();
   const [editingKey, setEditingKey] = useState<keyof Shortcuts | null>(null);
   const [capturedKeys, setCapturedKeys] = useState("");
   const captureRef = useRef<HTMLDivElement>(null);
+
+  // 快捷键配置项定义
+  const shortcutItems: {
+    key: keyof Shortcuts;
+    label: string;
+    description: string;
+  }[] = [
+    { key: "newSession", label: t('settings.shortcuts.newSession'), description: t('settings.shortcuts.newSessionDesc') },
+    { key: "closeSession", label: t('settings.shortcuts.closeSession'), description: t('settings.shortcuts.closeSessionDesc') },
+    { key: "sendMessage", label: t('settings.shortcuts.sendMessage'), description: t('settings.shortcuts.sendMessageDesc') },
+    { key: "toggleSidebar", label: t('settings.shortcuts.toggleSidebar'), description: t('settings.shortcuts.toggleSidebarDesc') },
+    { key: "quickPrompt", label: t('settings.shortcuts.quickPrompt'), description: t('settings.shortcuts.quickPromptDesc') },
+  ];
 
   // 重置所有快捷键为默认值
   const resetToDefaults = () => {
@@ -95,9 +97,9 @@ export function ShortcutsTab() {
     <div>
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">快捷键</span>
+          <span className="section-title">{t('settings.shortcuts.sectionTitle')}</span>
           <button className="sc-reset-btn" onClick={resetToDefaults}>
-            恢复默认
+            {t('settings.shortcuts.resetToDefault')}
           </button>
         </div>
 
@@ -118,7 +120,7 @@ export function ShortcutsTab() {
                     setCapturedKeys("");
                   }}
                 >
-                  {capturedKeys || "按下快捷键..."}
+                  {capturedKeys || t('settings.shortcuts.pressKeysHint')}
                 </div>
               ) : (
                 <button

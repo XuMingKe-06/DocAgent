@@ -1,4 +1,5 @@
 import type { WorkflowNode, ConfirmNodeData } from "../../types";
+import { useTranslation } from 'react-i18next';
 import { Icon } from "../common/Icon";
 import { useWorkflowStore } from "../../stores/useWorkflowStore";
 
@@ -8,6 +9,7 @@ interface ConfirmNodeProps {
 }
 
 export function ConfirmNode({ node }: ConfirmNodeProps) {
+  const { t } = useTranslation();
   const data = node.data as ConfirmNodeData;
   const confirmHandler = useWorkflowStore((s) => s.confirmHandler);
   const isPending = data.confirmed === null && node.status === "running";
@@ -47,7 +49,7 @@ export function ConfirmNode({ node }: ConfirmNodeProps) {
           </div>
         ) : (
           <div className={`wf-confirm-result ${data.confirmed ? "confirmed" : "cancelled"}`}>
-            {data.confirmed ? "✓ 用户已确认执行" : "✗ 用户已取消操作"}
+            {data.confirmed ? t('confirmNode.userConfirmed') : t('confirmNode.userCancelled')}
           </div>
         )}
       </div>

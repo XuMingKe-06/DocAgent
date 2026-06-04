@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../common/Icon";
 import * as pdfjsLib from "pdfjs-dist";
 
@@ -18,6 +19,7 @@ const SCALE_MIN = 0.5;
 const SCALE_MAX = 3.0;
 
 export function PdfCanvasViewer({ base64Data }: PdfCanvasViewerProps) {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const pdfDocRef = useRef<pdfjsLib.PDFDocumentProxy | null>(null);
@@ -69,7 +71,7 @@ export function PdfCanvasViewer({ base64Data }: PdfCanvasViewerProps) {
         setCurrentPage(1);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "PDF 加载失败");
+          setError(err instanceof Error ? err.message : t("preview.pdfLoadFailed"));
         }
       } finally {
         if (!cancelled) {
@@ -321,7 +323,7 @@ export function PdfCanvasViewer({ base64Data }: PdfCanvasViewerProps) {
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
         </svg>
-        加载 PDF 中...
+        {t("preview.loadingPdf")}
       </div>
     );
   }
@@ -333,7 +335,7 @@ export function PdfCanvasViewer({ base64Data }: PdfCanvasViewerProps) {
         <div className="w-12 h-12 rounded-[var(--radius-md)] bg-error/10 flex items-center justify-center text-error text-[20px]">
           !
         </div>
-        <div>PDF 加载失败</div>
+        <div>{t("preview.pdfLoadFailed")}</div>
         <div className="text-[12px] text-text-tertiary max-w-[400px] text-center">{error}</div>
       </div>
     );
@@ -390,13 +392,13 @@ export function PdfCanvasViewer({ base64Data }: PdfCanvasViewerProps) {
           className={`px-2 h-7 flex items-center justify-center rounded-[var(--radius-sm)] text-[11px] font-medium transition-colors ${scaleMode === "fitWidth" ? "bg-accent/10 text-accent" : "text-text-secondary hover:bg-bg-hover"}`}
           onClick={handleFitWidth}
         >
-          适合宽度
+          {t("preview.fitWidth")}
         </button>
         <button
           className={`px-2 h-7 flex items-center justify-center rounded-[var(--radius-sm)] text-[11px] font-medium transition-colors ${scaleMode === "fitPage" ? "bg-accent/10 text-accent" : "text-text-secondary hover:bg-bg-hover"}`}
           onClick={handleFitPage}
         >
-          适合页面
+          {t("preview.fitPage")}
         </button>
       </div>
 

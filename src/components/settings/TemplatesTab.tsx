@@ -1,18 +1,13 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../common/Icon";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { TemplateEditDialog } from "./TemplateEditDialog";
 import { DeleteConfirmDialog } from "../common/DeleteConfirmDialog";
 import type { PromptTemplate } from "../../types";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  document: "文档生成",
-  analysis: "文档分析",
-  conversion: "格式转换",
-  custom: "自定义",
-};
-
 export function TemplatesTab() {
+  const { t } = useTranslation();
   const { templates, deleteTemplate } = useSettingsStore();
   const [editOpen, setEditOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null);
@@ -20,27 +15,35 @@ export function TemplatesTab() {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
 
+  // 分类标签映射
+  const CATEGORY_LABELS: Record<string, string> = {
+    document: t('settings.templates.categoryDocument'),
+    analysis: t('settings.templates.categoryAnalysis'),
+    conversion: t('settings.templates.categoryConversion'),
+    custom: t('settings.templates.categoryCustom'),
+  };
+
   // 按分类和搜索过滤模板
   const filteredTemplates = useMemo(() => {
     let result = templates;
     if (activeCategory !== "all") {
-      result = result.filter((t) => t.category === activeCategory);
+      result = result.filter((tpl) => tpl.category === activeCategory);
     }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter(
-        (t) =>
-          t.name.toLowerCase().includes(q) ||
-          t.description.toLowerCase().includes(q) ||
-          t.content.toLowerCase().includes(q)
+        (tpl) =>
+          tpl.name.toLowerCase().includes(q) ||
+          tpl.description.toLowerCase().includes(q) ||
+          tpl.content.toLowerCase().includes(q)
       );
     }
     return result;
   }, [templates, activeCategory, searchQuery]);
 
   // 内置模板和自定义模板分组
-  const builtinTemplates = filteredTemplates.filter((t) => t.isBuiltin);
-  const customTemplates = filteredTemplates.filter((t) => !t.isBuiltin);
+  const builtinTemplates = filteredTemplates.filter((tpl) => tpl.isBuiltin);
+  const customTemplates = filteredTemplates.filter((tpl) => !tpl.isBuiltin);
 
   // 打开创建对话框
   const handleCreate = () => {
@@ -68,7 +71,7 @@ export function TemplatesTab() {
         <Icon name="search" size={14} />
         <input
           className="template-search-input"
-          placeholder="搜索模板..."
+          placeholder={t('settings.templates.searchPlaceholder')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -80,7 +83,7 @@ export function TemplatesTab() {
           className={`category-tag ${activeCategory === "all" ? "active" : ""}`}
           onClick={() => setActiveCategory("all")}
         >
-          全部
+          {t('settings.templates.all')}
         </button>
         {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
           <button
@@ -96,11 +99,11 @@ export function TemplatesTab() {
       {/* 自定义模板区域 */}
       <div className="template-section">
         <div className="section-header">
-          <span className="section-title">自定义模板</span>
+          <span className="section-title">{t('settings.templates.customTemplates')}</span>
           <span className="section-badge">{customTemplates.length}</span>
           <button className="add-btn" onClick={handleCreate}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            创建模板
+            {t('settings.templates.createTemplate')}
           </button>
         </div>
 
@@ -117,7 +120,7 @@ export function TemplatesTab() {
                     </span>
                     {tpl.variables && tpl.variables.length > 0 && (
                       <span className="template-vars-badge">
-                        {tpl.variables.length} 个变量
+                        {t('settings.templates.variableCount', { count: tpl.variables.length })}
                       </span>
                     )}
                   </div>
@@ -125,14 +128,14 @@ export function TemplatesTab() {
                 <div className="template-card-actions">
                   <button
                     className="action-btn"
-                    title="编辑"
+                    title={t('common.edit')}
                     onClick={() => handleEdit(tpl)}
                   >
                     <Icon name="edit" size={14} />
                   </button>
                   <button
                     className="action-btn action-btn-danger"
-                    title="删除"
+                    title={t('common.delete')}
                     onClick={() => setDeleteTarget(tpl)}
                   >
                     <Icon name="trash" size={14} />
@@ -142,7 +145,7 @@ export function TemplatesTab() {
             ))}
           </div>
         ) : (
-          <div className="empty-state">暂无自定义模板</div>
+          <div className="empty-state">{t('settings.templates.noCustomTemplates')}</div>
         )}
 
       </div>
@@ -150,7 +153,7 @@ export function TemplatesTab() {
       {/* 内置模板区域 */}
       <div className="template-section">
         <div className="section-header">
-          <span className="section-title">内置模板</span>
+          <span className="section-title">{t('settings.templates.builtinTemplates')}</span>
           <span className="section-badge">{builtinTemplates.length}</span>
         </div>
 
@@ -161,7 +164,7 @@ export function TemplatesTab() {
                 <div className="template-card-main">
                   <div className="template-name">
                     {tpl.name}
-                    <span className="builtin-tag">内置</span>
+                    <span className="builtin-tag">{t('settings.templates.builtin')}</span>
                   </div>
                   <div className="template-desc">{tpl.description}</div>
                   <div className="template-meta">
@@ -174,7 +177,7 @@ export function TemplatesTab() {
             ))}
           </div>
         ) : (
-          <div className="empty-state">暂无内置模板</div>
+          <div className="empty-state">{t('settings.templates.noBuiltinTemplates')}</div>
         )}
       </div>
 

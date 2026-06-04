@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { AddWorkspaceDialog } from "./AddWorkspaceDialog";
 
 export function WorkspaceTab() {
+  const { t } = useTranslation();
   const { workspaces, currentWorkspaceId, switchWorkspace, removeWorkspace } = useWorkspaceStore();
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -29,17 +31,17 @@ export function WorkspaceTab() {
   return (
     <div>
       <div className="section-header">
-        <span className="section-title">工作区列表</span>
+        <span className="section-title">{t('settings.workspace.workspaceList')}</span>
         <span className="section-badge">{workspaces.length}</span>
         <button className="add-btn" onClick={() => setShowAddDialog(true)}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-          添加工作区
+          {t('settings.workspace.addWorkspace')}
         </button>
       </div>
 
       {workspaces.length === 0 && (
         <div className="empty-state-lg">
-          <span>暂无工作区，请点击右侧按钮添加</span>
+          <span>{t('settings.workspace.emptyHint')}</span>
         </div>
       )}
 
@@ -49,10 +51,10 @@ export function WorkspaceTab() {
             <div className="workspace-card-left">
               <span className="workspace-name">{ws.name}</span>
               {ws.id === currentWorkspaceId && (
-                <span className="workspace-current-badge">当前</span>
+                <span className="workspace-current-badge">{t('settings.workspace.current')}</span>
               )}
               {ws.id !== currentWorkspaceId && (
-                <button className="switch-btn" onClick={() => handleSwitch(ws.id)}>切换</button>
+                <button className="switch-btn" onClick={() => handleSwitch(ws.id)}>{t('settings.workspace.switch')}</button>
               )}
             </div>
             <div className="workspace-actions">
@@ -60,25 +62,25 @@ export function WorkspaceTab() {
                 className="action-btn action-btn-danger"
                 onClick={() => { setRemovingId(ws.id); setRemoveError(null); }}
               >
-                移除
+                {t('settings.workspace.remove')}
               </button>
             </div>
           </div>
           <div className="workspace-card-info">
             <span className="workspace-path">{ws.path}</span>
             <span className="info-sep">|</span>
-            <span className="workspace-date">创建于 {new Date(ws.createdAt).toLocaleDateString("zh-CN")}</span>
+            <span className="workspace-date">{t('settings.workspace.createdAt')} {new Date(ws.createdAt).toLocaleDateString("zh-CN")}</span>
           </div>
 
           {removingId === ws.id && (
             <div className="confirm-bar">
-              <div className="confirm-bar-text">确定要移除此工作区吗？（不会删除本地文件）</div>
+              <div className="confirm-bar-text">{t('workspace.confirmRemove')}</div>
               {removeError && (
                 <div className="error-text">{removeError}</div>
               )}
               <div className="confirm-bar-actions">
-                <button className="confirm-btn confirm-btn-danger" onClick={() => handleRemove(ws.id)}>确认移除</button>
-                <button className="confirm-btn confirm-btn-ghost" onClick={() => { setRemovingId(null); setRemoveError(null); }}>取消</button>
+                <button className="confirm-btn confirm-btn-danger" onClick={() => handleRemove(ws.id)}>{t('workspace.confirmRemoveBtn')}</button>
+                <button className="confirm-btn confirm-btn-ghost" onClick={() => { setRemovingId(null); setRemoveError(null); }}>{t('common.cancel')}</button>
               </div>
             </div>
           )}

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { SidebarSection } from "../layout/Sidebar";
 import { Icon } from "../common/Icon";
 
@@ -13,14 +14,15 @@ interface TodoSectionProps {
 }
 
 export function TodoSection({ items }: TodoSectionProps) {
+  const { t } = useTranslation();
   const todoItems = items ?? [];
 
   if (todoItems.length === 0) {
     return (
-      <SidebarSection title="任务进度">
+      <SidebarSection title={t('todo.sectionTitle')}>
         <div className="td-empty" role="status">
           <Icon name="check-circle" size={20} className="td-empty-icon" />
-          <span className="td-empty-text">暂无任务</span>
+          <span className="td-empty-text">{t('todo.noTasks')}</span>
         </div>
         <style>{`
           .td-empty {
@@ -48,17 +50,17 @@ export function TodoSection({ items }: TodoSectionProps) {
   const progress = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
 
   return (
-    <SidebarSection title="任务进度">
+    <SidebarSection title={t('todo.sectionTitle')}>
       {/* 进度摘要 */}
       <div className="td-summary">
-        <div className="td-progress-track" role="progressbar" aria-valuenow={doneCount} aria-valuemin={0} aria-valuemax={totalCount} aria-label="任务进度">
+        <div className="td-progress-track" role="progressbar" aria-valuenow={doneCount} aria-valuemin={0} aria-valuemax={totalCount} aria-label={t('todo.sectionTitle')}>
           <div
             className="td-progress-fill"
             style={{ width: `${progress}%` }}
           />
         </div>
         <span className="td-progress-label">
-          {doneCount}/{totalCount} 已完成
+          {doneCount}/{totalCount} {t('todo.completed')}
         </span>
       </div>
 

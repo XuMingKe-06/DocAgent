@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -25,6 +26,7 @@ function CodeBlock({
   siblingCount: _sc,
   ...rest
 }: React.HTMLAttributes<HTMLPreElement> & MdExtraProps) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLPreElement>(null);
 
@@ -52,7 +54,7 @@ function CodeBlock({
       <div className="md-code-header">
         <span className="md-code-lang">{language || "text"}</span>
         <button className="md-code-copy" onClick={handleCopy}>
-          {copied ? "已复制" : "复制"}
+          {copied ? t('markdown.copied') : t('markdown.copy')}
         </button>
       </div>
       <pre ref={ref} className="md-code-content" {...rest}>

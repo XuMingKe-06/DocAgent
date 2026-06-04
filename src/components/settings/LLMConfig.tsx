@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { ProviderFormDialog } from "./ProviderFormDialog";
 import type { ProviderInfo } from "../../types";
 import * as tauriCmd from "../../services/tauri";
 
 export function LLMConfigTab() {
+  const { t } = useTranslation();
   const { llmProviders, loadProviders } = useSettingsStore();
   const [dialogMode, setDialogMode] = useState<"add" | "edit" | null>(null);
   const [editingProvider, setEditingProvider] = useState<ProviderInfo | null>(null);
@@ -28,12 +30,12 @@ export function LLMConfigTab() {
     try {
       const result = await tauriCmd.testConnection(providerId);
       if (result.success) {
-        alert(`连接成功！延迟: ${result.latencyMs}ms${result.model ? `\n模型: ${result.model}` : ""}`);
+        alert(t('settings.llm.connectionSuccessWithModel', { latency: result.latencyMs, model: result.model || '' }));
       } else {
-        alert(`连接失败: ${result.errorMessage || result.error || "未知错误"}`);
+        alert(t('settings.llm.connectionFailed', { error: result.errorMessage || result.error || t('settings.providerForm.unknownError') }));
       }
     } catch (err) {
-      alert(`连接测试出错: ${err}`);
+      alert(t('settings.llm.connectionError', { error: String(err) }));
     } finally {
       setTestingId(null);
     }
@@ -69,17 +71,17 @@ export function LLMConfigTab() {
     <div>
       <div className="mb-8">
         <div className="section-header">
-          <span className="section-title">已配置的服务商</span>
+          <span className="section-title">{t('settings.llm.configuredProviders')}</span>
           <span className="section-badge">{llmProviders.length}</span>
           <button className="add-btn" onClick={handleAdd}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
-            添加服务商
+            {t('settings.llm.addProvider')}
           </button>
         </div>
 
         {llmProviders.length === 0 && (
           <div className="empty-state-lg">
-            <span>暂无服务商，请点击右侧按钮添加</span>
+            <span>{t('settings.llm.noProviders')}</span>
           </div>
         )}
 
@@ -92,15 +94,15 @@ export function LLMConfigTab() {
                 {p.isDefault && (
                   <span className="provider-default-badge">
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polyline points="20 6 9 17 4 12" /></svg>
-                    默认
+                    {t('settings.llm.default')}
                   </span>
                 )}
               </div>
               <div className="provider-actions">
                 {!p.isDefault && (
-                  <button className="action-btn" onClick={() => handleSetDefault(p.id)}>设为默认</button>
+                  <button className="action-btn" onClick={() => handleSetDefault(p.id)}>{t('settings.llm.setDefault')}</button>
                 )}
-                <button className="action-btn" onClick={() => handleEdit(p)}>编辑</button>
+                <button className="action-btn" onClick={() => handleEdit(p)}>{t('settings.llm.edit')}</button>
                 <button 
                   className="action-btn" 
                   onClick={() => handleTest(p.id)}
@@ -109,15 +111,15 @@ export function LLMConfigTab() {
                   {testingId === p.id ? (
                     <span className="test-loading">
                       <span className="test-spinner"></span>
-                      测试中
+                      {t('settings.llm.testing')}
                     </span>
-                  ) : "测试"}
+                  ) : t('settings.llm.test')}
                 </button>
                 <button
                   className="action-btn action-btn-danger"
                   onClick={() => { setDeletingId(p.id); setDeleteError(null); }}
                 >
-                  删除
+                  {t('settings.llm.delete')}
                 </button>
               </div>
             </div>
@@ -127,19 +129,19 @@ export function LLMConfigTab() {
               <span className="provider-url">{p.apiBase}</span>
               <span className="info-sep">|</span>
               <span className={`status-badge ${p.isAvailable ? "status-available" : "status-unavailable"}`}>
-                {p.isAvailable ? "可用" : "不可用"}
+                {p.isAvailable ? t('settings.llm.available') : t('settings.llm.unavailable')}
               </span>
             </div>
 
             {deletingId === p.id && (
               <div className="confirm-bar">
-                <div className="confirm-bar-text">确定要删除此服务商吗？</div>
+                <div className="confirm-bar-text">{t('settings.llm.confirmDelete')}</div>
                 {deleteError && (
                   <div className="error-text">{deleteError}</div>
                 )}
                 <div className="confirm-bar-actions">
-                  <button className="confirm-btn confirm-btn-danger" onClick={() => handleDelete(p.id)}>确认删除</button>
-                  <button className="confirm-btn confirm-btn-ghost" onClick={() => { setDeletingId(null); setDeleteError(null); }}>取消</button>
+                  <button className="confirm-btn confirm-btn-danger" onClick={() => handleDelete(p.id)}>{t('settings.llm.confirmDeleteBtn')}</button>
+                  <button className="confirm-btn confirm-btn-ghost" onClick={() => { setDeletingId(null); setDeleteError(null); }}>{t('settings.llm.cancel')}</button>
                 </div>
               </div>
             )}
@@ -150,18 +152,18 @@ export function LLMConfigTab() {
 
       <div>
         <div className="section-header">
-          <span className="section-title">Fallback 顺序</span>
+          <span className="section-title">{t('settings.llm.fallbackOrder')}</span>
         </div>
         <div className="fallback-list">
           {llmProviders.length === 0 && (
-            <div className="empty-state-lg">添加服务商后可配置 Fallback 顺序</div>
+            <div className="empty-state-lg">{t('settings.llm.fallbackHint')}</div>
           )}
           {llmProviders.map((p, i) => (
             <div key={p.id} className="fallback-item">
               <span className="fallback-index">{i + 1}.</span>
               <span className="fallback-name">{p.name}</span>
               {p.isDefault && (
-                <span className="fallback-default-badge">默认</span>
+                <span className="fallback-default-badge">{t('settings.llm.default')}</span>
               )}
             </div>
           ))}

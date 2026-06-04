@@ -4,6 +4,7 @@
  * 替代各处分散的 try/catch + console.error 模式
  */
 import { useToastStore } from "../stores/useToastStore";
+import i18n from "../i18n";
 
 /** 后端 CommandError 结构 */
 export interface CommandError {
@@ -31,83 +32,83 @@ export type ErrorModule = "llm" | "agent" | "document" | "database" | "config" |
 /** 错误码到用户友好消息的映射 */
 const ERROR_MESSAGE_MAP: Record<number, string> = {
   // LLM 相关 (1000-1999)
-  1001: "无法连接到 AI 服务，请检查网络连接",
-  1002: "API 密钥无效或已过期，请在设置中更新",
-  1003: "请求过于频繁，请稍后重试",
-  1004: "API 配额已用尽，请检查账户余额",
-  1005: "指定的模型不可用，请更换模型",
-  1006: "AI 服务响应超时，请稍后重试",
-  1007: "请求参数无效，请检查输入内容",
-  1008: "流式响应中断，请重试",
-  1009: "AI 服务暂时不可用，已自动切换到备用服务",
-  1010: "AI 响应解析失败，请重试",
-  1011: "网络 DNS 解析失败，请检查网络连接或尝试切换网络",
-  1012: "AI 服务拒绝连接，请检查 API 地址是否正确",
-  1013: "安全连接失败，请检查系统时间是否正确",
-  1014: "网络不可达，请检查网络连接",
+  1001: i18n.t("errors.llm.connectionFailed"),
+  1002: i18n.t("errors.llm.invalidApiKey"),
+  1003: i18n.t("errors.llm.rateLimited"),
+  1004: i18n.t("errors.llm.quotaExhausted"),
+  1005: i18n.t("errors.llm.modelUnavailable"),
+  1006: i18n.t("errors.llm.timeout"),
+  1007: i18n.t("errors.llm.invalidParams"),
+  1008: i18n.t("errors.llm.streamInterrupted"),
+  1009: i18n.t("errors.llm.serviceUnavailable"),
+  1010: i18n.t("errors.llm.parseFailed"),
+  1011: i18n.t("errors.llm.dnsFailed"),
+  1012: i18n.t("errors.llm.connectionRefused"),
+  1013: i18n.t("errors.llm.tlsFailed"),
+  1014: i18n.t("errors.llm.networkUnreachable"),
 
   // Agent 相关 (2000-2999)
-  2001: "Agent 正在执行中，请等待完成后再试",
-  2002: "Agent 未在运行",
-  2003: "任务执行步骤过多，已自动停止",
-  2004: "操作确认超时，请重新发送请求",
-  2005: "操作已被用户拒绝",
-  2006: "请求的功能不存在",
-  2007: "该功能已被禁用，请在设置中启用",
-  2008: "Agent 执行出错，请重试",
-  2010: "会话不存在，请创建新会话",
+  2001: i18n.t("errors.agent.alreadyRunning"),
+  2002: i18n.t("errors.agent.notRunning"),
+  2003: i18n.t("errors.agent.maxIterations"),
+  2004: i18n.t("errors.agent.confirmTimeout"),
+  2005: i18n.t("errors.agent.operationDenied"),
+  2006: i18n.t("errors.agent.featureNotFound"),
+  2007: i18n.t("errors.agent.featureDisabled"),
+  2008: i18n.t("errors.agent.executionError"),
+  2010: i18n.t("errors.agent.sessionNotFound"),
 
   // 文档处理 (3000-3999)
-  3001: "文件不存在，请检查文件路径",
-  3002: "不支持的文档格式",
-  3003: "文档解析失败，文件可能已损坏",
-  3004: "文档写入失败，请检查文件权限",
-  3005: "格式转换失败，请检查源文件",
-  3006: "模板不存在",
-  3007: "模板处理失败",
-  3008: "版本记录不存在",
-  3009: "版本回滚失败",
-  3010: "文档处理服务异常，正在自动恢复...",
-  3011: "没有文件操作权限",
-  3012: "文件过大，无法处理",
+  3001: i18n.t("errors.doc.fileNotFound"),
+  3002: i18n.t("errors.doc.unsupportedFormat"),
+  3003: i18n.t("errors.doc.parseFailed"),
+  3004: i18n.t("errors.doc.writeFailed"),
+  3005: i18n.t("errors.doc.convertFailed"),
+  3006: i18n.t("errors.doc.templateNotFound"),
+  3007: i18n.t("errors.doc.templateProcessFailed"),
+  3008: i18n.t("errors.doc.versionNotFound"),
+  3009: i18n.t("errors.doc.rollbackFailed"),
+  3010: i18n.t("errors.doc.serviceError"),
+  3011: i18n.t("errors.doc.noPermission"),
+  3012: i18n.t("errors.doc.fileTooLarge"),
 
   // 数据库 (4000-4999)
-  4001: "数据库连接失败，请重启应用",
-  4002: "数据查询失败",
-  4003: "记录不存在",
-  4004: "记录已存在",
-  4005: "数据约束冲突",
-  4006: "数据库迁移失败，请重启应用",
-  4007: "数据库损坏，请重启应用尝试修复",
+  4001: i18n.t("errors.db.connectionFailed"),
+  4002: i18n.t("errors.db.queryFailed"),
+  4003: i18n.t("errors.db.recordNotFound"),
+  4004: i18n.t("errors.db.recordExists"),
+  4005: i18n.t("errors.db.constraintConflict"),
+  4006: i18n.t("errors.db.migrationFailed"),
+  4007: i18n.t("errors.db.corrupted"),
 
   // 配置 (5000-5999)
-  5001: "配置文件格式无效",
-  5002: "配置缺少必要字段",
-  5003: "配置值无效",
-  5004: "配置导入失败",
-  5005: "配置导出失败",
-  5006: "未找到指定的 AI 服务配置",
-  5007: "请先设置默认 AI 服务",
+  5001: i18n.t("errors.config.invalidFormat"),
+  5002: i18n.t("errors.config.missingField"),
+  5003: i18n.t("errors.config.invalidValue"),
+  5004: i18n.t("errors.config.importFailed"),
+  5005: i18n.t("errors.config.exportFailed"),
+  5006: i18n.t("errors.config.providerNotFound"),
+  5007: i18n.t("errors.config.noDefaultProvider"),
 
   // 文件系统 (6000-6999)
-  6001: "路径不存在",
-  6002: "没有操作权限",
-  6003: "文件已存在",
-  6004: "路径不是目录",
-  6005: "磁盘空间不足",
-  6006: "文件操作失败",
-  6007: "文件监听失败",
-  6008: "文件编码错误",
+  6001: i18n.t("errors.fs.pathNotFound"),
+  6002: i18n.t("errors.fs.noPermission"),
+  6003: i18n.t("errors.fs.fileExists"),
+  6004: i18n.t("errors.fs.notDirectory"),
+  6005: i18n.t("errors.fs.diskFull"),
+  6006: i18n.t("errors.fs.operationFailed"),
+  6007: i18n.t("errors.fs.watchFailed"),
+  6008: i18n.t("errors.fs.encodingError"),
 
   // 运行时 (7000-7999)
-  7001: "内部通信错误",
+  7001: i18n.t("errors.runtime.internalError"),
 
   // 更新相关 (8000-8999)
-  8001: "检查更新失败，请检查网络连接",
-  8002: "更新下载失败，请重试",
-  8003: "更新安装失败，请重新启动应用",
-  8004: "当前已是最新版本",
-  8005: "更新服务网络错误，请稍后重试",
+  8001: i18n.t("errors.update.checkFailed"),
+  8002: i18n.t("errors.update.downloadFailed"),
+  8003: i18n.t("errors.update.installFailed"),
+  8004: i18n.t("errors.update.alreadyLatest"),
+  8005: i18n.t("errors.update.networkError"),
 };
 
 /** 可恢复的错误码集合（网络超时、临时不可用等） */
@@ -175,7 +176,7 @@ export function parseError(error: unknown): ParsedError {
   // 未知错误
   return {
     code: 0,
-    userMessage: "未知错误",
+    userMessage: i18n.t("errors.unknown"),
     module: "unknown",
     recoverable: false,
     raw: error,

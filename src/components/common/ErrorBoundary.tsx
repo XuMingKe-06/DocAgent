@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from "react";
+import i18n from "../../i18n";
 import { Icon } from "./Icon";
 
 interface ErrorBoundaryProps {
@@ -56,19 +57,18 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </div>
 
             <h2 className="text-lg font-semibold mb-2">
-              页面渲染出错
+              {i18n.t("errorBoundary.title")}
             </h2>
 
             <p className="text-sm text-text-secondary leading-relaxed mb-6">
-              应用遇到了一个意外错误，部分功能可能无法正常使用。
-              你可以尝试恢复页面或重启应用。
+              {i18n.t("errorBoundary.message")}
             </p>
 
             {/* 错误详情（可折叠） */}
             {this.state.error && (
               <details className="mb-6 text-left bg-bg-sub rounded-[var(--radius-md)] p-3 text-xs font-mono text-error max-h-40 overflow-auto">
                 <summary className="cursor-pointer font-medium mb-2 text-text-secondary font-sans text-[12px]">
-                  错误详情
+                  {i18n.t("errorBoundary.errorDetails")}
                 </summary>
                 <pre className="m-0 whitespace-pre-wrap break-words">
                   {this.state.error.message}
@@ -83,13 +83,13 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
                 onClick={this.handleReload}
                 className="px-5 py-2 rounded-[var(--radius-sm)] border border-border bg-bg text-text-primary text-[13px] font-medium cursor-pointer transition-all hover:bg-bg-sub"
               >
-                恢复页面
+                {i18n.t("errorBoundary.recover")}
               </button>
               <button
                 onClick={this.handleRestart}
                 className="px-5 py-2 rounded-[var(--radius-sm)] border-none bg-accent text-white text-[13px] font-medium cursor-pointer transition-all hover:brightness-90"
               >
-                重启应用
+                {i18n.t("errorBoundary.restart")}
               </button>
             </div>
           </div>

@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../common/Icon";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useToastStore } from "../../stores/useToastStore";
@@ -12,6 +13,7 @@ interface HistoryPanelProps {
 }
 
 export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSession }: HistoryPanelProps) {
+  const { t } = useTranslation();
   const { sessions, currentSessionId, loadSessions, deleteSession, updateSessionTitle, clearAllSessions } = useSessionStore();
   const addToast = useToastStore((s) => s.addToast);
 
@@ -114,21 +116,21 @@ export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSe
     <>
       {/* 删除确认弹窗 */}
       {deleteConfirmId && (
-        <div className="delete-confirm-overlay" onClick={handleCancelDelete} role="dialog" aria-label="确认删除" aria-modal="true">
+        <div className="delete-confirm-overlay" onClick={handleCancelDelete} role="dialog" aria-label={t('history.deleteConfirmTitle')} aria-modal="true">
           <div className="delete-confirm-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="delete-confirm-icon">
               <Icon name="warning" size={24} />
             </div>
-            <div className="delete-confirm-title">确认删除会话</div>
+            <div className="delete-confirm-title">{t('history.deleteConfirmTitle')}</div>
             <div className="delete-confirm-desc">
-              确定要删除会话 "{deleteConfirmTitle}" 吗？此操作无法撤销。
+              {t('history.deleteConfirmMessage', { name: deleteConfirmTitle })}
             </div>
             <div className="delete-confirm-actions">
               <button className="btn btn-ghost" onClick={handleCancelDelete}>
-                取消
+                {t('common.cancel')}
               </button>
               <button className="btn btn-danger" onClick={handleConfirmDelete}>
-                删除
+                {t('common.delete')}
               </button>
             </div>
           </div>
@@ -137,37 +139,37 @@ export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSe
 
       {/* 清除所有会话数据确认弹窗 */}
       {clearConfirm && (
-        <div className="delete-confirm-overlay" onClick={() => setClearConfirm(false)} role="dialog" aria-label="确认清除会话数据" aria-modal="true">
+        <div className="delete-confirm-overlay" onClick={() => setClearConfirm(false)} role="dialog" aria-label={t('history.clearAllConfirmTitle')} aria-modal="true">
           <div className="delete-confirm-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="delete-confirm-icon">
               <Icon name="warning" size={24} />
             </div>
-            <div className="delete-confirm-title">确认清除所有会话数据</div>
+            <div className="delete-confirm-title">{t('history.clearAllConfirmTitle')}</div>
             <div className="delete-confirm-desc">
-              确定要清除所有会话记录和消息吗？此操作不可撤销。
+              {t('history.clearAllConfirmMessage')}
             </div>
             <div className="delete-confirm-actions">
               <button className="btn btn-ghost" onClick={() => setClearConfirm(false)}>
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 className="btn btn-danger"
                 onClick={async () => {
                   try {
                     await clearAllSessions();
-                    addToast("success", "已清除所有会话数据");
+                    addToast("success", t('history.clearSuccess'));
                     // 通知父组件清空工作流
                     if (onDeleteCurrentSession) {
                       onDeleteCurrentSession(null);
                     }
                   } catch (error) {
                     console.error("[HistoryPanel] 清除会话数据失败:", error);
-                    addToast("error", "清除会话数据失败");
+                    addToast("error", t('history.clearFailed'));
                   }
                   setClearConfirm(false);
                 }}
               >
-                确认清除
+                {t('history.confirmClear')}
               </button>
             </div>
           </div>
@@ -180,16 +182,16 @@ export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSe
           open ? "translate-x-0" : "translate-x-full"
         }`}
         role="complementary"
-        aria-label="历史会话"
+        aria-label={t('history.title')}
       >
         <div className="history-header">
-          <h3 className="history-title">历史会话</h3>
+          <h3 className="history-title">{t('history.title')}</h3>
           <div className="history-header-actions">
             {/* 清除所有会话数据按钮 */}
             <button
               className="history-clear-btn"
-              title="清除所有会话数据"
-              aria-label="清除所有会话数据"
+              title={t('history.clearAllData')}
+              aria-label={t('history.clearAllData')}
               disabled={sessions.length === 0}
               onClick={() => setClearConfirm(true)}
             >
@@ -198,18 +200,18 @@ export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSe
             <button
               className="history-close-btn"
               onClick={onClose}
-              aria-label="关闭历史面板"
+              aria-label={t('history.closePanel')}
             >
               <Icon name="close" size={16} />
             </button>
           </div>
         </div>
 
-        <div className="history-list" role="list" aria-label="会话列表">
+        <div className="history-list" role="list" aria-label={t('history.title')}>
           {sessions.length === 0 ? (
             <div className="history-empty" role="status">
               <Icon name="history" size={32} className="opacity-30" />
-              <p>暂无历史会话</p>
+              <p>{t('history.noSessions')}</p>
             </div>
           ) : (
             sessions.map((s) => (
@@ -251,16 +253,16 @@ export function HistoryPanel({ open, onClose, onSwitchSession, onDeleteCurrentSe
                     <div className="history-item-actions">
                       <button
                         className="history-action-btn"
-                        title="重命名"
-                        aria-label="重命名会话"
+                        title={t('history.rename')}
+                        aria-label={t('history.renameSession')}
                         onClick={(e) => handleStartRename(s.id, s.title, e)}
                       >
                         <Icon name="edit" size={14} />
                       </button>
                       <button
                         className="history-action-btn history-action-btn-danger"
-                        title="删除会话"
-                        aria-label="删除会话"
+                        title={t('history.deleteSession')}
+                        aria-label={t('history.deleteSession')}
                         onClick={(e) => handleDeleteClick(s.id, s.title, e)}
                       >
                         <Icon name="trash" size={14} />

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "./Icon";
 
 interface DeleteConfirmDialogProps {
@@ -9,6 +10,7 @@ interface DeleteConfirmDialogProps {
 }
 
 export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: DeleteConfirmDialogProps) {
+  const { t } = useTranslation();
   const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   /* 打开时自动聚焦确认按钮 */
@@ -23,20 +25,20 @@ export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: Delete
           <span className="del-icon">
             <Icon name="warning" size={20} />
           </span>
-          <span className="del-title">确认删除</span>
+          <span className="del-title">{t("deleteConfirm.title")}</span>
         </div>
         <div className="del-body">
           <p className="del-message">
-            确定要删除{isDir ? "文件夹" : "文件"} <strong>{name}</strong> 吗？
+            {isDir ? t("deleteConfirm.folderMessage", { name }) : t("deleteConfirm.fileMessage", { name })}
           </p>
-          <p className="del-warning">此操作将永久删除，无法恢复。</p>
+          <p className="del-warning">{t("deleteConfirm.permanentWarning")}</p>
         </div>
         <div className="del-footer">
           <button className="del-btn del-btn-cancel" onClick={onCancel}>
-            取消
+            {t("deleteConfirm.cancel")}
           </button>
           <button className="del-btn del-btn-danger" ref={confirmBtnRef} onClick={onConfirm}>
-            删除
+            {t("common.delete")}
           </button>
         </div>
       </div>

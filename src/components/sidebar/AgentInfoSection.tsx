@@ -1,16 +1,19 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { SidebarSection } from "../layout/Sidebar";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { Icon } from "../common/Icon";
 
-const confirmationLevelOptions: { value: string; label: string }[] = [
-  { value: "always", label: "全部需确认" },
-  { value: "editOnly", label: "仅编辑确认" },
-  { value: "never", label: "全部自动确认" },
-];
-
 export function AgentInfoSection() {
+  const { t } = useTranslation();
   const { settings, llmProviders, activeProviderId, updateSettings, openSettings } = useSettingsStore();
+
+  // 确认级别选项（移入组件内部以使用 t() 翻译）
+  const confirmationLevelOptions: { value: string; label: string }[] = [
+    { value: "always", label: t('agentInfo.confirmAlways') },
+    { value: "editOnly", label: t('agentInfo.confirmEditOnly') },
+    { value: "never", label: t('agentInfo.confirmNever') },
+  ];
   const activeProvider = llmProviders.find((p) => p.id === activeProviderId);
 
   const [editing, setEditing] = useState(false);
@@ -24,15 +27,15 @@ export function AgentInfoSection() {
   };
 
   return (
-    <SidebarSection title="Agent 信息">
-      <div className="ai-grid" role="region" aria-label="Agent信息">
+    <SidebarSection title={t('agentInfo.sectionTitle')}>
+      <div className="ai-grid" role="region" aria-label={t('agentInfo.sectionTitle')}>
         {/* 当前模型 */}
         <div className="ai-field">
-          <span className="ai-field-label">当前模型</span>
-          <div className={`ai-model-badge ${activeProvider ? "online" : "offline"}`} aria-label={activeProvider ? "模型已连接" : "模型未连接"}>
+          <span className="ai-field-label">{t('agentInfo.currentModel')}</span>
+          <div className={`ai-model-badge ${activeProvider ? "online" : "offline"}`} aria-label={activeProvider ? t('agentInfo.modelConnected') : t('agentInfo.modelDisconnected')}>
             <span className="ai-status-dot" />
             <span className="ai-model-name">
-              {activeProvider?.model ?? "未配置"}
+              {activeProvider?.model ?? t('agentInfo.notConfigured')}
             </span>
           </div>
         </div>
@@ -41,17 +44,17 @@ export function AgentInfoSection() {
         {!activeProvider && (
           <button className="ai-setup-hint" onClick={() => openSettings("llm")}>
             <Icon name="settings" size={12} />
-            <span>点击配置 LLM 模型</span>
+            <span>{t('agentInfo.configureLLM')}</span>
           </button>
         )}
 
         {/* 作者名 */}
         <div className="ai-field">
-          <span className="ai-field-label">作者名</span>
+          <span className="ai-field-label">{t('agentInfo.authorName')}</span>
           {editing ? (
             <input
               className="ai-field-edit"
-              aria-label="作者名"
+              aria-label={t('agentInfo.authorName')}
               value={editValue}
               onChange={(e) => setEditValue(e.target.value)}
               onBlur={handleSave}
@@ -61,20 +64,20 @@ export function AgentInfoSection() {
           ) : (
             <button
               className="ai-field-value-btn"
-              aria-label="编辑作者名"
+              aria-label={t('agentInfo.editAuthorName')}
               onClick={() => { setEditValue(settings.general.authorName); setEditing(true); }}
             >
-              <span>{settings.general.authorName || "未设置"}</span>
+              <span>{settings.general.authorName || t('agentInfo.notSet')}</span>
             </button>
           )}
         </div>
 
         {/* 确认级别 */}
         <div className="ai-field">
-          <span className="ai-field-label">确认级别</span>
+          <span className="ai-field-label">{t('agentInfo.confirmLevel')}</span>
           <select
             className="ai-field-select"
-            aria-label="确认级别"
+            aria-label={t('agentInfo.confirmLevel')}
             value={settings.general.confirmationLevel}
             onChange={(e) => updateSettings({ general: { confirmationLevel: e.target.value as "always" | "editOnly" | "never" } })}
           >

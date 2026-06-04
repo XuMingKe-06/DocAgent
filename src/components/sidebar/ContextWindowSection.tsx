@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { SidebarSection } from "../layout/Sidebar";
 import { useWorkflowStore } from "../../stores/useWorkflowStore";
 import { useSettingsStore } from "../../stores/useSettingsStore";
@@ -14,26 +15,27 @@ function formatTokens(tokens: number): string {
 }
 
 /** 根据压缩状态返回对应的显示信息 */
-function getCompressionInfo(status: string): { label: string; color: string } {
+function getCompressionInfo(status: string, t: (key: string) => string): { label: string; color: string } {
   switch (status) {
     case "critical":
-      return { label: "接近上限", color: "var(--color-error)" };
+      return { label: t('contextWindow.approachingLimit'), color: "var(--color-error)" };
     case "compressed":
-      return { label: "已压缩", color: "var(--color-warning)" };
+      return { label: t('contextWindow.compressed'), color: "var(--color-warning)" };
     default:
-      return { label: "正常", color: "var(--color-success)" };
+      return { label: t('contextWindow.normal'), color: "var(--color-success)" };
   }
 }
 
-/** 各部分定义：标签、颜色变量名、对应字段 */
+/** 各部分定义：key（用于翻译）、颜色变量名、对应字段 */
 const SECTIONS = [
-  { key: "system", label: "系统提示词", colorVar: "--color-context-system" },
-  { key: "functions", label: "工具定义", colorVar: "--color-context-functions" },
-  { key: "history", label: "对话历史", colorVar: "--color-context-history" },
-  { key: "response", label: "LLM 响应", colorVar: "--color-context-response" },
+  { key: "system", labelKey: "contextWindow.systemPrompt", colorVar: "--color-context-system" },
+  { key: "functions", labelKey: "contextWindow.toolDefinitions", colorVar: "--color-context-functions" },
+  { key: "history", labelKey: "contextWindow.conversationHistory", colorVar: "--color-context-history" },
+  { key: "response", labelKey: "contextWindow.llmResponse", colorVar: "--color-context-response" },
 ] as const;
 
 export function ContextWindowSection() {
+  const { t } = useTranslation();
   // Agent 运行时从 useWorkflowStore 获取实时上下文使用数据
   const { contextUsage } = useWorkflowStore();
   // Agent 未运行时从 useSettingsStore 获取静态 Provider 信息
@@ -58,7 +60,7 @@ export function ContextWindowSection() {
     } = contextUsage;
 
     const usagePercent = contextWindow > 0 ? Math.round((totalUsedTokens / contextWindow) * 100) : 0;
-    const compressionInfo = getCompressionInfo(compressionStatus);
+    const compressionInfo = getCompressionInfo(compressionStatus, t);
 
     // 计算各部分占比（用于总览分段横条）
     const systemPct = contextWindow > 0 ? (systemPromptTokens / contextWindow) * 100 : 0;
@@ -70,11 +72,11 @@ export function ContextWindowSection() {
     const sectionTokens = [systemPromptTokens, functionDefinitionsTokens, conversationTokens, responseTokens];
 
     return (
-      <SidebarSection title="上下文窗口">
-        <div className="cw-grid" role="region" aria-label="上下文窗口使用信息">
+      <SidebarSection title={t('contextWindow.sectionTitle')}>
+        <div className="cw-grid" role="region" aria-label={t('contextWindow.sectionTitle')}>
           {/* 总计行 */}
           <div className="cw-token-total">
-            <span className="cw-total-label">已使用 / 总窗口</span>
+            <span className="cw-total-label">{t('contextWindow.usedTotal')}</span>
             <span className="cw-total-value" style={compressionStatus === "critical" ? { color: "var(--color-error)" } : undefined}>
               {formatTokens(totalUsedTokens)} / {formatTokens(contextWindow)}
             </span>
@@ -88,7 +90,7 @@ export function ContextWindowSection() {
                   key={section.key}
                   className="cw-bar-segment"
                   style={{ width: `${[systemPct, funcPct, convPct, respPct][i]}%`, background: `var(${section.colorVar})` }}
-                  title={`${section.label}: ${formatTokens(sectionTokens[i])} (${[systemPct, funcPct, convPct, respPct][i].toFixed(1)}%)`}
+                  title={`${t(section.labelKey)}: ${formatTokens(sectionTokens[i])} (${[systemPct, funcPct, convPct, respPct][i].toFixed(1)}%)`}
                 />
               ))}
             </div>
@@ -106,7 +108,7 @@ export function ContextWindowSection() {
               <div className="cw-section-row" key={section.key}>
                 <span className="cw-section-label">
                   <span className="cw-dot" style={{ background: `var(${section.colorVar})` }} />
-                  {section.label}
+                  {t(section.labelKey)}
                 </span>
                 <span className="cw-section-value">{formatTokens(sectionTokens[i])}</span>
               </div>
@@ -119,8 +121,8 @@ export function ContextWindowSection() {
               <span className="cw-compressed-dot" />
               <span>
                 {compressionStatus === "critical"
-                  ? `上下文接近上限 (${retainedMessageCount}/${totalMessageCount} 消息)`
-                  : `已压缩历史 (保留 ${retainedMessageCount}/${totalMessageCount} 消息)`}
+                  ? t('contextWindow.approachingLimitDetail', { retained: retainedMessageCount, total: totalMessageCount })
+                  : t('contextWindow.compressedDetail', { retained: retainedMessageCount, total: totalMessageCount })}
               </span>
             </div>
           )}
@@ -133,11 +135,11 @@ export function ContextWindowSection() {
 
   // Agent 未运行时，显示静态 Provider 信息（仅窗口大小，无模型名称）
   return (
-    <SidebarSection title="上下文窗口">
+    <SidebarSection title={t('contextWindow.sectionTitle')}>
       <div className="cw-grid">
         {/* 窗口大小 */}
         <div className="cw-token-total">
-          <span className="cw-total-label">总窗口</span>
+          <span className="cw-total-label">{t('contextWindow.totalWindow')}</span>
           <span className="cw-total-value">{formatTokens(defaultProvider!.contextWindow)} tokens</span>
         </div>
 
@@ -148,7 +150,7 @@ export function ContextWindowSection() {
           </div>
           <div className="cw-bar-labels">
             <span className="cw-usage-label" style={{ color: "var(--color-text-quaternary)" }}>
-              未使用
+              {t('contextWindow.unused')}
             </span>
             <span className="cw-usage-percent">0%</span>
           </div>

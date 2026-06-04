@@ -41,12 +41,28 @@ pub struct AppearanceSettings {
     /// 主题模式：light / dark / system
     #[serde(default)]
     pub theme_mode: ThemeMode,
+    /// 界面语言：zh-CN / en-US
+    #[serde(default = "default_language")]
+    pub language: String,
+    /// 是否跟随系统语言（首次启动默认跟随系统，用户手动修改后设为 false）
+    #[serde(default = "default_language_follow_system")]
+    pub language_follow_system: bool,
+}
+
+fn default_language() -> String {
+    "zh-CN".to_string()
+}
+
+fn default_language_follow_system() -> bool {
+    true
 }
 
 impl Default for AppearanceSettings {
     fn default() -> Self {
         Self {
             theme_mode: ThemeMode::default(),
+            language: default_language(),
+            language_follow_system: default_language_follow_system(),
         }
     }
 }
@@ -65,12 +81,6 @@ pub struct GeneralSettings {
     pub author_company: String,
     #[serde(default)]
     pub confirmation_level: ConfirmationLevel,
-    #[serde(default = "default_language")]
-    pub language: String,
-}
-
-fn default_language() -> String {
-    "zh-CN".to_string()
 }
 
 impl Default for GeneralSettings {
@@ -80,7 +90,6 @@ impl Default for GeneralSettings {
             author_email: String::new(),
             author_company: String::new(),
             confirmation_level: ConfirmationLevel::default(),
-            language: default_language(),
         }
     }
 }
@@ -265,14 +274,15 @@ pub fn merge_with_defaults(
                 user_settings.general.author_company.clone()
             },
             confirmation_level: user_settings.general.confirmation_level.clone(),
-            language: if user_settings.general.language.is_empty() {
-                default_settings.general.language.clone()
-            } else {
-                user_settings.general.language.clone()
-            },
         },
         appearance: AppearanceSettings {
             theme_mode: user_settings.appearance.theme_mode.clone(),
+            language: if user_settings.appearance.language.is_empty() {
+                default_settings.appearance.language.clone()
+            } else {
+                user_settings.appearance.language.clone()
+            },
+            language_follow_system: user_settings.appearance.language_follow_system,
         },
         version_snapshot: VersionSnapshot {
             retention_policy: user_settings.version_snapshot.retention_policy.clone(),

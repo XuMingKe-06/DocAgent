@@ -1,4 +1,5 @@
 import type { WorkflowNode, ErrorNodeData } from "../../types";
+import { useTranslation } from 'react-i18next';
 import { Icon } from "../common/Icon";
 
 interface ErrorNodeProps {
@@ -8,6 +9,7 @@ interface ErrorNodeProps {
 }
 
 export function ErrorNode({ node, onRetry }: ErrorNodeProps) {
+  const { t } = useTranslation();
   const data = node.data as ErrorNodeData;
 
   return (
@@ -19,16 +21,16 @@ export function ErrorNode({ node, onRetry }: ErrorNodeProps) {
       <div className="wf-error-flat">
         <div className="wf-error-message">{data.message}</div>
         <details className="wf-error-details">
-          <summary>错误详情</summary>
+          <summary>{t('errorNode.errorDetails')}</summary>
           <div className="wf-error-detail-content">
-            <div>错误码: E{data.code}</div>
-            <div>模块: {data.module}</div>
+            <div>{t('errorNode.errorCode')}: E{data.code}</div>
+            <div>{t('errorNode.module')}: {data.module}</div>
           </div>
         </details>
         {data.recoverable && onRetry && (
           <button className="wf-error-retry-btn" onClick={onRetry}>
             <Icon name="refresh" size={14} />
-            重试
+            {t('errorNode.retry')}
           </button>
         )}
       </div>

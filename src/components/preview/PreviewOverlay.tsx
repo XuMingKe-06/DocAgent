@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon } from "../common/Icon";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -31,6 +32,7 @@ export function PreviewOverlay({
   diffData = null,
   pdfBase64Data = null,
 }: PreviewOverlayProps) {
+  const { t } = useTranslation();
   const [showDiff, setShowDiff] = useState(false);
 
   useEffect(() => {
@@ -63,7 +65,7 @@ export function PreviewOverlay({
                 className="px-[10px] py-1 rounded-[var(--radius-sm)] text-[11px] font-medium bg-bg-sub text-text-secondary hover:bg-bg-hover transition-all"
                 onClick={() => setShowDiff(!showDiff)}
               >
-                {showDiff ? "文档预览" : "差异对比"}
+                {showDiff ? t("preview.documentPreview") : t("preview.diffCompare")}
               </button>
             )}
             <button
@@ -97,6 +99,7 @@ export function PreviewOverlay({
  * 根据 fileType 选择对应的渲染方式
  */
 function ContentRenderer({ content, fileType, pdfBase64Data }: { content: string; fileType?: string; pdfBase64Data?: string | null }) {
+  const { t } = useTranslation();
   const normalizedType = fileType?.toLowerCase()?.trim() ?? "";
 
   // PDF 真实渲染预览：使用 pdfjs-dist Canvas 渲染
@@ -124,7 +127,7 @@ function ContentRenderer({ content, fileType, pdfBase64Data }: { content: string
     <div className="px-10 py-8 leading-[1.8] text-text-secondary text-[14px] whitespace-pre-wrap">
       {content || (
         <div className="flex items-center justify-center h-full text-text-tertiary">
-          暂无内容
+          {t("preview.noContent")}
         </div>
       )}
     </div>
@@ -136,10 +139,11 @@ function ContentRenderer({ content, fileType, pdfBase64Data }: { content: string
  * 使用 react-markdown + remark-gfm + rehype-highlight 渲染
  */
 function MarkdownPreview({ content }: { content: string }) {
+  const { t } = useTranslation();
   if (!content) {
     return (
       <div className="flex items-center justify-center h-full text-text-tertiary px-10 py-8">
-        暂无内容
+        {t("preview.noContent")}
       </div>
     );
   }
@@ -159,6 +163,7 @@ function MarkdownPreview({ content }: { content: string }) {
  * 数据格式: { sheets: { Sheet1: { data: [[...], [...]], row_count: N, col_count: M } }, sheet_names: ["Sheet1"] }
  */
 function ExcelTableRenderer({ content }: { content: string }) {
+  const { t } = useTranslation();
   // 尝试解析 JSON 数据
   const parsed = useMemo(() => {
     if (!content) return null;
@@ -180,7 +185,7 @@ function ExcelTableRenderer({ content }: { content: string }) {
       <div className="px-10 py-8 leading-[1.8] text-text-secondary text-[14px] whitespace-pre-wrap">
         {content || (
           <div className="flex items-center justify-center h-full text-text-tertiary">
-            暂无内容
+            {t("preview.noContent")}
           </div>
         )}
       </div>
@@ -224,7 +229,7 @@ function ExcelTableRenderer({ content }: { content: string }) {
               <div className="text-[13px] font-semibold text-text-primary mb-2">
                 {sheetName}
                 <span className="ml-2 text-[11px] font-normal text-text-tertiary">
-                  {sheet.row_count ?? bodyRows.length} 行 x {sheet.col_count ?? headerRow.length} 列
+                  {t("preview.rowXCol", { rows: sheet.row_count ?? bodyRows.length, cols: sheet.col_count ?? headerRow.length })}
                 </span>
               </div>
             )}
@@ -273,6 +278,7 @@ function ExcelTableRenderer({ content }: { content: string }) {
  * 用于 Word / PPT / PDF 的 JSON 格式化预览
  */
 function DocumentStructureRenderer({ content, fileType }: { content: string; fileType: string }) {
+  const { t } = useTranslation();
   // 尝试解析 JSON 数据
   const parsed = useMemo(() => {
     if (!content) return null;
@@ -293,7 +299,7 @@ function DocumentStructureRenderer({ content, fileType }: { content: string; fil
       <div className="px-10 py-8 leading-[1.8] text-text-secondary text-[14px] whitespace-pre-wrap">
         {content || (
           <div className="flex items-center justify-center h-full text-text-tertiary">
-            暂无内容
+            {t("preview.noContent")}
           </div>
         )}
       </div>
@@ -325,6 +331,7 @@ function DocumentStructureRenderer({ content, fileType }: { content: string; fil
  * 数据格式: { paragraphs: [{text, style}], tables: [[[...]]], properties: {...} }
  */
 function WordDocumentView({ data }: { data: Record<string, unknown> }) {
+  const { t } = useTranslation();
   const paragraphs = Array.isArray(data.paragraphs) ? data.paragraphs : [];
   const tables = Array.isArray(data.tables) ? data.tables : [];
   const properties = data.properties && typeof data.properties === "object" ? data.properties as Record<string, unknown> : null;
@@ -334,7 +341,7 @@ function WordDocumentView({ data }: { data: Record<string, unknown> }) {
       {/* 文档属性 */}
       {properties && Object.keys(properties).length > 0 && (
         <div className="mb-6 p-4 bg-bg-sub rounded-[var(--radius-sm)] border border-border-light">
-          <div className="text-[12px] font-semibold text-text-primary mb-2">文档属性</div>
+          <div className="text-[12px] font-semibold text-text-primary mb-2">{t("preview.documentProperties")}</div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-[12px]">
             {Object.entries(properties).map(([key, value]) => (
               <div key={key}>
@@ -439,7 +446,7 @@ function WordDocumentView({ data }: { data: Record<string, unknown> }) {
       {/* 无内容提示 */}
       {paragraphs.length === 0 && tables.length === 0 && !properties && (
         <div className="flex items-center justify-center h-32 text-text-tertiary text-[14px]">
-          文档内容为空
+          {t("preview.emptyDocument")}
         </div>
       )}
     </div>
@@ -451,6 +458,7 @@ function WordDocumentView({ data }: { data: Record<string, unknown> }) {
  * 数据格式: { slides: [{ shapes: [{ name, text }] }], slide_count: N }
  */
 function PptDocumentView({ data }: { data: Record<string, unknown> }) {
+  const { t } = useTranslation();
   const slides = Array.isArray(data.slides) ? data.slides : [];
   const slideCount = typeof data.slide_count === "number" ? data.slide_count : slides.length;
 
@@ -458,7 +466,7 @@ function PptDocumentView({ data }: { data: Record<string, unknown> }) {
     <div className="px-10 py-8">
       {/* 幻灯片统计 */}
       <div className="text-[12px] text-text-tertiary mb-4">
-        共 {slideCount} 张幻灯片
+        {t("preview.slideCount", { count: slideCount })}
       </div>
 
       {/* 逐幻灯片渲染 */}
@@ -476,7 +484,7 @@ function PptDocumentView({ data }: { data: Record<string, unknown> }) {
                   {slideIdx + 1}
                 </span>
                 <span className="text-[12px] font-medium text-text-primary">
-                  幻灯片 {slideIdx + 1}
+                  {t("preview.slideNumber", { number: slideIdx + 1 })}
                 </span>
               </div>
 
@@ -507,7 +515,7 @@ function PptDocumentView({ data }: { data: Record<string, unknown> }) {
                     );
                   })
                 ) : (
-                  <div className="text-[12px] text-text-tertiary">空白幻灯片</div>
+                  <div className="text-[12px] text-text-tertiary">{t("preview.emptySlide")}</div>
                 )}
               </div>
             </div>
@@ -518,7 +526,7 @@ function PptDocumentView({ data }: { data: Record<string, unknown> }) {
       {/* 无内容提示 */}
       {slides.length === 0 && (
         <div className="flex items-center justify-center h-32 text-text-tertiary text-[14px]">
-          文档内容为空
+          {t("preview.emptyDocument")}
         </div>
       )}
     </div>
@@ -530,6 +538,7 @@ function PptDocumentView({ data }: { data: Record<string, unknown> }) {
  * 数据格式: { pages: [{ page_number, text }], page_count: N }
  */
 function PdfDocumentView({ data }: { data: Record<string, unknown> }) {
+  const { t } = useTranslation();
   const pages = Array.isArray(data.pages) ? data.pages : [];
   const pageCount = typeof data.page_count === "number" ? data.page_count : pages.length;
 
@@ -537,7 +546,7 @@ function PdfDocumentView({ data }: { data: Record<string, unknown> }) {
     <div className="px-10 py-8">
       {/* 页面统计 */}
       <div className="text-[12px] text-text-tertiary mb-4">
-        共 {pageCount} 页
+        {t("preview.pageCount", { count: pageCount })}
       </div>
 
       {/* 逐页渲染 */}
@@ -557,14 +566,14 @@ function PdfDocumentView({ data }: { data: Record<string, unknown> }) {
                   {pageNumber}
                 </span>
                 <span className="text-[12px] font-medium text-text-primary">
-                  第 {pageNumber} 页
+                  {t("preview.pageNumber", { number: pageNumber })}
                 </span>
               </div>
 
               {/* 页面文本内容 */}
               <div className="px-5 py-4 text-[14px] text-text-secondary leading-[1.8] whitespace-pre-wrap">
                 {text.trim() || (
-                  <span className="text-text-tertiary">此页无文本内容</span>
+                  <span className="text-text-tertiary">{t("preview.emptyPage")}</span>
                 )}
               </div>
             </div>
@@ -575,7 +584,7 @@ function PdfDocumentView({ data }: { data: Record<string, unknown> }) {
       {/* 无内容提示 */}
       {pages.length === 0 && (
         <div className="flex items-center justify-center h-32 text-text-tertiary text-[14px]">
-          文档内容为空
+          {t("preview.emptyDocument")}
         </div>
       )}
     </div>
@@ -627,6 +636,7 @@ function computeDiffLines(oldContent: string, newContent: string): DiffLine[] {
 }
 
 function DiffView({ oldContent, newContent }: { oldContent: string; newContent: string }) {
+  const { t } = useTranslation();
   const diffLines = useMemo(() => computeDiffLines(oldContent, newContent), [oldContent, newContent]);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
@@ -662,24 +672,24 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
     <div className="flex flex-col flex-1 overflow-hidden">
       {/* 差异统计栏 + 视图模式切换 */}
       <div className="flex items-center gap-4 px-5 py-2 border-b border-border bg-bg-sub text-[12px] flex-shrink-0">
-        <span className="text-text-secondary">差异统计:</span>
-        <span className="text-success font-medium">+{stats.added} 新增</span>
-        <span className="text-error font-medium">-{stats.removed} 删除</span>
+        <span className="text-text-secondary">{t("preview.diffStats")}</span>
+        <span className="text-success font-medium">+{stats.added} {t("preview.added")}</span>
+        <span className="text-error font-medium">-{stats.removed} {t("preview.removed")}</span>
         {/* 视图模式切换按钮 */}
         <div className="ml-auto flex items-center gap-1">
           <button
             className={`diff-mode-btn ${viewMode === "side-by-side" ? "diff-mode-btn-active" : ""}`}
             onClick={() => setViewMode("side-by-side")}
-            title="并排对比"
+            title={t("preview.sideBySideCompare")}
           >
-            并排
+            {t("preview.sideBySide")}
           </button>
           <button
             className={`diff-mode-btn ${viewMode === "inline" ? "diff-mode-btn-active" : ""}`}
             onClick={() => setViewMode("inline")}
-            title="内联对比"
+            title={t("preview.inlineCompare")}
           >
-            内联
+            {t("preview.inline")}
           </button>
         </div>
       </div>
@@ -718,7 +728,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
           className="flex-1 overflow-y-auto px-5 py-5 font-mono text-[12px] leading-[1.8] bg-[var(--color-bg-sub)] border-r border-border"
           onScroll={() => handleScroll("left")}
         >
-          <div className="px-3 py-2 bg-bg-sub font-sans font-semibold text-[12px] mb-3 sticky top-0 z-10">修改前</div>
+          <div className="px-3 py-2 bg-bg-sub font-sans font-semibold text-[12px] mb-3 sticky top-0 z-10">{t("preview.before")}</div>
           {diffLines.map((line, i) => {
             // 新增行在左侧显示为空占位，保持与右侧对齐
             if (line.type === "added") {
@@ -746,7 +756,7 @@ function DiffView({ oldContent, newContent }: { oldContent: string; newContent: 
           className="flex-1 overflow-y-auto px-5 py-5 font-mono text-[12px] leading-[1.8] bg-bg"
           onScroll={() => handleScroll("right")}
         >
-          <div className="px-3 py-2 bg-bg-sub font-sans font-semibold text-[12px] mb-3 sticky top-0 z-10">修改后</div>
+          <div className="px-3 py-2 bg-bg-sub font-sans font-semibold text-[12px] mb-3 sticky top-0 z-10">{t("preview.after")}</div>
           {diffLines.map((line, i) => {
             // 删除行在右侧显示为空占位，保持与左侧对齐
             if (line.type === "removed") {

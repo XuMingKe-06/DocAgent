@@ -1,9 +1,11 @@
+import { useTranslation } from 'react-i18next';
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Icon } from "../common/Icon";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { AddWorkspaceDialog } from "../settings/AddWorkspaceDialog";
 
 export function WorkspaceSelector() {
+  const { t } = useTranslation();
   const { currentWorkspaceId, workspaces, switchWorkspace, removeWorkspace } = useWorkspaceStore();
   const [open, setOpen] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -73,14 +75,14 @@ export function WorkspaceSelector() {
       {/* 触发按钮 */}
       <div
         role="button"
-        aria-label="选择工作区"
+        aria-label={t('workspace.selectWorkspace')}
         tabIndex={0}
         className={`ws-selector-trigger ${open ? "ws-selector-trigger-active" : ""}`}
         onClick={() => { setOpen((prev) => !prev); setRemovingId(null); setRemoveError(null); }}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((prev) => !prev); } }}
       >
         <span className="w-2 h-2 rounded-full bg-accent" />
-        <span className="ws-selector-label">{currentWs?.name ?? "选择工作区"}</span>
+        <span className="ws-selector-label">{currentWs?.name ?? t('workspace.selectWorkspace')}</span>
         <Icon name={open ? "chevron-up" : "chevron-down"} size={14} />
       </div>
 
@@ -90,7 +92,7 @@ export function WorkspaceSelector() {
           {/* 工作区列表 */}
           <div className="ws-selector-list">
             {workspaces.length === 0 && (
-              <div className="ws-selector-empty">暂无工作区</div>
+              <div className="ws-selector-empty">{t('workspace.noWorkspace')}</div>
             )}
             {workspaces.map((ws) => (
               <div key={ws.id} className="ws-selector-item-wrapper">
@@ -110,7 +112,7 @@ export function WorkspaceSelector() {
                   {removingId !== ws.id && (
                     <button
                       className="ws-selector-remove-btn"
-                      title="移除工作区"
+                      title={t('workspace.removeWorkspace')}
                       onClick={(e) => { e.stopPropagation(); setRemovingId(ws.id); setRemoveError(null); }}
                     >
                       <Icon name="close" size={12} />
@@ -122,7 +124,7 @@ export function WorkspaceSelector() {
                 {removingId === ws.id && (
                   <div className="ws-selector-confirm">
                     <div className="ws-selector-confirm-text">
-                      确定移除此工作区？（不会删除本地文件）
+                      {t('workspace.confirmRemove')}
                     </div>
                     {removeError && (
                       <div className="ws-selector-confirm-error">{removeError}</div>
@@ -132,13 +134,13 @@ export function WorkspaceSelector() {
                         className="ws-selector-confirm-btn ws-selector-confirm-btn-danger"
                         onClick={(e) => { e.stopPropagation(); handleRemove(ws.id); }}
                       >
-                        确认移除
+                        {t('workspace.confirmRemoveBtn')}
                       </button>
                       <button
                         className="ws-selector-confirm-btn ws-selector-confirm-btn-ghost"
                         onClick={(e) => { e.stopPropagation(); setRemovingId(null); setRemoveError(null); }}
                       >
-                        取消
+                        {t('workspace.cancel')}
                       </button>
                     </div>
                   </div>
@@ -154,7 +156,7 @@ export function WorkspaceSelector() {
               onClick={() => setShowAddDialog(true)}
             >
               <Icon name="plus" size={14} />
-              <span>添加工作区</span>
+              <span>{t('workspace.addWorkspace')}</span>
             </button>
           </div>
         </div>

@@ -1,6 +1,8 @@
+import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 
 export function SkillsTab() {
+  const { t } = useTranslation();
   const { skills, tools } = useSettingsStore();
 
   // 内置 Skill 列表
@@ -10,22 +12,22 @@ export function SkillsTab() {
     <div>
       {/* 内置 Tools */}
       <div className="section-header">
-        <span className="section-title">内置 Tools</span>
+        <span className="section-title">{t('settings.tools.builtinTools')}</span>
         <span className="section-badge">{tools.length}</span>
       </div>
 
       <div className="skills-list">
-        {tools.map((t) => (
-          <div key={t.id} className="skill-item">
+        {tools.map((tool) => (
+          <div key={tool.id} className="skill-item">
             <div className="skill-item-info">
               <div className="skill-name-row">
-                <span className="skill-name">{t.name}</span>
-                <span className="skill-tool-badge">Tool</span>
+                <span className="skill-name">{tool.name}</span>
+                <span className="skill-tool-badge">{t('settings.skills.toolBadge')}</span>
               </div>
-              <div className="skill-desc">{t.description}</div>
+              <div className="skill-desc">{tool.description}</div>
             </div>
             <div className="tool-always-on">
-              始终启用
+              {t('settings.tools.alwaysEnabled')}
             </div>
           </div>
         ))}
@@ -33,7 +35,7 @@ export function SkillsTab() {
 
       {/* 内置 Skills */}
       <div className="section-header" style={{ marginTop: 24 }}>
-        <span className="section-title">内置 Skills</span>
+        <span className="section-title">{t('settings.skills.builtinSkills')}</span>
         <span className="section-badge">{builtinSkills.length}</span>
       </div>
 
@@ -43,12 +45,12 @@ export function SkillsTab() {
             <div className="skill-item-info">
               <div className="skill-name-row">
                 <span className="skill-name">{s.name}</span>
-                <span className="skill-skill-badge">Skill</span>
+                <span className="skill-skill-badge">{t('settings.skills.skillBadge')}</span>
               </div>
               <div className="skill-desc">{s.description}</div>
             </div>
             <div className="tool-always-on">
-              始终启用
+              {t('settings.tools.alwaysEnabled')}
             </div>
           </div>
         ))}

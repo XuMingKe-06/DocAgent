@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useTranslation } from 'react-i18next';
 import { useFileTreeStore } from "../../stores/useFileTreeStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { Icon } from "../common/Icon";
@@ -187,6 +188,7 @@ function NewItemInput({
   onCreated: () => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation();
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -233,13 +235,13 @@ function NewItemInput({
             <Icon name={type === "file" ? "file-plus" : "folder-plus"} size={18} />
           </span>
           <span className="ni-title">
-            新建{type === "file" ? "文件" : "文件夹"}
+            {type === "file" ? t('fileTree.newFileTitle') : t('fileTree.newFolderTitle')}
           </span>
         </div>
         <div className="ni-body">
           <input
             className="ni-input"
-            placeholder={type === "file" ? "输入文件名（含扩展名）" : "输入文件夹名称"}
+            placeholder={type === "file" ? t('fileTree.fileNamePlaceholder') : t('fileTree.folderNamePlaceholder')}
             value={value}
             onChange={(e) => {
               setValue(e.target.value);
@@ -252,14 +254,14 @@ function NewItemInput({
         </div>
         <div className="ni-footer">
           <button className="ni-btn ni-btn-cancel" onClick={onCancel}>
-            取消
+            {t('fileTree.cancel')}
           </button>
           <button
             className="ni-btn ni-btn-confirm"
             onClick={handleSubmit}
             disabled={!value.trim() || creating}
           >
-            {creating ? "创建中..." : "创建"}
+            {creating ? t('fileTree.creating') : t('fileTree.create')}
           </button>
         </div>
       </div>
@@ -387,6 +389,7 @@ function NewItemInput({
 
 /* ---- 主组件 ---- */
 export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpenPreview?: (filePath: string, fileName: string) => void; onOpenVersionHistory?: (filePath: string, fileName: string) => void }) {
+  const { t } = useTranslation();
   const { searchKeyword, setSearchKeyword, getFilteredTree, loadTree, isLoading, activeWorkspaceId } = useFileTreeStore();
   const { workspaces } = useWorkspaceStore();
   const filteredTree = getFilteredTree();
@@ -498,35 +501,35 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
     if (node.isDir) {
       return [
         {
-          label: "新建文件",
+          label: t('fileTree.newFile'),
           icon: "file-plus",
           onClick: () => setNewItemState({ type: "file", parentPath: node.path }),
         },
         {
-          label: "新建文件夹",
+          label: t('fileTree.newFolder'),
           icon: "folder-plus",
           onClick: () => setNewItemState({ type: "directory", parentPath: node.path }),
         },
         { label: "", separator: true, onClick: () => {} },
         {
-          label: "重命名",
+          label: t('fileTree.rename'),
           icon: "edit",
           onClick: () => setRenamingPath(node.path),
         },
         {
-          label: "删除",
+          label: t('fileTree.delete'),
           icon: "trash",
           danger: true,
           onClick: () => setDeleteTarget({ name: node.name, path: node.path, isDir: true }),
         },
         { label: "", separator: true, onClick: () => {} },
         {
-          label: "复制路径",
+          label: t('fileTree.copyPath'),
           icon: "copy",
           onClick: () => handleCopyPath(node.path),
         },
         {
-          label: "在资源管理器中显示",
+          label: t('fileTree.showInExplorer'),
           icon: "external-link",
           onClick: () => tauriCmd.showInFileManager(activeWorkspaceId, node.path),
         },
@@ -536,7 +539,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
     /* 文件菜单 */
     return [
       {
-        label: "打开预览",
+        label: t('fileTree.openPreview'),
         icon: "eye",
         onClick: () => {
           if (onOpenPreview) {
@@ -548,30 +551,30 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
         },
       },
       {
-        label: "版本历史",
+        label: t('fileTree.versionHistory'),
         icon: "clock",
         onClick: () => onOpenVersionHistory?.(node.path, node.name),
       },
       { label: "", separator: true, onClick: () => {} },
       {
-        label: "重命名",
+        label: t('fileTree.rename'),
         icon: "edit",
         onClick: () => setRenamingPath(node.path),
       },
       {
-        label: "删除",
+        label: t('fileTree.delete'),
         icon: "trash",
         danger: true,
         onClick: () => setDeleteTarget({ name: node.name, path: node.path, isDir: false }),
       },
       { label: "", separator: true, onClick: () => {} },
       {
-        label: "复制路径",
+        label: t('fileTree.copyPath'),
         icon: "copy",
         onClick: () => handleCopyPath(node.path),
       },
       {
-        label: "在资源管理器中显示",
+        label: t('fileTree.showInExplorer'),
         icon: "external-link",
         onClick: () => tauriCmd.showInFileManager(activeWorkspaceId, node.path),
       },
@@ -579,23 +582,23 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
   }, [contextMenu, activeWorkspaceId, handleCopyPath, onOpenPreview, onOpenVersionHistory]);
 
   return (
-    <SidebarSection title="工作区文件">
+    <SidebarSection title={t('fileTree.sectionTitle')}>
       {/* 搜索栏 */}
       <div className="ft-search">
         <Icon name="search" size={14} className="ft-search-icon" />
         <input
           type="text"
           className="ft-search-input"
-          placeholder="搜索文件..."
-          aria-label="搜索文件"
+          placeholder={t('fileTree.searchPlaceholder')}
+          aria-label={t('fileTree.searchFile')}
           value={searchKeyword}
           onChange={(e) => setSearchKeyword(e.target.value)}
         />
         <button
           className={`ft-refresh ${isLoading ? "ft-refreshing" : ""}`}
           onClick={handleRefresh}
-          title="刷新文件树"
-          aria-label="刷新文件树"
+          title={t('fileTree.refreshTree')}
+          aria-label={t('fileTree.refreshTree')}
           disabled={isLoading}
         >
           <Icon name="refresh" size={13} />
@@ -604,7 +607,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
 
       {/* 文件树内容 */}
       {isLoading ? (
-        <div className="ft-skeleton" role="status" aria-label="加载中">
+        <div className="ft-skeleton" role="status" aria-label={t('fileTree.loading')}>
           {[1, 2, 3, 4, 5].map((i) => (
             <div key={i} className="ft-skeleton-item">
               <div className="skeleton skeleton-circle" style={{ width: 16, height: 16, flexShrink: 0 }} />
@@ -616,11 +619,11 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
         <div className="ft-empty" role="status">
           <Icon name="file" size={20} className="ft-empty-icon" />
           <span className="ft-empty-text">
-            {searchKeyword ? "未找到匹配文件" : "暂无文件"}
+            {searchKeyword ? t('fileTree.noMatch') : t('fileTree.noFiles')}
           </span>
         </div>
       ) : (
-        <div className="ft-tree" role="tree" aria-label="工作区文件树">
+        <div className="ft-tree" role="tree" aria-label={t('fileTree.treeLabel')}>
           {filteredTree.map((node) => (
             <FileTreeItem
               key={node.path}

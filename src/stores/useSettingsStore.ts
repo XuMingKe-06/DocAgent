@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import i18n from "../i18n";
 import type {
   AppSettings,
   ProviderInfo,
@@ -50,10 +51,11 @@ const defaultSettings: AppSettings = {
     authorEmail: "",
     authorCompany: "",
     confirmationLevel: "editOnly",
-    language: "zh-CN",
   },
   appearance: {
     themeMode: "system",
+    language: "zh-CN",
+    languageFollowSystem: true,
   },
   versionSnapshot: {
     retentionPolicy: "byCount",
@@ -141,6 +143,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     if (updates.appearance) {
       // 使用 setTimeout 确保 state 已更新
       setTimeout(() => get().applyAppearance(), 0);
+      // 如果更新了语言设置，立即同步 i18n（不等待 applyAppearance 的 setTimeout）
+      if (updates.appearance.language) {
+        i18n.changeLanguage(updates.appearance.language);
+        localStorage.setItem('i18n-language', updates.appearance.language);
+      }
     }
   },
 
@@ -176,7 +183,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         skills,
         tools,
       });
-      // 设置加载完成后应用外观
+      // 设置加载完成后应用外观（含语言）
       get().applyAppearance();
       // 异步加载模板列表（不阻塞设置加载）
       get().loadTemplates();
@@ -296,10 +303,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  // 应用外观设置到 DOM（主题模式）
+  // 应用外观设置到 DOM（主题模式 + 语言）
   applyAppearance: () => {
     const { settings } = get();
-    const { themeMode } = settings.appearance;
+    const { themeMode, language, languageFollowSystem } = settings.appearance;
 
     // 应用主题
     const root = document.documentElement;
@@ -315,6 +322,33 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         root.classList.add("dark");
       }
     }
+
+    // 应用语言设置
+    let effectiveLanguage = language;
+    if (languageFollowSystem) {
+      // 跟随系统语言：检测浏览器语言偏好
+      const browserLang = navigator.language || (navigator as unknown as { userLanguage?: string }).userLanguage || "zh-CN";
+      // 匹配支持的语言，优先精确匹配，其次前缀匹配
+      if (browserLang.startsWith("zh")) {
+        effectiveLanguage = "zh-CN";
+      } else {
+        effectiveLanguage = "en-US";
+      }
+      // 如果计算出的语言与保存的不同，更新设置（但不触发 languageFollowSystem 变为 false）
+      if (effectiveLanguage !== language) {
+        const updatedSettings = { ...settings, appearance: { ...settings.appearance, language: effectiveLanguage } };
+        set({ settings: updatedSettings });
+        // 异步持久化语言变更
+        tauriCmd.updateSettings(updatedSettings as unknown as Record<string, unknown>).catch((err) => {
+          console.error("[SettingsStore] 持久化语言设置失败:", err);
+        });
+      }
+    }
+    // 同步 i18n 语言
+    if (i18n.language !== effectiveLanguage) {
+      i18n.changeLanguage(effectiveLanguage);
+    }
+    localStorage.setItem('i18n-language', effectiveLanguage);
   },
 
   // 初始化系统主题偏好监听

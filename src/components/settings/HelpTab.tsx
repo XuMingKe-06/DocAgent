@@ -1,65 +1,46 @@
+import { useTranslation } from "react-i18next";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { deriveNewLineShortcut } from "../../utils/format";
 
-// 固定的快捷键（非可配置项）
-const fixedShortcuts = [
-  { keys: "Escape", desc: "关闭弹窗/取消操作" },
-  { keys: "Ctrl+V", desc: "粘贴图片" },
-];
-
-// 常见问题
-const faqList = [
-  {
-    q: "如何配置 LLM 服务商?",
-    a: "在设置 > 模型配置中，点击\"添加服务商\"按钮，选择服务商类型（OpenAI/Anthropic/Gemini/Ollama/自定义），填写 API 地址、API Key 和模型名称即可。",
-  },
-  {
-    q: "支持哪些文档格式?",
-    a: "支持 Word(.docx)、Excel(.xlsx)、PowerPoint(.pptx)、PDF(.pdf) 和 Markdown(.md) 格式的生成、读取和修改，以及这些格式之间的相互转换。",
-  },
-  {
-    q: "如何创建自定义 Skill?",
-    a: "在设置 > Skills 管理中，点击\"添加自定义 Skill\"按钮。自定义 Skill 本质是 Prompt 模板，支持 {{param_name}} 占位符，Agent 调用时参数会自动替换。",
-  },
-  {
-    q: "Agent 执行高风险操作时如何确认?",
-    a: "Agent 执行删除、覆盖等高风险操作时会弹出确认对话框，您可以选择批准或拒绝。确认级别可在设置 > 通用设置中调整（全部需确认/仅编辑确认/全部自动确认）。",
-  },
-  {
-    q: "如何查看文档版本历史?",
-    a: "在文件树中右键点击文件选择\"版本历史\"，或在文档预览面板中点击版本历史按钮。每次文档修改前会自动创建版本快照，支持回滚到任意历史版本。",
-  },
-  {
-    q: "如何切换工作区?",
-    a: "点击顶部栏的工作区选择器可切换工作区，或在设置 > 工作区管理中添加、切换和管理工作区。每个工作区的文件和配置相互独立。",
-  },
-  {
-    q: "如何使用 Prompt 模板?",
-    a: "在设置 > Prompt 模板中可创建和管理常用 Prompt 模板，支持变量占位符。在输入框中可通过模板选择器快速插入模板内容。",
-  },
-];
-
-// 内置 Skill 列表
-const builtinSkills = [
-  { name: "docx_skill", desc: "Word 文档操作（生成/读取/修改/转换/分析）" },
-  { name: "xlsx_skill", desc: "Excel 文档操作（生成/读取/修改/转换/分析）" },
-  { name: "pptx_skill", desc: "PPT 文档操作（生成/读取/修改/转换/分析）" },
-  { name: "pdf_skill", desc: "PDF 文档操作（生成/读取/修改/转换/分析）" },
-];
-
 export function HelpTab() {
+  const { t } = useTranslation();
   const shortcuts = useSettingsStore((s) => s.settings.shortcuts);
   const newLineShortcut = deriveNewLineShortcut(shortcuts.sendMessage);
 
+  // 固定的快捷键（非可配置项）
+  const fixedShortcuts = [
+    { keys: "Escape", desc: t('settings.help.closeDialogDesc') },
+    { keys: "Ctrl+V", desc: t('settings.help.pasteImageDesc') },
+  ];
+
+  // 常见问题
+  const faqList = [
+    { q: t('settings.help.faqQ0'), a: t('settings.help.faqA0') },
+    { q: t('settings.help.faqQ1'), a: t('settings.help.faqA1') },
+    { q: t('settings.help.faqQ2'), a: t('settings.help.faqA2') },
+    { q: t('settings.help.faqQ3'), a: t('settings.help.faqA3') },
+    { q: t('settings.help.faqQ4'), a: t('settings.help.faqA4') },
+    { q: t('settings.help.faqQ5'), a: t('settings.help.faqA5') },
+    { q: t('settings.help.faqQ6'), a: t('settings.help.faqA6') },
+  ];
+
+  // 内置 Skill 列表
+  const builtinSkills = [
+    { name: "docx_skill", desc: t('settings.help.skillDocx') },
+    { name: "xlsx_skill", desc: t('settings.help.skillXlsx') },
+    { name: "pptx_skill", desc: t('settings.help.skillPptx') },
+    { name: "pdf_skill", desc: t('settings.help.skillPdf') },
+  ];
+
   // 从设置中动态生成可配置快捷键列表
   const configurableShortcuts = [
-    { keys: shortcuts.newSession, desc: "新建会话" },
-    { keys: shortcuts.closeSession, desc: "关闭当前会话" },
-    { keys: shortcuts.sendMessage, desc: "发送消息" },
-    { keys: newLineShortcut, desc: "输入框换行" },
-    { keys: shortcuts.toggleSidebar, desc: "切换侧边栏" },
-    { keys: shortcuts.quickPrompt, desc: "快速提示" },
-    { keys: "Ctrl+,", desc: "打开设置" },
+    { keys: shortcuts.newSession, desc: t('settings.help.newSessionDesc') },
+    { keys: shortcuts.closeSession, desc: t('settings.help.closeCurrentSessionDesc') },
+    { keys: shortcuts.sendMessage, desc: t('settings.help.sendMessageDesc') },
+    { keys: newLineShortcut, desc: t('settings.help.newLineDesc') },
+    { keys: shortcuts.toggleSidebar, desc: t('settings.help.toggleSidebarDesc') },
+    { keys: shortcuts.quickPrompt, desc: t('settings.help.quickPromptDesc') },
+    { keys: "Ctrl+,", desc: t('settings.help.openSettingsDesc') },
   ];
 
   return (
@@ -67,28 +48,28 @@ export function HelpTab() {
       {/* 快速入门 */}
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">快速入门</span>
+          <span className="section-title">{t('settings.help.quickStart')}</span>
         </div>
         <div className="help-card">
           <div className="help-step">
             <span className="help-step-num">1</span>
             <div className="help-step-content">
-              <div className="help-step-title">配置 LLM 服务商</div>
-              <div className="help-step-desc">在设置中添加 OpenAI/Anthropic/Gemini 等 API 配置</div>
+              <div className="help-step-title">{t('settings.help.configureLLM')}</div>
+              <div className="help-step-desc">{t('settings.help.configureLLMDesc')}</div>
             </div>
           </div>
           <div className="help-step">
             <span className="help-step-num">2</span>
             <div className="help-step-content">
-              <div className="help-step-title">选择工作区</div>
-              <div className="help-step-desc">指定文档存放的目录，Agent 将在此目录下操作文件</div>
+              <div className="help-step-title">{t('settings.help.selectWorkspace')}</div>
+              <div className="help-step-desc">{t('settings.help.selectWorkspaceDesc')}</div>
             </div>
           </div>
           <div className="help-step">
             <span className="help-step-num">3</span>
             <div className="help-step-content">
-              <div className="help-step-title">开始对话</div>
-              <div className="help-step-desc">在输入框中描述您的需求，Agent 会自动选择合适的 Skill 完成任务</div>
+              <div className="help-step-title">{t('settings.help.startConversation')}</div>
+              <div className="help-step-desc">{t('settings.help.startConversationDesc')}</div>
             </div>
           </div>
         </div>
@@ -97,7 +78,7 @@ export function HelpTab() {
       {/* 快捷键 */}
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">快捷键</span>
+          <span className="section-title">{t('settings.help.shortcuts')}</span>
         </div>
         <div className="help-shortcut-list">
           {configurableShortcuts.map((item) => (
@@ -118,7 +99,7 @@ export function HelpTab() {
       {/* 内置 Skill 列表 */}
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">内置 Skill 列表</span>
+          <span className="section-title">{t('settings.help.builtinSkillList')}</span>
         </div>
         <div className="help-skill-list">
           {builtinSkills.map((skill) => (
@@ -133,7 +114,7 @@ export function HelpTab() {
       {/* 常见问题 */}
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">常见问题</span>
+          <span className="section-title">{t('settings.help.faqTitle')}</span>
         </div>
         <div className="help-faq-list">
           {faqList.map((item, i) => (

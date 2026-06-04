@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Icon, type IconName } from "../common/Icon";
 import { DeleteConfirmDialog } from "../common/DeleteConfirmDialog";
 import * as tauriCmd from "../../services/tauri";
@@ -14,40 +15,6 @@ interface VersionHistoryPanelProps {
   onCompareVersions?: (oldContent: string, newContent: string, fileType: string) => void;
   /** 版本回滚完成回调 */
   onRollbackComplete?: () => void;
-}
-
-/* 操作类型的中文映射和图标 */
-const OPERATION_MAP: Record<string, { label: string; icon: IconName; color: string }> = {
-  create: { label: "创建", icon: "file-plus", color: "var(--color-success)" },
-  modify: { label: "修改", icon: "edit", color: "var(--color-accent)" },
-  convert: { label: "转换", icon: "refresh", color: "var(--color-warning)" },
-  rollback: { label: "回滚", icon: "undo", color: "var(--color-error)" },
-};
-
-/* 格式化时间戳为可读字符串 */
-function formatTimestamp(isoStr: string): string {
-  try {
-    const date = new Date(isoStr);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMs / 3600000);
-    const diffDays = Math.floor(diffMs / 86400000);
-
-    if (diffMins < 1) return "刚刚";
-    if (diffMins < 60) return `${diffMins} 分钟前`;
-    if (diffHours < 24) return `${diffHours} 小时前`;
-    if (diffDays < 7) return `${diffDays} 天前`;
-
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  } catch {
-    return isoStr;
-  }
 }
 
 /* 格式化文件大小 */
@@ -67,7 +34,42 @@ export function VersionHistoryPanel({
   onCompareVersions,
   onRollbackComplete,
 }: VersionHistoryPanelProps) {
+  const { t } = useTranslation();
   const [versions, setVersions] = useState<VersionInfo[]>([]);
+
+  // 操作类型的映射和图标（需要 t() 函数，所以定义在组件内部）
+  const OPERATION_MAP: Record<string, { label: string; icon: IconName; color: string }> = {
+    create: { label: t("preview.operationCreate"), icon: "file-plus", color: "var(--color-success)" },
+    modify: { label: t("preview.operationModify"), icon: "edit", color: "var(--color-accent)" },
+    convert: { label: t("preview.operationConvert"), icon: "refresh", color: "var(--color-warning)" },
+    rollback: { label: t("preview.operationRollback"), icon: "undo", color: "var(--color-error)" },
+  };
+
+  // 格式化时间戳为可读字符串（需要 t() 函数，所以定义在组件内部）
+  const formatTimestamp = (isoStr: string): string => {
+    try {
+      const date = new Date(isoStr);
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 1) return t("preview.justNow");
+      if (diffMins < 60) return t("preview.minutesAgo", { count: diffMins });
+      if (diffHours < 24) return t("preview.hoursAgo", { count: diffHours });
+      if (diffDays < 7) return t("preview.daysAgo", { count: diffDays });
+
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      const hours = String(date.getHours()).padStart(2, "0");
+      const minutes = String(date.getMinutes()).padStart(2, "0");
+      return `${year}-${month}-${day} ${hours}:${minutes}`;
+    } catch {
+      return isoStr;
+    }
+  };
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /* 选中用于对比的版本（最多两个） */
@@ -150,7 +152,7 @@ export function VersionHistoryPanel({
         onCompareVersions(content2.content, content1.content, content1.fileType);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "获取版本内容失败");
+      setError(err instanceof Error ? err.message : t("preview.getVersionFailed"));
     } finally {
       setLoadingVersionId(null);
     }
@@ -167,7 +169,7 @@ export function VersionHistoryPanel({
       const currentContent = await tauriCmd.previewDocument(workspaceId, filePath);
       onCompareVersions(versionContent.content, currentContent.content, versionContent.fileType);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "获取版本内容失败");
+      setError(err instanceof Error ? err.message : t("preview.getVersionFailed"));
     } finally {
       setLoadingVersionId(null);
     }
@@ -183,7 +185,7 @@ export function VersionHistoryPanel({
       /* 回滚后重新加载版本列表 */
       await loadVersions();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "回滚失败");
+      setError(err instanceof Error ? err.message : t("preview.rollbackFailed"));
     }
   }, [rollbackTarget, workspaceId, filePath, onRollbackComplete, loadVersions]);
 
@@ -199,7 +201,7 @@ export function VersionHistoryPanel({
         <div className="vh-header">
           <div className="vh-header-left">
             <div className="vh-title-group">
-              <span className="vh-title">版本历史</span>
+              <span className="vh-title">{t("preview.versionHistory")}</span>
               <span className="vh-filename">{fileName}</span>
             </div>
           </div>
@@ -211,7 +213,7 @@ export function VersionHistoryPanel({
                 disabled={loadingVersionId !== null}
               >
                 <Icon name="git-compare" size={14} />
-                对比选中版本
+                {t("preview.compareSelected")}
               </button>
             )}
             <button className="vh-refresh-btn" onClick={loadVersions} disabled={isLoading}>
@@ -231,19 +233,19 @@ export function VersionHistoryPanel({
                 <circle className="vh-spinner-track" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
                 <path className="vh-spinner-head" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
               </svg>
-              <span>加载版本历史...</span>
+              <span>{t("preview.loadingVersionHistory")}</span>
             </div>
           ) : error ? (
             <div className="vh-error">
               <Icon name="warning" size={20} />
               <span>{error}</span>
-              <button className="vh-retry-btn" onClick={loadVersions}>重试</button>
+              <button className="vh-retry-btn" onClick={loadVersions}>{t("common.retry")}</button>
             </div>
           ) : versions.length === 0 ? (
             <div className="vh-empty">
               <Icon name="file" size={24} />
-              <span>暂无版本历史</span>
-              <span className="vh-empty-hint">文档修改后将自动创建版本快照</span>
+              <span>{t("preview.noVersionHistory")}</span>
+              <span className="vh-empty-hint">{t("preview.autoSnapshotHint")}</span>
             </div>
           ) : (
             <div className="vh-list">
@@ -262,7 +264,7 @@ export function VersionHistoryPanel({
                     <button
                       className={`vh-checkbox ${isSelected ? "vh-checkbox-checked" : ""}`}
                       onClick={() => toggleCompareSelect(version.versionId)}
-                      title="选择用于对比"
+                      title={t("preview.selectForCompare")}
                     >
                       {isSelected && <Icon name="check" size={10} />}
                     </button>
@@ -274,7 +276,7 @@ export function VersionHistoryPanel({
                           <Icon name={op.icon} size={11} />
                           {op.label}
                         </span>
-                        {isLatest && <span className="vh-latest-badge">当前</span>}
+                        {isLatest && <span className="vh-latest-badge">{t("preview.current")}</span>}
                         <span className="vh-time">{formatTimestamp(version.timestamp)}</span>
                       </div>
                       <div className="vh-item-meta">
@@ -290,7 +292,7 @@ export function VersionHistoryPanel({
                           className="vh-item-action"
                           onClick={() => handleCompareWithCurrent(version)}
                           disabled={isLoadingThis}
-                          title="与当前版本对比"
+                          title={t("preview.compareWithCurrent")}
                         >
                           {isLoadingThis ? (
                             <svg className="vh-mini-spinner" viewBox="0 0 24 24" fill="none">
@@ -306,7 +308,7 @@ export function VersionHistoryPanel({
                         <button
                           className="vh-item-action vh-rollback-action"
                           onClick={() => setRollbackTarget(version)}
-                          title="回滚到此版本"
+                          title={t("preview.rollbackToVersion")}
                         >
                           <Icon name="undo" size={13} />
                         </button>
@@ -323,7 +325,7 @@ export function VersionHistoryPanel({
         {versions.length > 0 && (
           <div className="vh-footer">
             <span className="vh-footer-hint">
-              勾选两个版本后可进行差异对比，共 {versions.length} 个版本
+              {t("preview.compareHint", { count: versions.length })}
             </span>
           </div>
         )}
@@ -332,7 +334,7 @@ export function VersionHistoryPanel({
       {/* 回滚确认对话框 */}
       {rollbackTarget && (
         <DeleteConfirmDialog
-          name={`版本 ${formatTimestamp(rollbackTarget.timestamp)}`}
+          name={t('preview.rollbackToVersion') + ' ' + formatTimestamp(rollbackTarget.timestamp)}
           isDir={false}
           onConfirm={handleRollbackConfirm}
           onCancel={() => setRollbackTarget(null)}
@@ -347,7 +349,7 @@ export function VersionHistoryPanel({
               <circle className="vh-spinner-track" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
               <path className="vh-spinner-head" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            <span>正在加载版本内容...</span>
+            <span>{t("preview.loadingVersionContent")}</span>
           </div>
         </div>
       )}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useToastStore } from "../../stores/useToastStore";
@@ -8,6 +9,7 @@ import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { getVersion } from "@tauri-apps/api/app";
 
 export function GeneralTab() {
+  const { t } = useTranslation();
   const { settings, updateSettings } = useSettingsStore();
   const { clearAllSessions } = useSessionStore();
   const addToast = useToastStore((s) => s.addToast);
@@ -27,13 +29,13 @@ export function GeneralTab() {
     <div>
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">基本设置</span>
+          <span className="section-title">{t('settings.general.sectionTitle')}</span>
         </div>
 
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">作者名（全局默认）</div>
-            <div className="setting-desc">生成文档时自动填充的作者元数据</div>
+            <div className="setting-label">{t('settings.general.authorName')}</div>
+            <div className="setting-desc">{t('settings.general.authorNameDesc')}</div>
           </div>
           <input
             className="setting-input"
@@ -45,8 +47,8 @@ export function GeneralTab() {
         {/* 作者邮箱 */}
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">作者邮箱</div>
-            <div className="setting-desc">文档元数据中的联系邮箱</div>
+            <div className="setting-label">{t('settings.general.authorEmail')}</div>
+            <div className="setting-desc">{t('settings.general.authorEmailDesc')}</div>
           </div>
           <input
             className="setting-input"
@@ -58,8 +60,8 @@ export function GeneralTab() {
         {/* 作者公司/组织 */}
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">作者公司/组织</div>
-            <div className="setting-desc">文档元数据中的所属组织</div>
+            <div className="setting-label">{t('settings.general.authorCompany')}</div>
+            <div className="setting-desc">{t('settings.general.authorCompanyDesc')}</div>
           </div>
           <input
             className="setting-input"
@@ -70,59 +72,45 @@ export function GeneralTab() {
 
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">操作确认级别</div>
-            <div className="setting-desc">Agent执行文件操作时的确认策略</div>
+            <div className="setting-label">{t('settings.general.confirmLevel')}</div>
+            <div className="setting-desc">{t('settings.general.confirmLevelDesc')}</div>
           </div>
           <select
             className="setting-select"
             value={settings.general.confirmationLevel}
             onChange={(e) => updateSettings({ general: { confirmationLevel: e.target.value as typeof settings.general.confirmationLevel } })}
           >
-            <option value="always">全部需确认</option>
-            <option value="editOnly">仅编辑操作确认</option>
-            <option value="never">全部自动确认</option>
-          </select>
-        </div>
-
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">语言</div>
-          </div>
-          <select
-            className="setting-select"
-            value={settings.general.language}
-            onChange={(e) => updateSettings({ general: { language: e.target.value } })}
-          >
-            <option value="zh-CN">简体中文</option>
-            <option value="en-US">English</option>
+            <option value="always">{t('settings.general.confirmAlways')}</option>
+            <option value="editOnly">{t('settings.general.confirmEditOnly')}</option>
+            <option value="never">{t('settings.general.confirmNever')}</option>
           </select>
         </div>
       </div>
 
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">版本快照</span>
+          <span className="section-title">{t('settings.general.versionSnapshot')}</span>
         </div>
 
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">保留策略</div>
+            <div className="setting-label">{t('settings.general.retentionPolicy')}</div>
           </div>
           <select
             className="setting-select"
             value={settings.versionSnapshot.retentionPolicy}
             onChange={(e) => updateSettings({ versionSnapshot: { retentionPolicy: e.target.value as typeof settings.versionSnapshot.retentionPolicy } })}
           >
-            <option value="byCount">按数量（最近{settings.versionSnapshot.maxCount}个）</option>
-            <option value="byDays">按时间（最近{settings.versionSnapshot.maxDays}天）</option>
-            <option value="both">两者都满足</option>
+            <option value="byCount">{t('settings.general.byCount', { count: settings.versionSnapshot.maxCount })}</option>
+            <option value="byDays">{t('settings.general.byDays', { days: settings.versionSnapshot.maxDays })}</option>
+            <option value="both">{t('settings.general.both')}</option>
           </select>
         </div>
 
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">应用数据目录</div>
-            <div className="setting-desc">快照和配置的存储位置</div>
+            <div className="setting-label">{t('settings.general.appDataDir')}</div>
+            <div className="setting-desc">{t('settings.general.appDataDirDesc')}</div>
           </div>
           <span className="setting-path">%APPDATA%/DocAgent</span>
         </div>
@@ -131,26 +119,26 @@ export function GeneralTab() {
       {/* 数据管理 */}
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">数据管理</span>
+          <span className="section-title">{t('settings.general.dataManagement')}</span>
         </div>
 
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">导出配置</div>
-            <div className="setting-desc">将应用设置和 LLM 配置导出为 JSON 文件</div>
+            <div className="setting-label">{t('settings.general.exportConfig')}</div>
+            <div className="setting-desc">{t('settings.general.exportConfigDesc')}</div>
           </div>
           <button
             className="dm-btn"
             onClick={() => handleExportSettings(settings)}
           >
-            导出
+            {t('settings.general.export')}
           </button>
         </div>
 
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">导出错误日志</div>
-            <div className="setting-desc">将应用运行日志导出为文本文件，便于排查问题</div>
+            <div className="setting-label">{t('settings.general.exportErrorLog')}</div>
+            <div className="setting-desc">{t('settings.general.exportErrorLogDesc')}</div>
           </div>
           <button
             className="dm-btn"
@@ -166,23 +154,23 @@ export function GeneralTab() {
                 a.download = `docagent-error-log-${new Date().toISOString().slice(0, 10)}.txt`;
                 a.click();
                 URL.revokeObjectURL(url);
-                addToast("success", "错误日志导出成功");
+                addToast("success", t('settings.general.exportLogSuccess'));
               } catch (error) {
                 console.error("[GeneralTab] 导出错误日志失败:", error);
-                addToast("error", `导出失败: ${error instanceof Error ? error.message : String(error)}`);
+                addToast("error", `${t('settings.general.exportLogFail')}: ${error instanceof Error ? error.message : String(error)}`);
               } finally {
                 setExportingLog(false);
               }
             }}
           >
-            {exportingLog ? "导出中..." : "导出"}
+            {exportingLog ? `${t('settings.general.export')}...` : t('settings.general.export')}
           </button>
         </div>
 
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">清除会话数据</div>
-            <div className="setting-desc">删除所有会话记录和消息，此操作不可撤销</div>
+            <div className="setting-label">{t('settings.general.clearSessionData')}</div>
+            <div className="setting-desc">{t('settings.general.clearSessionDataDesc')}</div>
           </div>
           {clearConfirm ? (
             <div className="dm-confirm-group">
@@ -197,13 +185,13 @@ export function GeneralTab() {
                   setClearConfirm(false);
                 }}
               >
-                确认清除
+                {t('settings.general.confirmClear')}
               </button>
               <button
                 className="dm-btn"
                 onClick={() => setClearConfirm(false)}
               >
-                取消
+                {t('settings.general.cancel')}
               </button>
             </div>
           ) : (
@@ -211,7 +199,7 @@ export function GeneralTab() {
               className="dm-btn dm-btn-danger"
               onClick={() => setClearConfirm(true)}
             >
-              清除
+              {t('settings.general.clear')}
             </button>
           )}
         </div>
@@ -220,13 +208,13 @@ export function GeneralTab() {
       {/* 更新设置 */}
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">更新设置</span>
+          <span className="section-title">{t('settings.general.updateSettings')}</span>
         </div>
 
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">自动检查更新</div>
-            <div className="setting-desc">应用启动时自动检查是否有新版本</div>
+            <div className="setting-label">{t('settings.general.autoCheckUpdate')}</div>
+            <div className="setting-desc">{t('settings.general.autoCheckUpdateDesc')}</div>
           </div>
           <label className="setting-toggle">
             <input
@@ -240,12 +228,12 @@ export function GeneralTab() {
 
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">手动检查更新</div>
+            <div className="setting-label">{t('settings.general.manualCheckUpdate')}</div>
             <div className="setting-desc">
-              {updateCheckResult === "upToDate" && "当前已是最新版本"}
-              {updateCheckResult === "available" && "发现新版本，请查看更新通知"}
-              {updateCheckResult === "error" && "检查失败，请稍后重试"}
-              {!updateCheckResult && `当前版本: v${currentVersion}`}
+              {updateCheckResult === "upToDate" && t('settings.general.upToDate')}
+              {updateCheckResult === "available" && t('settings.general.updateAvailable')}
+              {updateCheckResult === "error" && t('settings.general.checkFailed')}
+              {!updateCheckResult && t('settings.general.currentVersion', { version: currentVersion })}
             </div>
           </div>
           <button
@@ -258,23 +246,23 @@ export function GeneralTab() {
                 const result = await checkUpdate();
                 if (result) {
                   setUpdateCheckResult("available");
-                  addToast("success", `发现新版本 v${result.version}`);
+                  addToast("success", t('update.newVersionFound', { version: result.version }));
                 } else {
                   setUpdateCheckResult("upToDate");
-                  addToast("success", "当前已是最新版本");
+                  addToast("success", t('settings.general.upToDate'));
                 }
               } catch (err) {
                 console.error("[GeneralTab] 检查更新失败:", err);
                 setUpdateCheckResult("error");
                 // 提取具体错误信息，帮助用户排查问题
                 const errMsg = err instanceof Error ? err.message : String(err);
-                addToast("error", `检查更新失败: ${errMsg}`);
+                addToast("error", t('update.checkFailedWithError', { error: errMsg }));
               } finally {
                 setCheckingUpdate(false);
               }
             }}
           >
-            {checkingUpdate ? "检查中..." : "检查更新"}
+            {checkingUpdate ? t('settings.general.checking') : t('settings.general.checkUpdate')}
           </button>
         </div>
       </div>
@@ -282,23 +270,23 @@ export function GeneralTab() {
       {/* 关于 */}
       <div className="settings-section">
         <div className="section-header">
-          <span className="section-title">关于</span>
+          <span className="section-title">{t('settings.general.about')}</span>
         </div>
 
         <div className="about-card">
           <div className="about-name">DocAgent</div>
           <div className="about-version">v{currentVersion || "0.1.0"}</div>
           <div className="about-desc">
-            基于 AI Agent 的智能文档处理桌面应用
+            {t('settings.general.aboutDesc')}
           </div>
           <div className="about-meta">
             <div className="about-meta-row">
-              <span className="about-meta-label">技术栈</span>
-              <span className="about-meta-value">Tauri 2 + React + Rust + Python</span>
+              <span className="about-meta-label">{t('settings.general.techStack')}</span>
+              <span className="about-meta-value">{t('app.techStack')}</span>
             </div>
             <div className="about-meta-row">
-              <span className="about-meta-label">引擎版本</span>
-              <span className="about-meta-value">Python 3.12+ Sidecar</span>
+              <span className="about-meta-label">{t('settings.general.engineVersion')}</span>
+              <span className="about-meta-value">{t('app.engineVersion')}</span>
             </div>
           </div>
         </div>

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { Icon } from "../common/Icon";
 import { LLMConfigTab } from "./LLMConfig";
@@ -10,19 +11,21 @@ import { ShortcutsTab } from "./ShortcutsTab";
 import { GeneralTab } from "./GeneralTab";
 import { HelpTab } from "./HelpTab";
 
-const tabs = [
-  { id: "llm" as const, label: "模型配置", icon: "settings" },
-  { id: "workspace" as const, label: "工作区管理", icon: "folder" },
-  { id: "skill" as const, label: "Tools 和 Skills管理", icon: "tool" },
-  { id: "template" as const, label: "Prompt 模板", icon: "template" },
-  { id: "appearance" as const, label: "外观设置", icon: "theme" },
-  { id: "shortcuts" as const, label: "快捷键", icon: "keyboard" },
-  { id: "general" as const, label: "通用设置", icon: "code" },
-  { id: "help" as const, label: "帮助", icon: "info" },
-];
-
 export function SettingsDialog() {
+  const { t } = useTranslation();
   const { isSettingsOpen, activeSettingsTab, closeSettings, setActiveTab } = useSettingsStore();
+
+  // 将 tabs 数组移到组件内部，以便使用 t() 函数
+  const tabs = [
+    { id: "llm" as const, label: t('settings.tabs.llm'), icon: "settings" },
+    { id: "workspace" as const, label: t('settings.tabs.workspace'), icon: "folder" },
+    { id: "skill" as const, label: t('settings.tabs.skill'), icon: "tool" },
+    { id: "template" as const, label: t('settings.tabs.template'), icon: "template" },
+    { id: "appearance" as const, label: t('settings.tabs.appearance'), icon: "theme" },
+    { id: "shortcuts" as const, label: t('settings.tabs.shortcuts'), icon: "keyboard" },
+    { id: "general" as const, label: t('settings.tabs.general'), icon: "code" },
+    { id: "help" as const, label: t('settings.tabs.help'), icon: "info" },
+  ];
 
   useEffect(() => {
     if (!isSettingsOpen) return;
@@ -51,7 +54,7 @@ export function SettingsDialog() {
   return (
     <div className="settings-page">
       <div className="settings-header">
-        <h2 className="settings-title">设置</h2>
+        <h2 className="settings-title">{t('settings.title')}</h2>
         <button
           className="settings-close-btn"
           onClick={closeSettings}

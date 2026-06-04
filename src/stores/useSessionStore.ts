@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import i18n from "../i18n";
 import type { SessionSummary } from "../types";
 import * as tauriCmd from "../services/tauri";
 
@@ -26,7 +27,7 @@ export const useSessionStore = create<SessionState>((set) => ({
   createSession: async (title, workspaceId) => {
     try {
       const session = await tauriCmd.createSession({
-        title: title || `新会话 ${new Date().toLocaleTimeString()}`,
+        title: title || `${i18n.t('session.newSession')} ${new Date().toLocaleTimeString()}`,
         workspaceId,
       });
       set((state) => ({
