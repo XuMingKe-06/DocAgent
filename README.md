@@ -71,6 +71,18 @@ DocAgent 是一款**本地优先**的 AI 文档处理桌面应用。你只需用
 
 ---
 
+## 界面预览
+
+### 主界面
+
+![DocAgent 主界面](./assets/screenshots/main-interface.png)
+
+### 文档生成效果
+
+![生成的Word文档](./assets/screenshots/document-preview.png)
+
+---
+
 ## 使用示例
 
 **生成一份项目周报：**
