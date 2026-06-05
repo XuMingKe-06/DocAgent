@@ -392,8 +392,6 @@ pub fn run() {
             // 设置命令
             commands::settings::get_settings,
             commands::settings::update_settings,
-            commands::settings::export_config,
-            commands::settings::import_config,
             // Agent 命令
             commands::agent::start_agent,
             commands::agent::stop_agent,

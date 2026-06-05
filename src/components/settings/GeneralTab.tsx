@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useSessionStore } from "../../stores/useSessionStore";
 import { useToastStore } from "../../stores/useToastStore";
-import type { AppSettings } from "../../types";
 import * as tauriCmd from "../../services/tauri";
 import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import { getVersion } from "@tauri-apps/api/app";
@@ -127,19 +126,6 @@ export function GeneralTab() {
       <div className="settings-section">
         <div className="section-header">
           <span className="section-title">{t('settings.general.dataManagement')}</span>
-        </div>
-
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">{t('settings.general.exportConfig')}</div>
-            <div className="setting-desc">{t('settings.general.exportConfigDesc')}</div>
-          </div>
-          <button
-            className="dm-btn"
-            onClick={() => handleExportSettings(settings)}
-          >
-            {t('settings.general.export')}
-          </button>
         </div>
 
         <div className="setting-row">
@@ -465,16 +451,3 @@ export function GeneralTab() {
   );
 }
 
-/**
- * 导出设置到 JSON 文件
- */
-function handleExportSettings(settings: AppSettings) {
-  const json = JSON.stringify(settings, null, 2);
-  const blob = new Blob([json], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `docagent-settings-${new Date().toISOString().slice(0, 10)}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-}

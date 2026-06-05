@@ -344,19 +344,6 @@ export async function updateSettings(settings: Record<string, unknown>): Promise
   if (!result.ok) throw result.error.raw;
 }
 
-/** 导出应用配置 */
-export async function exportConfig(includeSecrets?: boolean): Promise<string> {
-  const result = await safeInvoke(() => invoke<string>("export_config", { includeSecrets: includeSecrets ?? null }), { context: "exportConfig" });
-  if (!result.ok) throw result.error.raw;
-  return result.data;
-}
-
-/** 导入应用配置 */
-export async function importConfig(configJson: string, overwrite?: boolean): Promise<void> {
-  const result = await safeInvoke(() => invoke("import_config", { configJson, overwrite: overwrite ?? null }), { context: "importConfig" });
-  if (!result.ok) throw result.error.raw;
-}
-
 // ================================================================
 // Agent 命令
 // ================================================================

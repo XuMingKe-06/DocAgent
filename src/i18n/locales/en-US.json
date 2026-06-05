@@ -182,8 +182,6 @@
       "appDataDir": "App Data Directory",
       "appDataDirDesc": "Storage location for snapshots and configs",
       "dataManagement": "Data Management",
-      "exportConfig": "Export Config",
-      "exportConfigDesc": "Export app settings and LLM config as JSON file",
       "export": "Export",
       "exportErrorLog": "Export Error Log",
       "exportErrorLogDesc": "Export app runtime log as text file for troubleshooting",
