@@ -407,6 +407,7 @@ pub fn run() {
             commands::template::delete_template,
             // 日志命令
             commands::log::get_error_log,
+            commands::log::get_log_path,
             // 更新命令
             #[cfg(desktop)]
             commands::update::check_update,

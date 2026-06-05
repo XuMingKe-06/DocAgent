@@ -227,6 +227,15 @@ export function SettingsDialog() {
           color: var(--color-text-quaternary);
           margin-top: 2px;
         }
+        .log-path-hint {
+          display: block;
+          margin-top: 2px;
+          word-break: break-all;
+          font-family: monospace;
+          font-size: 10px;
+          color: var(--color-text-quaternary);
+          opacity: 0.8;
+        }
       `}</style>
     </div>
   );

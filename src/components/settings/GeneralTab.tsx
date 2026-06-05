@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { useSessionStore } from "../../stores/useSessionStore";
@@ -15,6 +15,8 @@ export function GeneralTab() {
   const addToast = useToastStore((s) => s.addToast);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [exportingLog, setExportingLog] = useState(false);
+  // 日志路径信息
+  const [logPathInfo, setLogPathInfo] = useState<{ logSource: string; downloadDir: string } | null>(null);
   // 更新相关状态
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [currentVersion, setCurrentVersion] = useState<string>("");
@@ -24,6 +26,11 @@ export function GeneralTab() {
   useState(() => {
     getVersion().then((v) => setCurrentVersion(v)).catch(() => setCurrentVersion("0.1.0"));
   });
+
+  // 获取日志路径信息
+  useEffect(() => {
+    tauriCmd.getLogPath().then(setLogPathInfo).catch(() => setLogPathInfo(null));
+  }, []);
 
   return (
     <div>
@@ -138,7 +145,15 @@ export function GeneralTab() {
         <div className="setting-row">
           <div className="setting-info">
             <div className="setting-label">{t('settings.general.exportErrorLog')}</div>
-            <div className="setting-desc">{t('settings.general.exportErrorLogDesc')}</div>
+            <div className="setting-desc">
+              {t('settings.general.exportErrorLogDesc')}
+              {logPathInfo && (
+                <>
+                  <span className="log-path-hint">{t('settings.general.logSourcePath', { path: logPathInfo.logSource })}</span>
+                  <span className="log-path-hint">{t('settings.general.logExportPath', { path: logPathInfo.downloadDir })}</span>
+                </>
+              )}
+            </div>
           </div>
           <button
             className="dm-btn"

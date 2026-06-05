@@ -187,6 +187,8 @@
       "export": "Export",
       "exportErrorLog": "Export Error Log",
       "exportErrorLogDesc": "Export app runtime log as text file for troubleshooting",
+      "logSourcePath": "Log source: {{path}}",
+      "logExportPath": "Export location: {{path}}",
       "exportLogSuccess": "Error log exported successfully",
       "exportLogFail": "Export failed",
       "clearSessionData": "Clear Session Data",

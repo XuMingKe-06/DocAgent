@@ -187,6 +187,8 @@
       "export": "导出",
       "exportErrorLog": "导出错误日志",
       "exportErrorLogDesc": "将应用运行日志导出为文本文件，便于排查问题",
+      "logSourcePath": "日志源文件：{{path}}",
+      "logExportPath": "导出位置：{{path}}",
       "exportLogSuccess": "错误日志导出成功",
       "exportLogFail": "导出失败",
       "clearSessionData": "清除会话数据",
