@@ -181,19 +181,20 @@ pub fn run() {
                     .map(|p| p.join("sidecar").join("main.py"))
                     .unwrap_or_else(|| std::path::PathBuf::from("sidecar/main.py"));
 
-                let candidates = [
-                    // 1. 应用数据目录下的 sidecar（生产环境可能将脚本复制到此）
-                    app_data_dir.join("sidecar").join("main.py"),
-                    // 2. 可执行文件同级目录下的 sidecar（生产环境打包后）
-                    {
-                        let exe_path = std::env::current_exe().unwrap_or_default();
-                        exe_path.parent()
-                            .map(|p| p.join("sidecar").join("main.py"))
-                            .unwrap_or_else(|| std::path::PathBuf::from("sidecar/main.py"))
-                    },
-                    // 3. 项目根目录下的 sidecar（开发模式，基于 CARGO_MANIFEST_DIR 推导）
-                    project_root,
-                ];
+                // Tauri 资源目录：生产环境中 bundle.resources 打包的文件位于此目录下
+                // 开发模式下 resource_dir 也可用（指向 src-tauri 目录），但 CARGO_MANIFEST_DIR 更直接
+                let resource_dir_path = app.path().resource_dir()
+                    .ok()
+                    .map(|p| p.join("sidecar").join("main.py"));
+
+                // 按优先级构建候选路径列表
+                let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+                // 1. Tauri 资源目录下的 sidecar（生产环境，通过 bundle.resources 打包）
+                if let Some(path) = resource_dir_path {
+                    candidates.push(path);
+                }
+                // 2. 项目根目录下的 sidecar（开发模式，基于 CARGO_MANIFEST_DIR 推导）
+                candidates.push(project_root);
 
                 let mut found = None;
                 for candidate in &candidates {
