@@ -16,6 +16,8 @@
 
 ---
 
+> [Click here to download for Windows](https://github.com/XuMingKe-06/DocAgent/releases/latest)
+
 ## What is DocAgent?
 
 DocAgent is a **local-first** AI document processing desktop application. Simply describe your needs in natural language, and the AI Agent will automatically handle document generation, reading, modification, format conversion, and more.

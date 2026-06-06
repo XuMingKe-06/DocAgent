@@ -16,6 +16,8 @@
 
 ---
 
+> [点击此处下载 Windows 版本](https://github.com/XuMingKe-06/DocAgent/releases/latest)
+
 ## DocAgent 是什么？
 
 DocAgent 是一款**本地优先**的 AI 文档处理桌面应用。你只需用自然语言描述需求，AI Agent 就会自动完成文档的生成、读取、修改、格式转换等操作。
