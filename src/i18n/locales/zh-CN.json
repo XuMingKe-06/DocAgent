@@ -86,9 +86,6 @@
     "executing": "执行中...",
     "executionFailed": "执行失败"
   },
-  "thinkingNode": {
-    "thinking": "思考中..."
-  },
   "fileTree": {
     "sectionTitle": "工作区文件",
     "searchPlaceholder": "搜索文件...",

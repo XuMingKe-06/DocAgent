@@ -86,9 +86,6 @@
     "executing": "Executing...",
     "executionFailed": "Execution failed"
   },
-  "thinkingNode": {
-    "thinking": "Thinking..."
-  },
   "fileTree": {
     "sectionTitle": "Workspace Files",
     "searchPlaceholder": "Search files...",
