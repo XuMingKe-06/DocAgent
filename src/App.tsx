@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef, lazy, Suspense } from "react";
 import { useTranslation } from 'react-i18next';
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { TopBar } from "./components/layout/TopBar";
 import { MainLayout } from "./components/layout/MainLayout";
 import { MainArea } from "./components/layout/MainArea";
@@ -17,6 +18,7 @@ import { useSessionStore } from "./stores/useSessionStore";
 import { useSettingsStore } from "./stores/useSettingsStore";
 import { useWorkspaceStore } from "./stores/useWorkspaceStore";
 import { useFileTreeStore } from "./stores/useFileTreeStore";
+import { useUpdateStore } from "./stores/useUpdateStore";
 import { useAgent } from "./hooks/useAgent";
 import { parseError } from "./services/errorHandler";
 import { generateToolBrief } from "./utils/format";
@@ -120,9 +122,35 @@ export default function App() {
     initContextUsageListener().then((unlisten) => {
       contextUsageCleanup = unlisten;
     });
+
+    // 监听窗口关闭事件：如果有待安装的更新，在关闭前安装
+    let closeUnlisten: (() => void) | null = null;
+    getCurrentWindow().onCloseRequested(async (event) => {
+      const { pendingUpdate, clearPendingUpdate } = useUpdateStore.getState();
+      if (pendingUpdate) {
+        // 阻止默认关闭行为，先安装更新
+        event.preventDefault();
+        try {
+          await pendingUpdate.install();
+          // 安装完成，清除待安装状态
+          clearPendingUpdate();
+          // 安装成功后销毁窗口（绕过 closeRequested 事件）
+          await getCurrentWindow().destroy();
+        } catch (err) {
+          console.error("[App] 关闭时安装更新失败:", err);
+          // 安装失败也允许关闭，避免用户无法退出应用
+          clearPendingUpdate();
+          await getCurrentWindow().destroy();
+        }
+      }
+    }).then((unlisten) => {
+      closeUnlisten = unlisten;
+    });
+
     return () => {
       cleanup();
       if (contextUsageCleanup) contextUsageCleanup();
+      if (closeUnlisten) closeUnlisten();
     };
   }, []);
 

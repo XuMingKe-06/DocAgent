@@ -2,14 +2,17 @@ import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { check, type Update, type DownloadEvent } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
+import { useWorkflowStore } from "../../stores/useWorkflowStore";
+import { useUpdateStore } from "../../stores/useUpdateStore";
 
 interface UpdateNotificationProps {
   open: boolean;
   onClose: () => void;
 }
 
-// 更新状态机
-type UpdateState = "idle" | "checking" | "available" | "downloading" | "installing" | "error" | "success";
+// 更新状态机：idle → checking → available → downloading → downloaded → installing/restarting
+// downloaded 状态下显示"立即重启"和"稍后重启"按钮
+type UpdateState = "idle" | "checking" | "available" | "downloading" | "downloaded" | "installing" | "restarting" | "error";
 
 export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
   const { t } = useTranslation();
@@ -20,6 +23,22 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [downloadedBytes, setDownloadedBytes] = useState(0);
   const [totalBytes, setTotalBytes] = useState(0);
+
+  // 从 workflow store 获取执行状态，用于判断智能体是否正在工作
+  const executionStatus = useWorkflowStore((s) => s.executionStatus);
+  // 智能体是否正在工作（running 或 stopping 状态）
+  const isAgentWorking = executionStatus === "running" || executionStatus === "stopping";
+
+  // 从 update store 获取方法，用于保存待安装的更新
+  const setPendingUpdate = useUpdateStore((s) => s.setPendingUpdate);
+
+  // 关闭通知：如果在 downloaded 状态关闭，自动保存待安装更新（等同于"稍后重启"）
+  const handleClose = useCallback(() => {
+    if (state === "downloaded" && updateInfo) {
+      setPendingUpdate(updateInfo);
+    }
+    onClose();
+  }, [state, updateInfo, setPendingUpdate, onClose]);
 
   // 重置所有状态
   const resetState = useCallback(() => {
@@ -50,14 +69,14 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
       } else {
         // 没有可用更新，直接关闭通知
         setState("idle");
-        onClose();
+        handleClose();
       }
     } catch (err) {
       console.error("[UpdateNotification] 检查更新失败:", err);
       setErrorMessage(err instanceof Error ? err.message : String(err));
       setState("error");
     }
-  }, [onClose]);
+  }, [onClose, handleClose]);
 
   // 当组件打开时自动检查
   useEffect(() => {
@@ -66,8 +85,8 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
     }
   }, [open, state, handleCheck]);
 
-  // 下载并安装更新
-  const handleDownloadAndInstall = useCallback(async () => {
+  // 仅下载更新（不安装），下载完成后提示用户选择重启时机
+  const handleDownload = useCallback(async () => {
     if (!updateInfo) return;
 
     setState("downloading");
@@ -76,7 +95,7 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
     setTotalBytes(0);
 
     try {
-      await updateInfo.downloadAndInstall((event: DownloadEvent) => {
+      await updateInfo.download((event: DownloadEvent) => {
         switch (event.event) {
           case "Started":
             // 下载开始，记录总大小
@@ -86,47 +105,59 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
             break;
           case "Progress": {
             // 下载进度更新
-            setDownloadedBytes((prev) => {
-              const newDownloaded = prev + event.data.chunkLength;
-              return newDownloaded;
-            });
+            setDownloadedBytes((prev) => prev + event.data.chunkLength);
             break;
           }
           case "Finished":
-            // 下载完成，进入安装阶段
-            setState("installing");
+            // 下载完成，进入已下载状态，等待用户选择重启时机
+            setState("downloaded");
             break;
         }
       });
-
-      // 下载并安装完成
-      setState("success");
     } catch (err) {
-      console.error("[UpdateNotification] 下载/安装更新失败:", err);
+      console.error("[UpdateNotification] 下载更新失败:", err);
       setErrorMessage(err instanceof Error ? err.message : String(err));
       setState("error");
     }
   }, [updateInfo]);
 
+  // 立即重启：先安装已下载的更新，然后重启应用
+  const handleRestartNow = useCallback(async () => {
+    if (!updateInfo) return;
+    // 智能体正在工作时禁止重启
+    if (isAgentWorking) return;
+
+    setState("installing");
+    try {
+      await updateInfo.install();
+      setState("restarting");
+      await relaunch();
+    } catch (err) {
+      console.error("[UpdateNotification] 安装更新/重启失败:", err);
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+      setState("error");
+    }
+  }, [updateInfo, isAgentWorking]);
+
+  // 稍后重启：将更新保存到全局 store，在下次关闭程序时安装
+  const handleRestartLater = useCallback(() => {
+    if (updateInfo) {
+      // 保存更新引用到全局 store，App.tsx 会在窗口关闭时调用 install()
+      setPendingUpdate(updateInfo);
+    }
+    onClose();
+  }, [updateInfo, setPendingUpdate, onClose]);
+
   // 重新尝试
   const handleRetry = useCallback(() => {
     if (state === "error" && updateInfo) {
       // 如果之前已经获取到更新信息，直接重新下载
-      handleDownloadAndInstall();
+      handleDownload();
     } else {
       // 否则重新检查
       handleCheck();
     }
-  }, [state, updateInfo, handleDownloadAndInstall, handleCheck]);
-
-  // 重启应用
-  const handleRelaunch = useCallback(async () => {
-    try {
-      await relaunch();
-    } catch (err) {
-      console.error("[UpdateNotification] 重启应用失败:", err);
-    }
-  }, []);
+  }, [state, updateInfo, handleDownload, handleCheck]);
 
   // 格式化文件大小
   const formatBytes = (bytes: number): string => {
@@ -147,9 +178,9 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
 
   return (
     <div className="update-notification">
-      {/* 关闭按钮 */}
-      {state !== "downloading" && state !== "installing" && (
-        <button className="update-close" onClick={onClose}>
+      {/* 关闭按钮：下载中和安装中不允许关闭 */}
+      {state !== "downloading" && state !== "installing" && state !== "restarting" && (
+        <button className="update-close" onClick={handleClose}>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
             <path d="M2 2L12 12M12 2L2 12" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
           </svg>
@@ -182,10 +213,10 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
             </div>
           )}
           <div className="update-actions">
-            <button className="update-btn update-btn-primary" onClick={handleDownloadAndInstall}>
+            <button className="update-btn update-btn-primary" onClick={handleDownload}>
               {t("update.updateNow")}
             </button>
-            <button className="update-btn update-btn-ghost" onClick={onClose}>
+            <button className="update-btn update-btn-ghost" onClick={handleClose}>
               {t("update.later")}
             </button>
           </div>
@@ -211,6 +242,45 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
         </div>
       )}
 
+      {/* 下载完成，等待用户选择重启时机 */}
+      {state === "downloaded" && updateInfo && (
+        <div className="update-body">
+          <div className="update-icon update-icon-success">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
+              <path d="M6 10.5L8.5 13L14 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          <div className="update-title">{t("update.installComplete")}</div>
+          <div className="update-desc">{t("update.needRestart")}</div>
+          {/* 智能体正在工作时显示提示 */}
+          {isAgentWorking && (
+            <div className="update-agent-warning">
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <path d="M7 1L13 12H1L7 1Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+                <path d="M7 5.5V8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+                <circle cx="7" cy="10" r="0.5" fill="currentColor" />
+              </svg>
+              <span>{t("update.agentRunning")}</span>
+            </div>
+          )}
+          <div className="update-actions">
+            <button
+              className={`update-btn update-btn-primary ${isAgentWorking ? "update-btn-disabled" : ""}`}
+              onClick={handleRestartNow}
+              disabled={isAgentWorking}
+              title={isAgentWorking ? t("update.agentRunningDesc") : undefined}
+            >
+              {t("update.restartNow")}
+            </button>
+            <button className="update-btn update-btn-ghost" onClick={handleRestartLater}>
+              {t("update.restartLater")}
+            </button>
+          </div>
+          <div className="update-later-hint">{t("update.restartLaterDesc")}</div>
+        </div>
+      )}
+
       {/* 安装中 */}
       {state === "installing" && (
         <div className="update-body">
@@ -225,25 +295,16 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
         </div>
       )}
 
-      {/* 安装成功 */}
-      {state === "success" && (
+      {/* 重启中 */}
+      {state === "restarting" && (
         <div className="update-body">
-          <div className="update-icon update-icon-success">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <circle cx="10" cy="10" r="9" stroke="currentColor" strokeWidth="1.5" />
-              <path d="M6 10.5L8.5 13L14 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          <div className="update-icon update-icon-loading">
+            <svg className="update-spin" width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2.5" opacity="0.25" />
+              <path d="M4 12a8 8 0 018-8" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
             </svg>
           </div>
-          <div className="update-title">{t("update.installComplete")}</div>
-          <div className="update-desc">{t("update.needRestart")}</div>
-          <div className="update-actions">
-            <button className="update-btn update-btn-primary" onClick={handleRelaunch}>
-              {t("update.restartNow")}
-            </button>
-            <button className="update-btn update-btn-ghost" onClick={onClose}>
-              {t("update.restartLater")}
-            </button>
-          </div>
+          <div className="update-title">{t("update.installingUpdate")}</div>
         </div>
       )}
 
@@ -262,7 +323,7 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
             <button className="update-btn update-btn-primary" onClick={handleRetry}>
               {t("common.retry")}
             </button>
-            <button className="update-btn update-btn-ghost" onClick={onClose}>
+            <button className="update-btn update-btn-ghost" onClick={handleClose}>
               {t("common.close")}
             </button>
           </div>
@@ -395,6 +456,31 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
           word-break: break-word;
         }
 
+        /* 智能体工作警告提示 */
+        .update-agent-warning {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          padding: 8px 10px;
+          background: var(--color-warning-bg, rgba(250, 173, 20, 0.1));
+          border-radius: var(--radius-sm);
+          font-size: 12px;
+          color: var(--color-warning, #faad14);
+          line-height: 1.4;
+        }
+
+        .update-agent-warning svg {
+          flex-shrink: 0;
+          color: var(--color-warning, #faad14);
+        }
+
+        /* 稍后重启提示文字 */
+        .update-later-hint {
+          font-size: 11px;
+          color: var(--color-text-quaternary);
+          line-height: 1.4;
+        }
+
         .update-actions {
           display: flex;
           gap: 8px;
@@ -417,6 +503,16 @@ export function UpdateNotification({ open, onClose }: UpdateNotificationProps) {
 
         .update-btn-primary:hover {
           background: var(--color-accent-hover);
+        }
+
+        /* 禁用状态的立即重启按钮 */
+        .update-btn-disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        .update-btn-disabled:hover {
+          background: var(--color-accent);
         }
 
         .update-btn-ghost {
