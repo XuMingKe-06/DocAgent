@@ -489,25 +489,34 @@ export default function App() {
 
   useEffect(() => {
     if (pendingConfirmation) {
-      const nodeId = addNode("confirm", {
+      // 从 details 中提取代码（仅 code_interpreter_skill 操作时存在）
+      const details = pendingConfirmation.details as Record<string, unknown> | undefined;
+      const code = details?.code as string | undefined;
+      // 当有代码预览时，description 中已包含代码摘要，需要分离出纯描述
+      // Rust 端格式: "执行代码: {desc}\n{code_preview}"
+      let displayDescription = pendingConfirmation.description;
+      if (code) {
+        const newlineIdx = displayDescription.indexOf('\n');
+        if (newlineIdx !== -1) {
+          // 只保留第一行（描述部分），代码部分由代码预览区域展示
+          displayDescription = displayDescription.substring(0, newlineIdx);
+        }
+      }
+      const confirmData = {
         title: pendingConfirmation.operationType,
-        description: pendingConfirmation.description,
+        description: displayDescription,
         confirmLabel: t('confirmNode.confirmExecute'),
         cancelLabel: t('confirmNode.cancelOperation'),
         confirmed: null,
-      }, "running");
+        ...(code ? { code } : {}),
+      };
+      const nodeId = addNode("confirm", confirmData, "running");
       confirmNodeIdRef.current = nodeId;
 
       setConfirmHandler(async (approved: boolean) => {
         if (confirmNodeIdRef.current) {
           updateNode(confirmNodeIdRef.current, {
-            data: {
-              title: pendingConfirmation.operationType,
-              description: pendingConfirmation.description,
-              confirmLabel: t('confirmNode.confirmExecute'),
-              cancelLabel: t('confirmNode.cancelOperation'),
-              confirmed: approved,
-            },
+            data: { ...confirmData, confirmed: approved },
             status: approved ? "completed" : "cancelled",
           });
           confirmNodeIdRef.current = null;

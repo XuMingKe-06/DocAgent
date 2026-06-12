@@ -153,6 +153,30 @@ impl SkillRegistry {
             }
         }).collect()
     }
+
+    /// 检查技能是否存在
+    pub fn contains_skill(&self, skill_id: &str) -> bool {
+        self.skills.contains_key(skill_id)
+    }
+
+    /// 启用技能（从禁用列表中移除）
+    pub fn enable_skill(&mut self, skill_id: &str) {
+        if self.disabled_skills.remove(skill_id) {
+            log::info!("已启用技能: {}", skill_id);
+        }
+    }
+
+    /// 禁用技能（添加到禁用列表）
+    pub fn disable_skill(&mut self, skill_id: &str) {
+        if self.disabled_skills.insert(skill_id.to_string()) {
+            log::info!("已禁用技能: {}", skill_id);
+        }
+    }
+
+    /// 获取已禁用的 Skill ID 列表
+    pub fn disabled_skills_list(&self) -> Vec<String> {
+        self.disabled_skills.iter().cloned().collect()
+    }
 }
 
 #[cfg(test)]

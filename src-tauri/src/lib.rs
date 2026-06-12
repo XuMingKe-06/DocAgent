@@ -422,6 +422,7 @@ pub fn run() {
             // Skill 命令
             commands::skill::list_tools,
             commands::skill::list_skills,
+            commands::skill::toggle_skill,
             // 设置命令
             commands::settings::get_settings,
             commands::settings::update_settings,

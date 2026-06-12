@@ -75,7 +75,10 @@
     "userConfirmed": "✓ 用户已确认执行",
     "userCancelled": "✗ 用户已取消操作",
     "confirmExecute": "确认执行",
-    "cancelOperation": "取消操作"
+    "cancelOperation": "取消操作",
+    "codePreview": "代码预览",
+    "expandCode": "展开代码",
+    "collapseCode": "收起代码"
   },
   "errorNode": {
     "errorDetails": "错误详情",
@@ -85,7 +88,10 @@
   },
   "toolNode": {
     "executing": "执行中...",
-    "executionFailed": "执行失败"
+    "executionFailed": "执行失败",
+    "codeExecutionFailed": "代码执行失败",
+    "expandError": "展开详情",
+    "collapseError": "收起详情"
   },
   "fileTree": {
     "sectionTitle": "工作区文件",
@@ -323,7 +329,10 @@
       "disable": "禁用",
       "noSkills": "暂无 Skill",
       "toolBadge": "Tool",
-      "skillBadge": "Skill"
+      "skillBadge": "Skill",
+      "advanced": "高级",
+      "toggleFailed": "切换技能状态失败",
+      "codeInterpreterDisabledHint": "代码解释器已禁用，文档生成和修改功能将不可用"
     },
     "tools": {
       "sectionTitle": "Tools 管理",

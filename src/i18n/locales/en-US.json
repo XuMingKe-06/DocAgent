@@ -75,7 +75,10 @@
     "userConfirmed": "✓ User confirmed execution",
     "userCancelled": "✗ User cancelled operation",
     "confirmExecute": "Confirm Execution",
-    "cancelOperation": "Cancel Operation"
+    "cancelOperation": "Cancel Operation",
+    "codePreview": "Code Preview",
+    "expandCode": "Expand code",
+    "collapseCode": "Collapse code"
   },
   "errorNode": {
     "errorDetails": "Error Details",
@@ -85,7 +88,10 @@
   },
   "toolNode": {
     "executing": "Executing...",
-    "executionFailed": "Execution failed"
+    "executionFailed": "Execution failed",
+    "codeExecutionFailed": "Code execution failed",
+    "expandError": "Show details",
+    "collapseError": "Hide details"
   },
   "fileTree": {
     "sectionTitle": "Workspace Files",
@@ -323,7 +329,10 @@
       "disable": "Disable",
       "noSkills": "No Skills",
       "toolBadge": "Tool",
-      "skillBadge": "Skill"
+      "skillBadge": "Skill",
+      "advanced": "Advanced",
+      "toggleFailed": "Failed to toggle skill",
+      "codeInterpreterDisabledHint": "Code interpreter is disabled, document generation and modification will be unavailable"
     },
     "tools": {
       "sectionTitle": "Tools Management",
