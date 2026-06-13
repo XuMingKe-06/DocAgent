@@ -113,6 +113,7 @@ pub fn run() {
             let config_manager = crate::config::ConfigManager::new(app_data_dir.clone());
 
             // 加载 LLM 配置（容错：损坏时使用默认配置）
+            #[cfg_attr(not(builtin_provider), allow(unused_mut))]
             let mut llm_config = config_manager.load_llm_config().unwrap_or_else(|e| {
                 log::error!("LLM 配置加载失败: {}, 使用默认配置", e);
                 Default::default()
