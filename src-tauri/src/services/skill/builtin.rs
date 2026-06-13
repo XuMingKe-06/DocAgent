@@ -80,11 +80,17 @@ async fn execute_convert(
     let resolved_source = resolve_path(file_path, workspace_root);
 
     let output_path = if output_path.is_empty() {
-        let stem = std::path::Path::new(&resolved_source)
+        // 自动生成输出路径：与源文件同目录（源文件已通过 resolve_path 解析为工作区内的绝对路径）
+        let source_path = std::path::Path::new(&resolved_source);
+        let stem = source_path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("output");
-        format!("{}.{}", stem, target_format)
+        let new_filename = format!("{}.{}", stem, target_format);
+        source_path
+            .parent()
+            .map(|p| p.join(&new_filename).to_string_lossy().to_string())
+            .unwrap_or(new_filename)
     } else {
         resolve_path(output_path, workspace_root)
     };
