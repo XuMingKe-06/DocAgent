@@ -88,22 +88,22 @@ BLOCKED_PATTERNS = [
 # ============================================================================
 
 def check_security(code: str) -> dict:
-    """多层代码静态安全检查
+    """代码静态安全检查
 
-    第一层：RestrictedPython AST 级别分析（如果可用）
-    第二层：正则表达式模式匹配
+    使用正则表达式模式匹配检查代码中的危险模式。
+
+    注意：不再使用 RestrictedPython AST 级别分析，因为它会过度拦截
+    python-docx/openpyxl 等库的合法内部属性访问（如 _tc、_tbl）。
+    安全保障由以下层提供：
+    - 正则表达式模式匹配（本函数）
+    - 受限命名空间（白名单导入 + safe_open）
+    - 执行超时
+    - 资源限制
 
     Returns:
         {"safe": bool, "reason": str, "layer": str}
     """
-    # 第一层：RestrictedPython AST 分析
-    rp_result = _check_restricted_python(code)
-    if rp_result is not None:
-        if not rp_result["safe"]:
-            return rp_result
-        # RestrictedPython 检查通过，继续正则检查作为补充
-
-    # 第二层：正则表达式模式匹配
+    # 正则表达式模式匹配
     for pattern in BLOCKED_PATTERNS:
         match = re.search(pattern, code)
         if match:
@@ -113,67 +113,8 @@ def check_security(code: str) -> dict:
                 "layer": "regex",
             }
 
-    return {"safe": True, "reason": "", "layer": "all"}
+    return {"safe": True, "reason": "", "layer": "regex"}
 
-
-def _check_restricted_python(code: str) -> dict | None:
-    """使用 RestrictedPython 进行 AST 级别安全检查
-
-    RestrictedPython 8.x API:
-    - 成功时返回 code 对象
-    - 有安全错误时抛出 SyntaxError（包含错误元组）
-    - 有警告时发出 SyntaxWarning
-
-    Returns:
-        None 如果 RestrictedPython 不可用
-        {"safe": bool, "reason": str, "layer": "restricted_python"} 检查结果
-    """
-    try:
-        from RestrictedPython import compile_restricted
-    except ImportError:
-        # RestrictedPython 未安装，跳过此层检查
-        return None
-
-    try:
-        # 尝试编译受限代码
-        # RestrictedPython 8.x: 成功返回 code 对象，失败抛出 SyntaxError
-        compile_restricted(code, "<code_interpreter>", "exec")
-        return {"safe": True, "reason": "", "layer": "restricted_python"}
-
-    except SyntaxError as e:
-        # RestrictedPython 安全检查错误
-        error_msg = str(e)
-        if e.args and isinstance(e.args[0], tuple):
-            # 多条错误信息
-            error_msgs = [str(err) for err in e.args[0]]
-            error_msg = '; '.join(error_msgs)
-
-        # 区分真正的安全错误和语法错误
-        security_keywords = [
-            "invalid attribute name",
-            "is not allowed",
-            "is an invalid variable name",
-            "is not a valid",
-            "forbidden",
-        ]
-        is_security_error = any(kw in error_msg for kw in security_keywords)
-
-        if is_security_error:
-            return {
-                "safe": False,
-                "reason": f"RestrictedPython 安全检查未通过: {error_msg}",
-                "layer": "restricted_python",
-            }
-        else:
-            # 纯语法错误，也阻止执行
-            return {
-                "safe": False,
-                "reason": f"代码语法错误: {error_msg}",
-                "layer": "restricted_python",
-            }
-    except Exception:
-        # RestrictedPython 自身出错，不阻止执行（回退到正则检查）
-        return None
 
 
 # ============================================================================
@@ -523,6 +464,14 @@ def main():
 
         # 构建受限命名空间
         namespace = build_namespace(working_dir)
+
+        # 切换工作目录到 working_dir，确保 os.getcwd() 和相对路径正确
+        # 这是对 code_handler.py 中 subprocess.run(cwd=working_dir) 的双重保障
+        if working_dir and os.path.isdir(working_dir):
+            try:
+                os.chdir(working_dir)
+            except Exception:
+                pass
 
         # 执行代码
         result = execute_with_timeout(

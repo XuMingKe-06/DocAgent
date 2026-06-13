@@ -10,14 +10,6 @@ import logging
 import traceback
 from typing import Any
 
-from handlers.word_handler import WordHandler
-from handlers.excel_handler import ExcelHandler
-from handlers.ppt_handler import PptHandler
-from handlers.pdf_handler import PdfHandler
-from handlers.markdown_handler import MarkdownHandler
-from handlers.code_handler import CodeHandler
-from handlers.validator import DocumentValidator
-
 logger = logging.getLogger(__name__)
 
 
@@ -50,20 +42,58 @@ def setup_logging():
 
 
 # 文档处理器注册表
+# 每个 handler 独立 try/except 导入，避免缺少某个第三方库导致整个 Sidecar 无法启动
 # txt 类型复用 MarkdownHandler，纯文本是 Markdown 的子集
-HANDLERS = {
-    "docx": WordHandler(),
-    "xlsx": ExcelHandler(),
-    "pptx": PptHandler(),
-    "pdf": PdfHandler(),
-    "md": MarkdownHandler(),
-    "markdown": MarkdownHandler(),
-    "txt": MarkdownHandler(),
-    "code": CodeHandler(),  # Code Interpreter 代码执行处理器
-}
+HANDLERS = {}
+# 记录因依赖缺失而无法加载的处理器及其错误信息
+MISSING_DEPS = {}
+
+try:
+    from handlers.word_handler import WordHandler
+    HANDLERS["docx"] = WordHandler()
+except ImportError as e:
+    MISSING_DEPS["docx"] = f"python-docx ({e})"
+
+try:
+    from handlers.excel_handler import ExcelHandler
+    HANDLERS["xlsx"] = ExcelHandler()
+except ImportError as e:
+    MISSING_DEPS["xlsx"] = f"openpyxl ({e})"
+
+try:
+    from handlers.ppt_handler import PptHandler
+    HANDLERS["pptx"] = PptHandler()
+except ImportError as e:
+    MISSING_DEPS["pptx"] = f"python-pptx ({e})"
+
+try:
+    from handlers.pdf_handler import PdfHandler
+    HANDLERS["pdf"] = PdfHandler()
+except ImportError as e:
+    MISSING_DEPS["pdf"] = f"PyMuPDF/pdfminer ({e})"
+
+try:
+    from handlers.markdown_handler import MarkdownHandler
+    _md_handler = MarkdownHandler()
+    HANDLERS["md"] = _md_handler
+    HANDLERS["markdown"] = _md_handler
+    HANDLERS["txt"] = _md_handler
+except ImportError as e:
+    for key in ("md", "markdown", "txt"):
+        MISSING_DEPS[key] = f"({e})"
+
+try:
+    from handlers.code_handler import CodeHandler
+    HANDLERS["code"] = CodeHandler()
+except ImportError as e:
+    MISSING_DEPS["code"] = f"({e})"
 
 # 文档验证器实例
-_validator = DocumentValidator()
+try:
+    from handlers.validator import DocumentValidator
+    _validator = DocumentValidator()
+except ImportError as e:
+    _validator = None
 
 
 def handle_request(request: dict) -> dict:
@@ -104,6 +134,12 @@ def handle_request(request: dict) -> dict:
     # 验证请求，使用 DocumentValidator
     if action == "validate":
         logger.info("验证请求: id=%s, type=%s", request_id, doc_type)
+        if _validator is None:
+            return {
+                "id": request_id,
+                "success": False,
+                "error": "验证器不可用（缺少依赖）",
+            }
         file_path = params.get("path", "")
         if "input_path" in params and "path" not in params:
             file_path = params["input_path"]
@@ -125,6 +161,14 @@ def handle_request(request: dict) -> dict:
 
     handler = HANDLERS.get(doc_type)
     if handler is None:
+        # 检查是否是因为依赖缺失导致处理器不可用
+        if doc_type in MISSING_DEPS:
+            logger.error("处理器 %s 不可用（缺少依赖: %s）", doc_type, MISSING_DEPS[doc_type])
+            return {
+                "id": request_id,
+                "success": False,
+                "error": f"文档类型 {doc_type} 的处理器不可用，缺少依赖: {MISSING_DEPS[doc_type]}。请运行: pip install -r sidecar/requirements.txt",
+            }
         logger.error("不支持的文档类型: %s", doc_type)
         return {
             "id": request_id,
@@ -149,7 +193,8 @@ def handle_request(request: dict) -> dict:
     try:
         result = action_method(params)
         # 检查结果中是否包含错误信息（handler 参数校验失败时返回含 error 键的字典而非抛出异常）
-        if isinstance(result, dict) and "error" in result:
+        # 注意：code_executor 等处理器成功时也包含 "error": None，需排除
+        if isinstance(result, dict) and result.get("error") is not None:
             logger.warning("操作返回错误: id=%s, error=%s", request_id, result["error"])
             return {
                 "id": request_id,
@@ -197,6 +242,11 @@ def main():
 
     setup_logging()
     logger.info("Sidecar 启动, 等待输入...")
+    # 输出处理器加载状态
+    if HANDLERS:
+        logger.info("已加载的处理器: %s", list(HANDLERS.keys()))
+    if MISSING_DEPS:
+        logger.warning("缺少依赖的处理器: %s", {k: v for k, v in MISSING_DEPS.items()})
 
     for line in sys.stdin:
         line = line.strip()

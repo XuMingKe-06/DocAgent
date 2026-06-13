@@ -266,8 +266,15 @@ impl<R: Runtime> AgentExecutor<R> {
             "code_interpreter_skill" => {
                 // 展示代码描述和代码摘要
                 let desc = arguments["description"].as_str().unwrap_or("执行代码");
+                // 安全截取：按字符边界切片，避免在多字节UTF-8字符中间切割导致panic
                 let code_preview: String = arguments["code"].as_str()
-                    .map(|c| if c.len() > 200 { format!("{}...", &c[..200]) } else { c.to_string() })
+                    .map(|c| {
+                        if c.chars().count() > 200 {
+                            format!("{}...", c.chars().take(200).collect::<String>())
+                        } else {
+                            c.to_string()
+                        }
+                    })
                     .unwrap_or_default();
                 format!("执行代码: {}\n{}", desc, code_preview)
             }
@@ -725,9 +732,9 @@ impl<R: Runtime> AgentExecutor<R> {
                 // 将助手消息（含 tool_calls）添加到上下文
                 ctx.add_assistant_message(&assistant_content, Some(collected_tool_calls.clone()), if reasoning_content.is_empty() { None } else { Some(reasoning_content.clone()) });
 
-                // 如果响应被截断，tool_call 的 JSON 参数可能不完整，记录警告
+                // 如果响应被截断，tool_call 的 JSON 参数可能不完整
                 if is_truncated {
-                    log::warn!("LLM 响应被截断但包含 tool_calls, session_id={}, 尝试继续执行", ctx.session_id);
+                    log::warn!("LLM 响应被截断且包含 tool_calls, session_id={}, 检查参数完整性", ctx.session_id);
                 }
 
                 for tool_call in collected_tool_calls.iter() {
@@ -748,8 +755,55 @@ impl<R: Runtime> AgentExecutor<R> {
                         &tool_call.name,
                     );
 
-                    let params = serde_json::from_str(&tool_call.arguments)
-                        .unwrap_or(json!({}));
+                    // 尝试解析 tool_call 参数，如果响应被截断则参数可能不完整
+                    let params_result = serde_json::from_str::<serde_json::Value>(&tool_call.arguments);
+
+                    // 截断响应时参数解析失败：跳过执行，反馈给LLM重新生成
+                    if is_truncated && params_result.is_err() {
+                        log::warn!(
+                            "截断响应的 tool_call 参数解析失败, 跳过执行, session_id={}, tool={}, arguments长度={}",
+                            ctx.session_id, tool_call.name, tool_call.arguments.len()
+                        );
+                        let skip_msg = format!(
+                            "工具调用 {} 的参数因响应被截断而不完整，请重新生成完整的代码。确保代码参数完整且不要过长。",
+                            tool_call.name
+                        );
+                        self.emitter.emit_tool_result(ToolResultPayload {
+                            session_id: ctx.session_id.clone(),
+                            call_id: tool_call.id.clone(),
+                            success: false,
+                            result: json!(null),
+                            error: Some(skip_msg.clone()),
+                            duration_ms: 0,
+                        }).ok();
+                        ctx.add_tool_result(&tool_call.id, &skip_msg);
+                        continue;
+                    }
+
+                    let params = params_result.unwrap_or(json!({}));
+
+                    // 截断响应时，code_interpreter_skill 的 code 字段可能为空（参数部分截断）
+                    // 此时也应跳过执行，避免无意义的确认弹窗
+                    if is_truncated && tool_call.name == "code_interpreter_skill" {
+                        let code_content = params["code"].as_str().unwrap_or("");
+                        if code_content.is_empty() {
+                            log::warn!(
+                                "截断响应的 code_interpreter_skill 参数中 code 为空, 跳过执行, session_id={}",
+                                ctx.session_id
+                            );
+                            let skip_msg = "代码内容因响应被截断而缺失，请重新生成完整的代码。确保代码参数完整且不要过长。".to_string();
+                            self.emitter.emit_tool_result(ToolResultPayload {
+                                session_id: ctx.session_id.clone(),
+                                call_id: tool_call.id.clone(),
+                                success: false,
+                                result: json!(null),
+                                error: Some(skip_msg.clone()),
+                                duration_ms: 0,
+                            }).ok();
+                            ctx.add_tool_result(&tool_call.id, &skip_msg);
+                            continue;
+                        }
+                    }
 
                     // 更新任务类型（基于已调用的工具）
                     ctx.update_task_type_from_tool(&tool_call.name, Some(&params));
