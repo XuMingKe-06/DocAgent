@@ -181,10 +181,10 @@ cargo clean
 ### Handler 系统（文档处理，始终启用）
 - 每个 Handler 实现 `Handler` trait: `handler_name()`, `description()`, `parameters()` (JSON Schema), `execute()`
 - 内置 5 个文档类型 Handler（均通过 Python Sidecar 执行）:
-  - `docx_handler`: Word 文档处理（生成/读取/修改/转换/分析）
-  - `xlsx_handler`: Excel 文档处理（生成/读取/修改/转换/分析）
-  - `pptx_handler`: PPT 文档处理（生成/读取/修改/转换/分析）
-  - `pdf_handler`: PDF 文档处理（生成/读取/修改/转换/分析）
+  - `docx_handler`: Word 文档处理（读取/转换/分析）
+  - `xlsx_handler`: Excel 文档处理（读取/转换/分析）
+  - `pptx_handler`: PPT 文档处理（读取/转换/分析）
+  - `pdf_handler`: PDF 文档处理（读取/转换/分析）
   - `code_interpreter_handler`: 代码解释器（执行 Python 代码，用于复杂文档生成和修改）
 - Handler 始终启用，前端 HandlersTab 仅展示信息
 
@@ -230,7 +230,7 @@ AppState {
 
 ### Python Sidecar 通信协议
 - stdin/stdout JSON 行协议，SidecarManager 自动管理进程生命周期（启动、停止、崩溃时自动重启）
-- 请求: `{"id": "...", "action": "generate|read|modify|delete|convert|analyze", "type": "docx|xlsx|pptx|pdf|md", "params": {...}}`
+- 请求: `{"id": "...", "action": "read|convert|analyze|execute|ping|validate", "type": "docx|xlsx|pptx|pdf|md|code|txt", "params": {...}}`
 - 响应: `{"id": "...", "success": true|false, "data": {...}, "error": "..."}`
 - 默认请求超时 120 秒，超时后自动重启 Sidecar 进程并重试一次
 
@@ -353,8 +353,10 @@ AppState {
 - `database_design.md` — 数据库表结构与迁移策略
 - `component_design.md` — 前端组件层级与交互设计
 - `task_breakdown.md` — 阶段任务分解与进度
-- `plans/` — 设计文档 (工作流重设计、上下文窗口设计等)
+- `PRD_DocAgent.md` — 产品需求文档
+- `plans/` — 设计文档 (Code Interpreter 设计、上下文窗口设计等)
 - `tests/e2e_test.md` — E2E 测试计划
+- `tests/code-interpreter.md` — Code Interpreter 功能测试计划
 
 ## 提交规范
 

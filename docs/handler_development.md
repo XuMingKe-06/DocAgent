@@ -1,8 +1,8 @@
-# DocAgent Handler 系统开发规范
+# DocAgent Handler & Tool 系统开发规范
 
-> 版本: 1.0.0
+> 版本: 0.1.6
 > 适用项目: DocAgent AI 文档处理桌面应用
-> 最后更新: 2026-05-14
+> 最后更新: 2026-06-14
 
 ---
 
@@ -11,1884 +11,290 @@
 1. [概述](#1-概述)
 2. [Handler 接口规范](#2-handler-接口规范)
 3. [内置 Handler 详细实现规范](#3-内置-handler-详细实现规范)
-4. [自定义 Handler 开发指南](#4-自定义-handler-开发指南)
-5. [Handler 与 LLM 的 Tool Calling 交互协议](#5-handler-与-llm-的-tool-calling-交互协议)
-6. [附录](#6-附录)
+4. [Tool 系统](#4-tool-系统)
+5. [Code Interpreter 架构](#5-code-interpreter-架构)
+6. [Handler 与 LLM 的 Tool Calling 交互协议](#6-handler-与-llm-的-tool-calling-交互协议)
+7. [附录](#7-附录)
 
 ---
 
 ## 1. 概述
 
-### 1.1 什么是 Handler
+DocAgent 包含两套平行的可调用单元：
 
-Handler 是 DocAgent 中可被 LLM 通过 Tool Calling 机制调用的原子化能力单元。每个 Handler 封装了一项具体的文档操作能力（如生成、修改、转换、分析等），并通过统一的接口规范与 LLM 进行交互。
+| 系统 | 数量 | 实现语言 | 实现方式 | 用途 |
+|------|------|---------|---------|------|
+| Handler | 5 个 | Python | Sidecar 进程 | 文档读取/转换/分析（read/convert/analyze） |
+| Tool | 8 个 | Rust | 原生实现 | 文件系统操作（列表/搜索/读写/删除/信息/存在检查/创建目录） |
+| Code Interpreter | 1 个 | Python | Sidecar 进程 | 执行任意 Python 代码，用于文档生成和修改 |
 
-### 1.2 设计原则
-
-- **原子性**: 每个 Handler 只负责一项明确的操作，避免职责混淆
-- **可组合性**: Handler 之间可以组合使用，batch_process 即为组合调用的体现
-- **安全性**: 涉及文件修改/删除的操作必须提供快照/备份机制
-- **可观测性**: 所有 Handler 执行结果均包含结构化的 display 信息，便于前端展示
-- **可扩展性**: 支持用户通过标准接口开发自定义 Handler
-
-### 1.3 架构总览
+**架构总览**：
 
 ```
-+------------------+     Tool Calling     +------------------+
-|                  | <------------------> |                  |
-|   LLM (大模型)   |   tool_calls/result  |  Handler Registry  |
-|                  |                      |                  |
-+------------------+                      +------------------+
-                                                  |
-                                          +-------+-------+
-                                          |               |
-                                    +-----+-----+   +-----+-----+
-                                    | 内置 Handler |   | 自定义Handler |
-                                    +-----------+   +-----------+
-                                    | generate   |   | custom_1   |
-                                    | modify     |   | custom_2   |
-                                    | delete     |   | ...        |
-                                    | convert    |   +-----------+
-                                    | read       |
-                                    | search     |
-                                    | analyze    |
-                                    | list       |
-                                    | batch      |
-                                    +-----------+
-                                          |
-                                    +-----+-----+
-                                    |  Sidecar  |
-                                    | (文档引擎) |
-                                    +-----------+
+                    LLM (Tool Calling)
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+         Handler       Code         Tool
+        Registry    Interpreter    Registry
+              │            │            │
+              ▼            ▼            ▼
+        Python Sidecar  Python      Rust 原生
+        (read/convert/  (execute    (list/search/read/
+         analyze)        code)      write/delete/...)
 ```
+
+### 关键设计决策
+
+- **文档生成/修改**：通过 Code Interpreter 编写 Python 代码实现（使用 python-docx/openpyxl/python-pptx/reportlab 等库）
+- **文档读取/转换/分析**：通过 Handler 直接调用 Sidecar 的对应 action
+- **文件系统操作**：通过 Rust 原生 Tool 实现，不依赖 Python
+- Handler 和 Tool 均**始终启用**，不可由用户禁用
 
 ---
 
 ## 2. Handler 接口规范
 
-### 2.1 核心 Trait 定义（Rust）
+### 2.1 Rust Trait 定义
 
 ```rust
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
-
-/// Handler 执行结果中的展示信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DisplayInfo {
-    /// 简短摘要，用于对话气泡中展示
-    pub summary: String,
-    /// 详细信息，用于展开面板展示
-    pub details: Option<Value>,
-}
-
-/// Handler 执行结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HandlerResult {
-    /// 是否执行成功
-    pub success: bool,
-    /// 结果数据（结构化 JSON）
-    pub data: Option<Value>,
-    /// 错误信息（仅在失败时填充）
-    pub error: Option<String>,
-    /// 展示信息
-    pub display: DisplayInfo,
-}
-
-/// Handler 参数的 JSON Schema 定义
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ParameterSchema {
-    /// 参数名称
-    pub name: String,
-    /// 参数类型（JSON Schema 类型）
-    pub param_type: String,
-    /// 参数描述
-    pub description: String,
-    /// 是否必填
-    pub required: bool,
-    /// 默认值
-    pub default: Option<Value>,
-    /// 枚举值（如果参数为枚举类型）
-    pub enum_values: Option<Vec<String>>,
-}
-
-/// Handler 接口 Trait
-#[async_trait::async_trait]
+#[async_trait]
 pub trait Handler: Send + Sync {
-    /// Handler 唯一标识名称（如 "generate_document"）
     fn handler_name(&self) -> &str;
-
-    /// Handler 功能描述（供 LLM 理解何时调用此 Handler）
     fn description(&self) -> &str;
-
-    /// 参数定义（JSON Schema 格式）
     fn parameters(&self) -> Value;
-
-    /// 执行 Handler
-    ///
-    /// # 参数
-    /// - `params`: LLM 传递的调用参数（已通过 JSON Schema 验证）
-    ///
-    /// # 返回
-    /// - `HandlerResult`: 执行结果
     async fn execute(&self, params: Value) -> HandlerResult;
 }
 ```
 
-### 2.2 HandlerResult 详细规范
+其中 Handler 的 `execute` 方法通过 `SidecarManager` 向 Python 进程发送请求并接收响应。
+
+### 2.2 HandlerResult
 
 ```rust
-impl HandlerResult {
-    /// 创建成功结果
-    pub fn ok(data: Value, summary: &str, details: Option<Value>) -> Self {
-        Self {
-            success: true,
-            data: Some(data),
-            error: None,
-            display: DisplayInfo {
-                summary: summary.to_string(),
-                details,
-            },
-        }
-    }
-
-    /// 创建失败结果
-    pub fn err(error: &str, summary: &str) -> Self {
-        Self {
-            success: false,
-            data: None,
-            error: Some(error.to_string()),
-            display: DisplayInfo {
-                summary: summary.to_string(),
-                details: None,
-            },
-        }
-    }
+pub struct HandlerResult {
+    pub success: bool,
+    pub data: Option<Value>,
+    pub error: Option<String>,
 }
 ```
 
-### 2.3 JSON Schema 参数规范
-
-每个 Handler 的 `parameters()` 方法返回符合 JSON Schema Draft-07 规范的对象，格式如下：
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "param_name": {
-      "type": "string",
-      "description": "参数描述"
-    }
-  },
-  "required": ["param_name"]
-}
-```
-
-该 Schema 同时用于：
-1. **LLM Tool Calling**: 作为 `tools[].function.parameters` 传递给模型
-2. **参数验证**: 在执行前对 LLM 返回的参数进行校验
-3. **文档生成**: 自动生成 Handler 使用文档
-
-### 2.4 Handler 注册表
+### 2.3 HandlerRegistry
 
 ```rust
-use std::collections::HashMap;
-use std::sync::Arc;
-
-/// Handler 注册表，管理所有已注册的 Handler
 pub struct HandlerRegistry {
     handlers: HashMap<String, Arc<dyn Handler>>,
 }
-
-impl HandlerRegistry {
-    pub fn new() -> Self {
-        Self {
-            handlers: HashMap::new(),
-        }
-    }
-
-    /// 注册一个 Handler
-    pub fn register(&mut self, handler: Arc<dyn Handler>) {
-        let name = handler.handler_name().to_string();
-        self.handlers.insert(name, handler);
-    }
-
-    /// 根据名称获取 Handler
-    pub fn get(&self, name: &str) -> Option<&Arc<dyn Handler>> {
-        self.handlers.get(name)
-    }
-
-    /// 获取所有 Handler 的 Tool Calling 定义
-    pub fn tool_definitions(&self) -> Vec<Value> {
-        self.handlers.values().map(|handler| {
-            serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": handler.handler_name(),
-                    "description": handler.description(),
-                    "parameters": handler.parameters(),
-                }
-            })
-        }).collect()
-    }
-
-    /// 执行指定 Handler
-    pub async fn execute(&self, name: &str, params: Value) -> HandlerResult {
-        match self.handlers.get(name) {
-            Some(handler) => handler.execute(params).await,
-            None => HandlerResult::err(
-                &format!("未找到 Handler: {}", name),
-                &format!("Handler '{}' 不存在", name),
-            ),
-        }
-    }
-}
 ```
+
+注册表在初始化时注册 5 个内置 Handler，每个 Handler 对应一个文档类型（docx/xlsx/pptx/pdf/md）。
 
 ---
 
 ## 3. 内置 Handler 详细实现规范
 
-### 3.1 generate_document - 生成文档
+5 个文档类型 Handler，每个 Handler 支持 3 种 action：
 
-#### 基本信息
+| Action | 说明 | 风险等级 | 需确认 |
+|--------|------|----------|--------|
+| `read` | 读取文档内容（文本+元数据） | 低 | 否 |
+| `convert` | 格式转换 | 低 | 否 |
+| `analyze` | 文档分析（统计+结构） | 低 | 否 |
 
-| 项目 | 值 |
-|------|-----|
-| 名称 | `generate_document` |
-| 描述 | 根据指定格式和内容生成文档文件 |
-| 风险等级 | 低（仅创建新文件） |
-| 需要确认 | 否 |
+### 3.1 docx_handler
 
-#### 参数定义
+用于 Word 文档的处理。
 
+**参数**：
+- `action` (string, required): read / convert / analyze
+- `input_path` (string, required): 文档文件路径
+- `params` (object, optional): 附加参数（如 convert 时的 target_format）
+
+**示例调用**：
 ```json
 {
-  "type": "object",
-  "properties": {
-    "document_type": {
-      "type": "string",
-      "description": "文档格式类型",
-      "enum": ["docx", "xlsx", "pptx", "pdf", "md", "csv", "html"]
-    },
-    "filename": {
-      "type": "string",
-      "description": "输出文件名（不含路径，自动保存到当前工作区）"
-    },
-    "content": {
-      "type": "object",
-      "description": "文档内容结构",
-      "properties": {
-        "title": {
-          "type": "string",
-          "description": "文档标题"
-        },
-        "sections": {
-          "type": "array",
-          "description": "文档章节列表",
-          "items": {
-            "type": "object",
-            "properties": {
-              "heading": {
-                "type": "string",
-                "description": "章节标题"
-              },
-              "body": {
-                "type": "string",
-                "description": "章节正文内容"
-              },
-              "level": {
-                "type": "integer",
-                "description": "标题级别（1-6）",
-                "default": 1
-              }
-            },
-            "required": ["heading", "body"]
-          }
-        },
-        "author": {
-          "type": "string",
-          "description": "文档作者（可选，默认使用当前用户名）"
-        }
-      },
-      "required": ["title"]
-    },
-    "template_path": {
-      "type": "string",
-      "description": "模板文件路径（可选，指定后将基于模板生成文档）"
-    }
-  },
-  "required": ["document_type", "filename", "content"]
+  "action": "read",
+  "input_path": "/workspace/doc.docx",
+  "params": {}
 }
 ```
 
-#### 处理流程
+### 3.2 xlsx_handler
 
-```
-1. 参数验证
-   |-- 检查 document_type 是否为支持的格式
-   |-- 检查 filename 合法性（不含路径分隔符、特殊字符）
-   |-- 检查 content.title 非空
-   |-- 检查 template_path 指向的文件存在（如提供）
+用于 Excel 文档的处理。
 
-2. 内容准备
-   |-- 若 content.author 为空，填充当前系统用户名
-   |-- 若提供 template_path，加载模板
-   |-- 构建 Sidecar 生成请求体
+### 3.3 pptx_handler
 
-3. 调用 Sidecar 生成文档
-   |-- POST /api/generate
-   |-- 请求体: { document_type, filename, content, template_path? }
-   |-- 等待生成完成
+用于 PPT 文档的处理。
 
-4. 结果处理
-   |-- 验证生成的文件存在
-   |-- 获取文件大小
-   |-- 构建返回结果
-```
+### 3.4 pdf_handler
 
-#### 输出结构
+用于 PDF 文档的处理（基于 PyMuPDF/fitz）。
 
-```json
-{
-  "success": true,
-  "data": {
-    "file_path": "/workspace/output/报告.docx",
-    "file_size": 24576
-  },
-  "error": null,
-  "display": {
-    "summary": "已生成文档: 报告.docx (24KB)",
-    "details": {
-      "document_type": "docx",
-      "title": "项目报告",
-      "sections_count": 3,
-      "file_path": "/workspace/output/报告.docx",
-      "file_size": 24576
-    }
-  }
-}
-```
+### 3.5 code_interpreter_handler
 
-#### 错误场景
+文档生成和修改的核心 Handler，通过执行 Python 代码实现复杂文档操作。
 
-| 错误码 | 描述 | 处理建议 |
-|--------|------|----------|
-| `INVALID_FORMAT` | 不支持的文档格式 | 提示用户选择支持的格式 |
-| `FILENAME_INVALID` | 文件名不合法 | 提示用户修改文件名 |
-| `TEMPLATE_NOT_FOUND` | 模板文件不存在 | 提示用户检查模板路径 |
-| `GENERATION_FAILED` | Sidecar 生成失败 | 检查 Sidecar 服务状态 |
+详见第 5 节。
 
 ---
 
-### 3.2 modify_document - 修改文档
+## 4. Tool 系统
 
-#### 基本信息
-
-| 项目 | 值 |
-|------|-----|
-| 名称 | `modify_document` |
-| 描述 | 根据指令修改已有文档内容 |
-| 风险等级 | 高（修改已有文件） |
-| 需要确认 | 是 |
-
-#### 参数定义
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "file_path": {
-      "type": "string",
-      "description": "待修改文档的完整路径"
-    },
-    "instructions": {
-      "type": "string",
-      "description": "修改指令（自然语言描述需要进行的修改）"
-    },
-    "create_backup": {
-      "type": "boolean",
-      "description": "是否创建备份（默认 true）",
-      "default": true
-    }
-  },
-  "required": ["file_path", "instructions"]
-}
-```
-
-#### 处理流程
-
-```
-1. 参数验证
-   |-- 检查 file_path 指向的文件存在
-   |-- 检查文件格式受支持
-   |-- 检查 instructions 非空
-
-2. 读取原始文档
-   |-- 调用 Sidecar 读取文档内容
-   |-- 保存原始内容到内存
-
-3. 创建版本快照
-   |-- 若 create_backup 为 true:
-       |-- 生成快照 ID（UUID）
-       |-- 将原始文件复制到 .docagent/snapshots/{snapshot_id}/
-       |-- 记录快照元数据（时间戳、原路径、操作类型）
-
-4. 执行修改
-   |-- 将 instructions 和原始内容发送给 Sidecar
-   |-- POST /api/modify
-   |-- 请求体: { file_path, instructions, original_content }
-   |-- 等待修改完成
-
-5. 保存修改后的文档
-   |-- 将修改结果写回原路径
-   |-- 生成变更摘要
-
-6. 结果处理
-   |-- 构建返回结果（包含变更摘要）
-```
-
-#### 输出结构
-
-```json
-{
-  "success": true,
-  "data": {
-    "modified_path": "/workspace/output/报告.docx",
-    "changes_summary": "修改了第2章标题，新增了第4章'总结与展望'，更新了作者信息"
-  },
-  "error": null,
-  "display": {
-    "summary": "已修改文档: 报告.docx",
-    "details": {
-      "file_path": "/workspace/output/报告.docx",
-      "changes_summary": "修改了第2章标题，新增了第4章'总结与展望'，更新了作者信息",
-      "snapshot_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-      "backup_created": true
-    }
-  }
-}
-```
-
-#### 错误场景
-
-| 错误码 | 描述 | 处理建议 |
-|--------|------|----------|
-| `FILE_NOT_FOUND` | 文件不存在 | 提示用户检查文件路径 |
-| `UNSUPPORTED_FORMAT` | 文件格式不受支持 | 提示用户转换格式后重试 |
-| `SNAPSHOT_FAILED` | 快照创建失败 | 建议关闭备份选项或检查磁盘空间 |
-| `MODIFY_FAILED` | 修改操作失败 | 检查指令合法性，可从快照恢复 |
-
----
-
-### 3.3 delete_document - 删除文档
-
-#### 基本信息
-
-| 项目 | 值 |
-|------|-----|
-| 名称 | `delete_document` |
-| 描述 | 删除指定文档文件（支持快照恢复） |
-| 风险等级 | 极高（删除文件） |
-| 需要确认 | 是（强制） |
-
-#### 参数定义
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "file_path": {
-      "type": "string",
-      "description": "待删除文档的完整路径"
-    },
-    "create_snapshot": {
-      "type": "boolean",
-      "description": "是否在删除前创建快照（默认 true）",
-      "default": true
-    }
-  },
-  "required": ["file_path"]
-}
-```
-
-#### 处理流程
-
-```
-1. 参数验证
-   |-- 检查 file_path 指向的文件存在
-   |-- 检查文件在工作区范围内（禁止删除工作区外的文件）
-
-2. 创建快照
-   |-- 若 create_snapshot 为 true:
-       |-- 生成快照 ID（UUID）
-       |-- 将文件复制到 .docagent/snapshots/{snapshot_id}/
-       |-- 记录快照元数据（时间戳、原路径、文件大小）
-
-3. 执行删除
-   |-- 删除原文件
-   |-- 验证文件已不存在
-
-4. 结果处理
-   |-- 构建返回结果（包含快照 ID，用于恢复）
-```
-
-#### 输出结构
-
-```json
-{
-  "success": true,
-  "data": {
-    "deleted_path": "/workspace/output/旧报告.docx",
-    "snapshot_id": "f0e1d2c3-b4a5-6789-0abc-def123456789"
-  },
-  "error": null,
-  "display": {
-    "summary": "已删除文档: 旧报告.docx（快照已保存，可恢复）",
-    "details": {
-      "deleted_path": "/workspace/output/旧报告.docx",
-      "snapshot_id": "f0e1d2c3-b4a5-6789-0abc-def123456789",
-      "snapshot_available": true,
-      "recover_command": "可通过快照 ID 恢复此文件"
-    }
-  }
-}
-```
-
-#### 错误场景
-
-| 错误码 | 描述 | 处理建议 |
-|--------|------|----------|
-| `FILE_NOT_FOUND` | 文件不存在 | 提示用户检查文件路径 |
-| `OUT_OF_WORKSPACE` | 文件在工作区外 | 禁止删除，提示路径限制 |
-| `SNAPSHOT_FAILED` | 快照创建失败 | 建议关闭快照选项或检查磁盘空间 |
-| `DELETE_FAILED` | 删除操作失败 | 检查文件是否被占用或权限不足 |
-
----
-
-### 3.4 convert_format - 格式转换
-
-#### 基本信息
-
-| 项目 | 值 |
-|------|-----|
-| 名称 | `convert_format` |
-| 描述 | 将文档从一种格式转换为另一种格式 |
-| 风险等级 | 低（不修改源文件） |
-| 需要确认 | 否 |
-
-#### 参数定义
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "source_path": {
-      "type": "string",
-      "description": "源文件路径"
-    },
-    "target_format": {
-      "type": "string",
-      "description": "目标格式",
-      "enum": ["docx", "xlsx", "pptx", "pdf", "md", "csv", "html"]
-    },
-    "output_path": {
-      "type": "string",
-      "description": "输出文件路径（可选，默认与源文件同目录，仅扩展名不同）"
-    }
-  },
-  "required": ["source_path", "target_format"]
-}
-```
-
-#### 支持的转换矩阵
-
-| 源格式 \ 目标格式 | docx | xlsx | pptx | pdf | md | csv | html |
-|-------------------|------|------|------|-----|----|-----|------|
-| docx              | -    | x    | x    | o   | o  | x   | o    |
-| xlsx              | x    | -    | x    | o   | x  | o   | o    |
-| pptx              | x    | x    | -    | o   | o  | x   | o    |
-| pdf               | x    | x    | x    | -   | o  | x   | o    |
-| md                | o    | x    | x    | o   | -  | x   | o    |
-| csv               | x    | o    | x    | x   | x  | -   | o    |
-| html              | o    | x    | x    | o   | o  | x   | -    |
-
-> `o` = 支持, `x` = 不支持, `-` = 相同格式无需转换
-
-#### 处理流程
-
-```
-1. 参数验证
-   |-- 检查 source_path 指向的文件存在
-   |-- 检查源文件格式与 target_format 不同
-   |-- 检查转换路径受支持（参考转换矩阵）
-
-2. 确定输出路径
-   |-- 若提供 output_path，使用指定路径
-   |-- 否则基于 source_path 替换扩展名生成
-
-3. 调用 Sidecar 转换
-   |-- POST /api/convert
-   |-- 请求体: { source_path, target_format, output_path }
-   |-- 等待转换完成
-
-4. 结果处理
-   |-- 验证输出文件存在
-   |-- 获取输出文件大小
-   |-- 构建返回结果
-```
-
-#### 输出结构
-
-```json
-{
-  "success": true,
-  "data": {
-    "output_path": "/workspace/output/报告.pdf",
-    "output_size": 156672
-  },
-  "error": null,
-  "display": {
-    "summary": "已转换: 报告.docx -> 报告.pdf (153KB)",
-    "details": {
-      "source_path": "/workspace/output/报告.docx",
-      "target_format": "pdf",
-      "output_path": "/workspace/output/报告.pdf",
-      "output_size": 156672
-    }
-  }
-}
-```
-
-#### 错误场景
-
-| 错误码 | 描述 | 处理建议 |
-|--------|------|----------|
-| `FILE_NOT_FOUND` | 源文件不存在 | 提示用户检查文件路径 |
-| `CONVERSION_NOT_SUPPORTED` | 转换路径不受支持 | 提示用户查看支持的转换矩阵 |
-| `SAME_FORMAT` | 源格式与目标格式相同 | 无需转换 |
-| `CONVERSION_FAILED` | 转换过程失败 | 检查文件是否损坏或格式是否正确 |
-
----
-
-### 3.5 read_document - 读取文档
-
-#### 基本信息
-
-| 项目 | 值 |
-|------|-----|
-| 名称 | `read_document` |
-| 描述 | 读取文档内容并提取文本和元数据 |
-| 风险等级 | 低（只读操作） |
-| 需要确认 | 否 |
-
-#### 参数定义
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "file_path": {
-      "type": "string",
-      "description": "文档文件路径"
-    },
-    "max_length": {
-      "type": "integer",
-      "description": "最大返回字符数（默认 50000）",
-      "default": 50000
-    },
-    "page": {
-      "type": "integer",
-      "description": "指定读取的页码（仅 PDF 有效，从 1 开始）"
-    }
-  },
-  "required": ["file_path"]
-}
-```
-
-#### 处理流程
-
-```
-1. 参数验证
-   |-- 检查 file_path 指向的文件存在
-   |-- 检查 max_length 为正整数
-   |-- 检查 page 参数仅在 PDF 格式时使用
-
-2. 读取文档
-   |-- 调用 Sidecar 读取
-   |-- GET /api/read?path={file_path}&max_length={max_length}&page={page}
-   |-- 提取文本内容和元数据
-
-3. 内容截断处理
-   |-- 若内容超过 max_length，截断并标记 truncated = true
-   |-- 保留元数据完整
-
-4. 结果处理
-   |-- 构建返回结果（包含内容、元数据、截断标记）
-```
-
-#### 输出结构
-
-```json
-{
-  "success": true,
-  "data": {
-    "content": "# 项目报告\n\n## 第一章 概述\n\n本项目旨在...",
-    "metadata": {
-      "title": "项目报告",
-      "author": "张三",
-      "page_count": 12,
-      "word_count": 3520
-    },
-    "truncated": false
-  },
-  "error": null,
-  "display": {
-    "summary": "已读取文档: 项目报告 (12页, 3520字)",
-    "details": {
-      "file_path": "/workspace/output/报告.docx",
-      "title": "项目报告",
-      "author": "张三",
-      "page_count": 12,
-      "word_count": 3520,
-      "truncated": false
-    }
-  }
-}
-```
-
-#### 错误场景
-
-| 错误码 | 描述 | 处理建议 |
-|--------|------|----------|
-| `FILE_NOT_FOUND` | 文件不存在 | 提示用户检查文件路径 |
-| `UNSUPPORTED_FORMAT` | 文件格式不受支持 | 提示用户支持的格式列表 |
-| `READ_FAILED` | 读取失败 | 检查文件是否损坏或被占用 |
-| `PAGE_OUT_OF_RANGE` | 页码超出范围 | 提示有效页码范围 |
-
----
-
-### 3.6 search_documents - 搜索文档
-
-#### 基本信息
-
-| 项目 | 值 |
-|------|-----|
-| 名称 | `search_documents` |
-| 描述 | 在工作区文档中进行全文搜索 |
-| 风险等级 | 低（只读操作） |
-| 需要确认 | 否 |
-
-#### 参数定义
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "query": {
-      "type": "string",
-      "description": "搜索关键词或短语"
-    },
-    "file_types": {
-      "type": "array",
-      "description": "限定搜索的文件类型（可选，默认搜索所有支持的格式）",
-      "items": {
-        "type": "string",
-        "enum": ["docx", "xlsx", "pptx", "pdf", "md", "csv", "html"]
-      }
-    },
-    "directory": {
-      "type": "string",
-      "description": "限定搜索的目录（可选，默认整个工作区）"
-    },
-    "max_results": {
-      "type": "integer",
-      "description": "最大返回结果数（默认 20）",
-      "default": 20
-    }
-  },
-  "required": ["query"]
-}
-```
-
-#### 处理流程
-
-```
-1. 参数验证
-   |-- 检查 query 非空
-   |-- 检查 directory 存在（如提供）
-   |-- 检查 max_results 为正整数
-
-2. 遍历工作区
-   |-- 根据 directory 和 file_types 过滤文件
-   |-- 收集候选文件列表
-
-3. 全文搜索
-   |-- 逐文件提取文本内容
-   |-- 对每个文件执行关键词匹配
-   |-- 计算相关度评分（基于匹配频率和位置）
-
-4. 结果排序与截断
-   |-- 按相关度降序排列
-   |-- 截取 max_results 条结果
-   |-- 为每条结果提取上下文片段（snippet）
-
-5. 结果处理
-   |-- 构建返回结果列表
-```
-
-#### 输出结构
-
-```json
-{
-  "success": true,
-  "data": {
-    "results": [
-      {
-        "file_path": "/workspace/output/报告.docx",
-        "line_number": 42,
-        "snippet": "...本项目采用了**微服务架构**，将系统拆分为多个独立服务...",
-        "relevance": 0.95
-      },
-      {
-        "file_path": "/workspace/notes/会议记录.md",
-        "line_number": 15,
-        "snippet": "...讨论了微服务架构的优缺点，决定采用该方案...",
-        "relevance": 0.82
-      }
-    ]
-  },
-  "error": null,
-  "display": {
-    "summary": "找到 2 条匹配结果",
-    "details": {
-      "query": "微服务架构",
-      "total_matches": 2,
-      "results": [
-        {
-          "file_path": "/workspace/output/报告.docx",
-          "line_number": 42,
-          "snippet": "...本项目采用了**微服务架构**，将系统拆分为多个独立服务...",
-          "relevance": 0.95
-        }
-      ]
-    }
-  }
-}
-```
-
-#### 错误场景
-
-| 错误码 | 描述 | 处理建议 |
-|--------|------|----------|
-| `EMPTY_QUERY` | 搜索关键词为空 | 提示用户输入搜索内容 |
-| `DIRECTORY_NOT_FOUND` | 指定目录不存在 | 提示用户检查目录路径 |
-| `SEARCH_FAILED` | 搜索过程出错 | 检查文件访问权限 |
-
----
-
-### 3.7 analyze_document - 分析文档
-
-#### 基本信息
-
-| 项目 | 值 |
-|------|-----|
-| 名称 | `analyze_document` |
-| 描述 | 对文档进行多维度分析 |
-| 风险等级 | 低（只读操作） |
-| 需要确认 | 否 |
-
-#### 参数定义
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "file_path": {
-      "type": "string",
-      "description": "待分析的文档路径"
-    },
-    "dimensions": {
-      "type": "array",
-      "description": "分析维度列表",
-      "items": {
-        "type": "string",
-        "enum": ["summary", "structure", "data_stats", "keywords"]
-      },
-      "default": ["summary", "structure", "keywords"]
-    }
-  },
-  "required": ["file_path"]
-}
-```
-
-#### 分析维度说明
-
-| 维度 | 标识 | 描述 | 输出内容 |
-|------|------|------|----------|
-| 摘要 | `summary` | 生成文档内容摘要 | 核心观点、主要结论 |
-| 结构 | `structure` | 分析文档组织结构 | 章节层级、标题树、段落分布 |
-| 数据统计 | `data_stats` | 统计文档中的数据信息 | 表格数量、数值范围、图表描述 |
-| 关键词 | `keywords` | 提取文档关键词 | 关键词列表及权重 |
-
-#### 处理流程
-
-```
-1. 参数验证
-   |-- 检查 file_path 指向的文件存在
-   |-- 检查 dimensions 非空
-
-2. 读取文档
-   |-- 调用 read_document 获取全文内容
-   |-- 提取元数据
-
-3. 按维度分析
-   |-- summary: 调用 LLM 生成摘要
-   |-- structure: 解析文档结构（标题层级、段落划分）
-   |-- data_stats: 提取表格数据，计算统计指标
-   |-- keywords: 使用 TF-IDF 或 LLM 提取关键词
-
-4. 结果处理
-   |-- 汇总各维度分析结果
-   |-- 构建返回结果
-```
-
-#### 输出结构
-
-```json
-{
-  "success": true,
-  "data": {
-    "analysis": {
-      "summary": {
-        "core_points": [
-          "项目采用微服务架构进行系统设计",
-          "已完成核心模块的开发与测试",
-          "预计下季度完成全部功能交付"
-        ],
-        "conclusion": "项目进展顺利，架构选型合理，需关注性能优化"
-      },
-      "structure": {
-        "heading_tree": [
-          {
-            "level": 1,
-            "text": "项目报告",
-            "children": [
-              { "level": 2, "text": "第一章 概述", "children": [] },
-              { "level": 2, "text": "第二章 架构设计", "children": [
-                { "level": 3, "text": "2.1 微服务架构", "children": [] },
-                { "level": 3, "text": "2.2 数据库设计", "children": [] }
-              ]},
-              { "level": 2, "text": "第三章 进度与计划", "children": [] }
-            ]
-          }
-        ],
-        "paragraph_count": 28,
-        "total_sections": 6
-      },
-      "data_stats": {
-        "table_count": 3,
-        "tables": [
-          {
-            "rows": 5,
-            "columns": 4,
-            "description": "各模块开发进度表"
-          }
-        ],
-        "numeric_fields_count": 12
-      },
-      "keywords": [
-        { "word": "微服务", "weight": 0.92 },
-        { "word": "架构设计", "weight": 0.85 },
-        { "word": "性能优化", "weight": 0.78 },
-        { "word": "数据库", "weight": 0.71 },
-        { "word": "测试", "weight": 0.65 }
-      ]
-    }
-  },
-  "error": null,
-  "display": {
-    "summary": "文档分析完成: 6个章节, 3个表格, 核心关键词: 微服务、架构设计",
-    "details": {
-      "file_path": "/workspace/output/报告.docx",
-      "dimensions": ["summary", "structure", "data_stats", "keywords"],
-      "summary": "项目进展顺利，架构选型合理",
-      "section_count": 6,
-      "table_count": 3,
-      "top_keywords": ["微服务", "架构设计", "性能优化"]
-    }
-  }
-}
-```
-
-#### 错误场景
-
-| 错误码 | 描述 | 处理建议 |
-|--------|------|----------|
-| `FILE_NOT_FOUND` | 文件不存在 | 提示用户检查文件路径 |
-| `UNSUPPORTED_FORMAT` | 文件格式不受支持 | 提示用户支持的格式列表 |
-| `ANALYSIS_FAILED` | 分析过程失败 | 检查文件内容是否可解析 |
-
----
-
-### 3.8 list_workspace - 列出工作区文件
-
-#### 基本信息
-
-| 项目 | 值 |
-|------|-----|
-| 名称 | `list_workspace` |
-| 描述 | 列出工作区中的文件和目录 |
-| 风险等级 | 低（只读操作） |
-| 需要确认 | 否 |
-
-#### 参数定义
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "directory": {
-      "type": "string",
-      "description": "目标目录（可选，默认为工作区根目录）"
-    },
-    "recursive": {
-      "type": "boolean",
-      "description": "是否递归列出子目录（默认 false）",
-      "default": false
-    },
-    "file_types": {
-      "type": "array",
-      "description": "限定列出的文件类型（可选，默认所有类型）",
-      "items": {
-        "type": "string",
-        "enum": ["docx", "xlsx", "pptx", "pdf", "md", "csv", "html"]
-      }
-    }
-  },
-  "required": []
-}
-```
-
-#### 处理流程
-
-```
-1. 参数验证
-   |-- 检查 directory 存在（如提供）
-   |-- 检查 directory 在工作区范围内
-
-2. 遍历目录
-   |-- 根据 recursive 决定遍历深度
-   |-- 根据 file_types 过滤文件
-   |-- 收集文件信息（名称、路径、类型、大小、修改时间）
-
-3. 结果排序
-   |-- 目录优先，然后按名称排序
-
-4. 结果处理
-   |-- 构建返回结果列表
-```
-
-#### 输出结构
-
-```json
-{
-  "success": true,
-  "data": {
-    "files": [
-      {
-        "name": "报告.docx",
-        "path": "/workspace/output/报告.docx",
-        "type": "docx",
-        "size": 24576,
-        "modified_at": "2026-05-14T10:30:00Z"
-      },
-      {
-        "name": "数据表.xlsx",
-        "path": "/workspace/output/数据表.xlsx",
-        "type": "xlsx",
-        "size": 15360,
-        "modified_at": "2026-05-13T16:45:00Z"
-      },
-      {
-        "name": "notes",
-        "path": "/workspace/notes",
-        "type": "directory",
-        "size": 0,
-        "modified_at": "2026-05-12T09:00:00Z"
-      }
-    ]
-  },
-  "error": null,
-  "display": {
-    "summary": "工作区包含 3 个项目（2个文件, 1个目录）",
-    "details": {
-      "directory": "/workspace",
-      "recursive": false,
-      "total_files": 2,
-      "total_directories": 1,
-      "total_size": 39936
-    }
-  }
-}
-```
-
-#### 错误场景
-
-| 错误码 | 描述 | 处理建议 |
-|--------|------|----------|
-| `DIRECTORY_NOT_FOUND` | 目录不存在 | 提示用户检查目录路径 |
-| `OUT_OF_WORKSPACE` | 目录在工作区外 | 禁止访问，提示路径限制 |
-| `LIST_FAILED` | 遍历失败 | 检查目录权限 |
-
----
-
-### 3.9 batch_process - 批量处理
-
-#### 基本信息
-
-| 项目 | 值 |
-|------|-----|
-| 名称 | `batch_process` |
-| 描述 | 对多个文件批量执行同一操作 |
-| 风险等级 | 中（取决于具体操作类型） |
-| 需要确认 | 视操作类型而定 |
-
-#### 参数定义
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "file_paths": {
-      "type": "array",
-      "description": "待处理的文件路径列表",
-      "items": {
-        "type": "string"
-      }
-    },
-    "operation": {
-      "type": "string",
-      "description": "批量操作类型",
-      "enum": ["generate", "modify", "convert"]
-    },
-    "params": {
-      "type": "object",
-      "description": "操作参数（根据 operation 类型不同而不同）",
-      "properties": {
-        "document_type": {
-          "type": "string",
-          "description": "[generate] 文档格式"
-        },
-        "instructions": {
-          "type": "string",
-          "description": "[modify] 修改指令"
-        },
-        "target_format": {
-          "type": "string",
-          "description": "[convert] 目标格式"
-        }
-      }
-    }
-  },
-  "required": ["file_paths", "operation", "params"]
-}
-```
-
-#### 处理流程
-
-```
-1. 参数验证
-   |-- 检查 file_paths 非空
-   |-- 检查 operation 合法
-   |-- 检查 params 与 operation 匹配
-   |-- 检查 file_paths 中的文件存在（modify/convert 时）
-
-2. 确认机制
-   |-- 若 operation 为 modify，触发用户确认
-   |-- 展示批量操作预览（文件列表 + 操作类型）
-
-3. 逐个执行
-   |-- 遍历 file_paths
-   |-- 对每个文件调用对应的 Handler
-       |-- generate -> generate_document
-       |-- modify -> modify_document
-       |-- convert -> convert_format
-   |-- 收集每个文件的执行结果
-   |-- 单个文件失败不影响后续文件处理
-
-4. 汇总结果
-   |-- 统计成功/失败数量
-   |-- 构建汇总返回结果
-```
-
-#### 输出结构
-
-```json
-{
-  "success": true,
-  "data": {
-    "results": [
-      {
-        "file_path": "/workspace/output/报告.docx",
-        "success": true,
-        "data": {
-          "output_path": "/workspace/output/报告.pdf",
-          "output_size": 156672
-        },
-        "error": null
-      },
-      {
-        "file_path": "/workspace/output/数据表.xlsx",
-        "success": false,
-        "data": null,
-        "error": "转换路径 xlsx->pdf 不受支持"
-      }
-    ]
-  },
-  "error": null,
-  "display": {
-    "summary": "批量处理完成: 1 成功, 1 失败",
-    "details": {
-      "operation": "convert",
-      "target_format": "pdf",
-      "total": 2,
-      "succeeded": 1,
-      "failed": 1,
-      "failed_files": ["/workspace/output/数据表.xlsx"]
-    }
-  }
-}
-```
-
-#### 错误场景
-
-| 错误码 | 描述 | 处理建议 |
-|--------|------|----------|
-| `EMPTY_FILE_LIST` | 文件列表为空 | 提示用户添加文件 |
-| `INVALID_OPERATION` | 操作类型不合法 | 提示用户选择 generate/modify/convert |
-| `PARAMS_MISMATCH` | 参数与操作不匹配 | 检查 params 是否包含对应操作所需参数 |
-
----
-
-## 5. Handler 与 LLM 的 Tool Calling 交互协议
-
-### 5.1 交互流程总览
-
-```
-用户输入
-   |
-   v
-+------------------+
-| 构建系统提示词    |  <-- 包含可用 Handler 列表（tool_definitions）
-+------------------+
-   |
-   v
-+------------------+
-| 发送至 LLM       |  <-- messages + tools
-+------------------+
-   |
-   v
-+------------------+
-| LLM 返回响应     |
-+------------------+
-   |
-   +--- 纯文本响应 --> 直接展示给用户
-   |
-   +--- tool_calls --> 进入 Tool Calling 循环
-           |
-           v
-   +------------------+
-   | 解析 tool_calls  |
-   +------------------+
-           |
-           v
-   +------------------+
-   | Handler 选择与     |
-   | 参数映射         |
-   +------------------+
-           |
-           v
-   +------------------+     +------------------+
-   | 确认机制检查     | --> | 用户确认/拒绝    |
-   +------------------+     +------------------+
-           |                        |
-           | (确认通过)             | (拒绝)
-           v                        v
-   +------------------+     返回拒绝消息给 LLM
-   | 执行 Handler       |
-   +------------------+
-           |
-           v
-   +------------------+
-   | 构建工具结果消息 |
-   +------------------+
-           |
-           v
-   +------------------+
-   | 追加到消息历史   |
-   +------------------+
-           |
-           v
-   +------------------+
-   | 再次调用 LLM     |  <-- 包含工具执行结果
-   +------------------+
-           |
-           v
-   (循环，直到 LLM 不再返回 tool_calls)
-```
-
-### 5.2 LLM 返回 tool_calls 时的解析
-
-#### 5.2.1 请求格式
-
-发送给 LLM 的请求中包含 `tools` 字段，由 `HandlerRegistry::tool_definitions()` 生成：
-
-```json
-{
-  "model": "gpt-4o",
-  "messages": [
-    {
-      "role": "system",
-      "content": "你是 DocAgent 文档处理助手..."
-    },
-    {
-      "role": "user",
-      "content": "帮我生成一份项目报告"
-    }
-  ],
-  "tools": [
-    {
-      "type": "function",
-      "function": {
-        "name": "generate_document",
-        "description": "根据指定格式和内容生成文档文件",
-        "parameters": {
-          "type": "object",
-          "properties": {
-            "document_type": { "type": "string", "enum": ["docx", "xlsx", "pptx", "pdf", "md", "csv", "html"] },
-            "filename": { "type": "string" },
-            "content": { "type": "object" }
-          },
-          "required": ["document_type", "filename", "content"]
-        }
-      }
-    }
-  ]
-}
-```
-
-#### 5.2.2 响应解析
-
-LLM 返回 `tool_calls` 时的响应格式：
-
-```json
-{
-  "id": "chatcmpl-abc123",
-  "choices": [
-    {
-      "index": 0,
-      "message": {
-        "role": "assistant",
-        "content": null,
-        "tool_calls": [
-          {
-            "id": "call_001",
-            "type": "function",
-            "function": {
-              "name": "generate_document",
-              "arguments": "{\"document_type\":\"docx\",\"filename\":\"项目报告.docx\",\"content\":{\"title\":\"项目报告\",\"sections\":[{\"heading\":\"概述\",\"body\":\"本项目旨在...\"}]}}"
-            }
-          }
-        ]
-      },
-      "finish_reason": "tool_calls"
-    }
-  ]
-}
-```
-
-解析步骤：
-
-1. 检查 `choices[0].message.tool_calls` 是否存在
-2. 遍历 `tool_calls` 数组，提取每个调用的：
-   - `id`: 工具调用 ID（用于结果关联）
-   - `function.name`: Handler 名称
-   - `function.arguments`: 参数 JSON 字符串
-
-### 5.3 Handler 选择与参数映射
-
-#### 5.3.1 Handler 选择
+### 4.1 Rust Trait 定义
 
 ```rust
-/// 根据 LLM 返回的 tool_call 选择并执行对应的 Handler
-async fn handle_tool_call(
-    registry: &HandlerRegistry,
-    tool_call: &ToolCall,
-) -> (String, HandlerResult) {
-    let handler_name = &tool_call.function.name;
-
-    // 解析参数 JSON
-    let params: Value = match serde_json::from_str(&tool_call.function.arguments) {
-        Ok(p) => p,
-        Err(e) => {
-            return (
-                tool_call.id.clone(),
-                HandlerResult::err(
-                    &format!("参数 JSON 解析失败: {}", e),
-                    "参数格式错误",
-                ),
-            );
-        }
-    };
-
-    // 从注册表查找并执行 Handler
-    let result = registry.execute(handler_name, params).await;
-    (tool_call.id.clone(), result)
+#[async_trait]
+pub trait Tool: Send + Sync {
+    fn tool_name(&self) -> &str;
+    fn description(&self) -> &str;
+    fn parameters(&self) -> Value;
+    async fn execute(&self, params: Value, workspace_root: &Path) -> ToolResult;
 }
 ```
 
-#### 5.3.2 参数映射规则
+与 Handler 不同的是，Tool 的 `execute` 方法接收 `workspace_root` 参数（由 executor 注入），用于路径安全校验。
 
-| LLM 参数类型 | Handler 参数类型 | 映射规则 |
-|-------------|---------------|----------|
-| string | string | 直接映射 |
-| integer | integer | 直接映射 |
-| number | number | 直接映射 |
-| boolean | boolean | 直接映射 |
-| array | array | 直接映射 |
-| object | object | 直接映射 |
-| null | - | 移除该字段，使用 Handler 默认值 |
-| 缺失字段 | - | 使用 handler.json 中定义的 default 值 |
+### 4.2 内置 Tool 列表
 
-#### 5.3.3 参数补全
+| 工具名 | 功能 | 参数 |
+|--------|------|------|
+| `list_directory` | 列出目录内容 | path, max_depth?, extensions?, sort_by? |
+| `search_files` | 搜索文件 | query, path?, extensions?, max_results?, include_content? |
+| `read_file` | 读取纯文本文件 | path, encoding? |
+| `write_text_file` | 写入文本文件 | path, content, append? |
+| `delete_file` | 删除文件 | path, create_backup? |
+| `file_info` | 获取文件元数据 | path |
+| `file_exists` | 检查文件/目录是否存在 | path |
+| `create_directory` | 创建目录 | path, recursive? |
 
-对于 LLM 未提供的可选参数，框架应自动补全默认值：
+### 4.3 路径安全机制
+
+所有 Tool 通过 executor 注入的 `workspace_root` 进行路径校验：
 
 ```rust
-/// 补全缺失的可选参数默认值
-fn fill_defaults(params: &mut Value, schema: &Value) {
-    let properties = schema.get("properties").unwrap();
-    for (key, prop_schema) in properties.as_object().unwrap() {
-        if params.get(key).is_none() {
-            if let Some(default) = prop_schema.get("default") {
-                params.as_object_mut().unwrap().insert(
-                    key.clone(),
-                    default.clone(),
-                );
-            }
-        }
+fn resolve_path(workspace_root: &Path, input_path: &str) -> Result<PathBuf, ToolError> {
+    let resolved = workspace_root.join(input_path).canonicalize()?;
+    if !resolved.starts_with(workspace_root) {
+        return Err(ToolError::PathOutOfBounds);
     }
+    Ok(resolved)
 }
 ```
 
-### 5.4 执行结果返回格式
+拒绝路径遍历攻击（如 `../../etc/passwd`）。
 
-Handler 执行完成后，需要将结果以 `tool` 角色消息返回给 LLM：
+---
 
-```json
-{
-  "role": "tool",
-  "tool_call_id": "call_001",
-  "content": "{\"success\":true,\"data\":{\"file_path\":\"/workspace/output/项目报告.docx\",\"file_size\":24576},\"error\":null,\"display\":{\"summary\":\"已生成文档: 项目报告.docx (24KB)\",\"details\":null}}"
-}
-```
+## 5. Code Interpreter 架构
 
-#### 5.4.1 结果序列化规则
+### 5.1 架构设计
 
-1. 将完整的 `HandlerResult` 序列化为 JSON 字符串
-2. `content` 字段为 JSON 字符串（非 JSON 对象）
-3. `tool_call_id` 必须与 LLM 返回的 `tool_calls[].id` 一致
-4. 即使 Handler 执行失败，也必须返回 `tool` 消息（包含 error 信息）
-
-#### 5.4.2 失败结果返回
-
-```json
-{
-  "role": "tool",
-  "tool_call_id": "call_002",
-  "content": "{\"success\":false,\"data\":null,\"error\":\"FILE_NOT_FOUND: 文件不存在\",\"display\":{\"summary\":\"文件不存在\",\"details\":null}}"
-}
-```
-
-LLM 收到失败结果后，可以：
-- 向用户解释失败原因
-- 建议替代方案
-- 使用其他 Handler 重试
-
-### 5.5 多轮 Tool Calling 循环控制
-
-#### 5.5.1 循环机制
-
-LLM 可能在收到工具结果后继续发起 `tool_calls`，形成多轮调用循环：
+Code Interpreter 通过 Python Sidecar 的 `execute` action 运行用户/LLM 生成的 Python 代码，替代了传统 Handler 的 generate/modify 操作。
 
 ```
-轮次1: 用户 -> LLM -> tool_calls[generate_document]
-轮次2: tool_result -> LLM -> tool_calls[convert_format]  (LLM 决定进一步转换格式)
-轮次3: tool_result -> LLM -> 纯文本响应  (循环结束)
+LLM 生成代码 → Code Interceptor Handler
+  → Sidecar `action="execute"` 
+  → code_executor.py（安全沙箱）
+  → 代码执行 → 文件写入工作区
 ```
 
-#### 5.5.2 循环控制参数
+### 5.2 安全机制
 
-| 参数 | 默认值 | 描述 |
+| 安全层 | 实现方式 |
+|--------|---------|
+| 模块黑名单 | `safe_import` 拦截 socket/subprocess/os.system 等 |
+| 正则模式匹配 | 拦截 `os.system(`, `__import__(`, `eval(`, `exec(` 等 |
+| 文件路径隔离 | `safe_open` 只允许写入工作区目录 |
+| 子进程隔离 | 代码在独立子进程中执行，崩溃不影响主进程 |
+| 执行超时 | 默认 60 秒超时 |
+| 内存限制 | 512MB 内存上限 |
+| 输出限制 | stdout 截断至 10000 字节 |
+
+### 5.3 Helper 函数
+
+Code Interpreter 提供预设的 helper 函数供 LLM 生成的代码调用：
+
+| 函数 | 功能 |
+|------|------|
+| `create_word_doc()` | 创建 Word 文档（含配色方案） |
+| `save_word_doc(doc, path)` | 保存 Word 文档 |
+| `create_chart(type, data, title)` | 生成图表（bar/line/pie/scatter/area/hist） |
+| `create_excel_doc()` | 创建 Excel 工作簿 |
+| `save_excel_doc(wb, path)` | 保存 Excel 工作簿 |
+| `create_ppt_doc(theme)` | 创建 PPT（ocean/midnight/forest/coral/charcoal） |
+| `save_ppt_doc(prs, path)` | 保存 PPT |
+| `create_pdf_doc()` | 创建 PDF 配置 |
+| `save_pdf_doc(config, path)` | 保存 PDF |
+
+### 5.4 确认机制
+
+Code Interpreter 执行前需要用户确认（风险等级高）：
+- 确认弹窗显示代码功能描述
+- 显示代码摘要（前 200 字符）
+- 用户确认后执行，拒绝后 LLM 调整策略
+
+---
+
+## 6. Handler 与 LLM 的 Tool Calling 交互协议
+
+### 6.1 交互流程
+
+```
+1. LLM 分析用户意图
+2. LLM 返回 tool_calls（Handler/Tool/Code Interpreter）
+3. AgentExecutor 解析 tool_calls
+4. 高风险操作触发用户确认
+5. 执行 Handler/Tool/Code Interpreter
+6. 结果返回给 LLM
+7. 循环直到 LLM 返回纯文本
+```
+
+### 6.2 循环控制
+
+| 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `max_tool_rounds` | 10 | 最大 Tool Calling 轮次 |
-| `max_tools_per_round` | 3 | 单轮最大并行工具调用数 |
-| `tool_call_timeout` | 30s | 单个 Handler 执行超时时间 |
+| 最大迭代次数 | 20 | 达到后返回错误 |
+| 确认超时 | 5 分钟 | 超时后自动取消 |
+| Sidecar 超时 | 120 秒（代码执行）/ 60 秒（文档操作） |
 
-#### 5.5.3 循环终止条件
+### 6.3 确认机制的集成
 
-循环在以下任一条件满足时终止：
-
-1. LLM 返回纯文本响应（无 `tool_calls`）
-2. 达到 `max_tool_rounds` 上限
-3. 连续 3 次工具调用失败
-4. 用户主动中断
-
-#### 5.5.4 循环实现
-
-```rust
-/// Tool Calling 循环控制器
-pub struct ToolCallingLoop {
-    registry: Arc<HandlerRegistry>,
-    max_rounds: usize,
-    max_tools_per_round: usize,
-    timeout: Duration,
-    consecutive_failures: usize,
-    max_consecutive_failures: usize,
-}
-
-impl ToolCallingLoop {
-    pub fn new(registry: Arc<HandlerRegistry>) -> Self {
-        Self {
-            registry,
-            max_rounds: 10,
-            max_tools_per_round: 3,
-            timeout: Duration::from_secs(30),
-            consecutive_failures: 0,
-            max_consecutive_failures: 3,
-        }
-    }
-
-    /// 执行 Tool Calling 循环
-    pub async fn run(
-        &mut self,
-        client: &LlmClient,
-        messages: &mut Vec<Value>,
-    ) -> Result<String, LoopError> {
-        for round in 0..self.max_rounds {
-            // 调用 LLM
-            let response = client.chat(messages).await?;
-
-            let choice = &response.choices[0];
-            let assistant_message = &choice.message;
-
-            // 将助手消息追加到历史
-            messages.push(serde_json::to_value(assistant_message)?);
-
-            // 检查是否有 tool_calls
-            let tool_calls = match &assistant_message.tool_calls {
-                Some(calls) => calls,
-                None => {
-                    // 无 tool_calls，返回文本内容
-                    return Ok(assistant_message.content.clone().unwrap_or_default());
-                }
-            };
-
-            // 限制单轮并行调用数
-            let calls_to_execute: Vec<_> = tool_calls
-                .iter()
-                .take(self.max_tools_per_round)
-                .collect();
-
-            // 执行所有工具调用
-            let mut round_had_failure = false;
-            for tool_call in calls_to_execute {
-                let (call_id, result) =
-                    handle_tool_call(&self.registry, tool_call).await;
-
-                if !result.success {
-                    round_had_failure = true;
-                }
-
-                // 构建工具结果消息
-                let tool_message = serde_json::json!({
-                    "role": "tool",
-                    "tool_call_id": call_id,
-                    "content": serde_json::to_string(&result)?
-                });
-                messages.push(tool_message);
-            }
-
-            // 更新连续失败计数
-            if round_had_failure {
-                self.consecutive_failures += 1;
-                if self.consecutive_failures >= self.max_consecutive_failures {
-                    return Err(LoopError::TooManyFailures(
-                        self.consecutive_failures,
-                    ));
-                }
-            } else {
-                self.consecutive_failures = 0;
-            }
-        }
-
-        Err(LoopError::MaxRoundsExceeded(self.max_rounds))
-    }
-}
-```
-
-### 5.6 确认机制的集成
-
-#### 5.6.1 确认触发条件
-
-以下情况需要用户确认后才能执行 Handler：
-
-1. Handler 声明了 `requires_confirmation: true`
-2. Handler 的 `risk_level` 为 `high` 或 `critical`
-3. `batch_process` 操作中包含 `modify` 类型
-4. `delete_document` 操作（强制确认）
-
-#### 5.6.2 确认流程
-
-```
-LLM 返回 tool_calls
-       |
-       v
-+------------------+
-| 遍历 tool_calls  |
-+------------------+
-       |
-       v
-+------------------+
-| 检查确认需求     |
-+------------------+
-       |
-       +--- 无需确认 --> 直接执行
-       |
-       +--- 需要确认 --> 展示确认对话框
-               |
-               +--- 用户确认 --> 执行 Handler
-               |        |
-               |        v
-               |   返回正常结果给 LLM
-               |
-               +--- 用户拒绝 --> 返回拒绝消息给 LLM
-                        |
-                        v
-                   {
-                     "role": "tool",
-                     "tool_call_id": "call_xxx",
-                     "content": "{\"success\":false,\"data\":null,
-                       \"error\":\"USER_REJECTED: 用户拒绝执行此操作\",
-                       \"display\":{\"summary\":\"操作已取消\",\"details\":null}}"
-                   }
-```
-
-#### 5.6.3 确认对话框内容
-
-确认对话框应包含以下信息：
-
-```
-+------------------------------------------+
-|  操作确认                                 |
-+------------------------------------------+
-|                                           |
-|  即将执行: modify_document                |
-|  描述: 修改已有文档                       |
-|                                           |
-|  参数:                                    |
-|    文件: /workspace/output/报告.docx      |
-|    指令: 将第三章标题改为"技术方案"        |
-|    创建备份: 是                           |
-|                                           |
-|  [确认执行]  [取消]                       |
-+------------------------------------------+
-```
-
-#### 5.6.4 批量操作的确认
-
-对于 `batch_process`，确认对话框应展示批量预览：
-
-```
-+------------------------------------------+
-|  批量操作确认                             |
-+------------------------------------------+
-|                                           |
-|  操作类型: convert (格式转换)             |
-|  目标格式: pdf                            |
-|                                           |
-|  涉及文件 (3个):                          |
-|    1. /workspace/output/报告.docx         |
-|    2. /workspace/output/方案.docx         |
-|    3. /workspace/output/总结.md           |
-|                                           |
-|  [确认全部执行]  [取消]                   |
-+------------------------------------------+
-```
-
-#### 5.6.5 确认超时
-
-若用户在 60 秒内未响应确认对话框，视为拒绝操作，返回超时拒绝消息：
-
-```json
-{
-  "success": false,
-  "data": null,
-  "error": "CONFIRMATION_TIMEOUT: 确认超时，操作已自动取消",
-  "display": {
-    "summary": "操作确认超时已取消",
-    "details": null
-  }
-}
-```
+- 操作前通过 `confirm_channels` oneshot channel 同步等待用户确认
+- 前端 `ConfirmNode` 组件展示确认弹窗
+- 用户确认/拒绝后通过 `confirm_operation` 命令返回结果
+- 超时后返回 `AGENT_CONFIRMATION_TIMEOUT` 错误
 
 ---
 
-## 6. 附录
+## 7. 附录
 
-### 6.1 内置 Handler 速查表
+### 7.1 Handler/Tool 速查表
 
-| Handler | 名称 | 风险等级 | 需确认 | 核心参数 |
-|-------|------|----------|--------|----------|
-| 生成文档 | `generate_document` | 低 | 否 | document_type, filename, content |
-| 修改文档 | `modify_document` | 高 | 是 | file_path, instructions |
-| 删除文档 | `delete_document` | 极高 | 是(强制) | file_path |
-| 格式转换 | `convert_format` | 低 | 否 | source_path, target_format |
-| 读取文档 | `read_document` | 低 | 否 | file_path |
-| 搜索文档 | `search_documents` | 低 | 否 | query |
-| 分析文档 | `analyze_document` | 低 | 否 | file_path, dimensions |
-| 列出文件 | `list_workspace` | 低 | 否 | directory, recursive |
-| 批量处理 | `batch_process` | 中 | 视操作 | file_paths, operation, params |
+| 名称 | 类型 | 语言 | 说明 |
+|------|------|------|------|
+| docx_handler | Handler | Python | Word 文档 read/convert/analyze |
+| xlsx_handler | Handler | Python | Excel 文档 read/convert/analyze |
+| pptx_handler | Handler | Python | PPT 文档 read/convert/analyze |
+| pdf_handler | Handler | Python | PDF 文档 read/convert/analyze |
+| code_interpreter_handler | Handler | Python | 执行 Python 代码 |
+| list_directory | Tool | Rust | 列出目录内容 |
+| search_files | Tool | Rust | 搜索文件 |
+| read_file | Tool | Rust | 读取文本文件 |
+| write_text_file | Tool | Rust | 写入文本文件 |
+| delete_file | Tool | Rust | 删除文件 |
+| file_info | Tool | Rust | 获取文件元数据 |
+| file_exists | Tool | Rust | 检查文件存在 |
+| create_directory | Tool | Rust | 创建目录 |
 
-### 6.2 错误码汇总
+### 7.2 Sidecar 协议
 
-| 错误码 | 类别 | 适用 Handler |
-|--------|------|-----------|
-| `INVALID_FORMAT` | 参数 | generate_document |
-| `FILENAME_INVALID` | 参数 | generate_document |
-| `TEMPLATE_NOT_FOUND` | 资源 | generate_document |
-| `GENERATION_FAILED` | 内部 | generate_document |
-| `FILE_NOT_FOUND` | 资源 | modify, delete, read, analyze |
-| `UNSUPPORTED_FORMAT` | 参数 | modify, read, convert, analyze |
-| `SNAPSHOT_FAILED` | 内部 | modify_document, delete_document |
-| `MODIFY_FAILED` | 内部 | modify_document |
-| `OUT_OF_WORKSPACE` | 权限 | delete_document, list_workspace |
-| `DELETE_FAILED` | 内部 | delete_document |
-| `CONVERSION_NOT_SUPPORTED` | 参数 | convert_format |
-| `SAME_FORMAT` | 参数 | convert_format |
-| `CONVERSION_FAILED` | 内部 | convert_format |
-| `READ_FAILED` | 内部 | read_document |
-| `PAGE_OUT_OF_RANGE` | 参数 | read_document |
-| `EMPTY_QUERY` | 参数 | search_documents |
-| `DIRECTORY_NOT_FOUND` | 资源 | search_documents, list_workspace |
-| `SEARCH_FAILED` | 内部 | search_documents |
-| `ANALYSIS_FAILED` | 内部 | analyze_document |
-| `LIST_FAILED` | 内部 | list_workspace |
-| `EMPTY_FILE_LIST` | 参数 | batch_process |
-| `INVALID_OPERATION` | 参数 | batch_process |
-| `PARAMS_MISMATCH` | 参数 | batch_process |
-| `PARAM_VALIDATION_FAILED` | 参数 | 所有 Handler |
-| `USER_REJECTED` | 确认 | 需确认的 Handler |
-| `CONFIRMATION_TIMEOUT` | 确认 | 需确认的 Handler |
-| `SIDECAR_UNAVAILABLE` | 外部 | 所有 Handler |
-| `SIDECAR_TIMEOUT` | 外部 | 所有 Handler |
-
-### 6.3 JSON Schema 常用模式
-
-#### 枚举类型参数
-
+请求格式：
 ```json
-{
-  "document_type": {
-    "type": "string",
-    "description": "文档格式",
-    "enum": ["docx", "xlsx", "pptx", "pdf", "md", "csv", "html"]
-  }
-}
+{"id": "uuid", "action": "read|convert|analyze|execute|ping|validate", "type": "docx|xlsx|pptx|pdf|md|code|txt", "params": {}}
 ```
 
-#### 嵌套对象参数
-
+响应格式：
 ```json
-{
-  "content": {
-    "type": "object",
-    "description": "文档内容",
-    "properties": {
-      "title": { "type": "string", "description": "标题" },
-      "sections": {
-        "type": "array",
-        "description": "章节列表",
-        "items": {
-          "type": "object",
-          "properties": {
-            "heading": { "type": "string" },
-            "body": { "type": "string" }
-          },
-          "required": ["heading", "body"]
-        }
-      }
-    },
-    "required": ["title"]
-  }
-}
+{"id": "uuid", "success": true|false, "data": {}, "error": null}
 ```
-
-#### 带默认值的可选参数
-
-```json
-{
-  "recursive": {
-    "type": "boolean",
-    "description": "是否递归遍历",
-    "default": false
-  }
-}
-```
-
-### 6.4 Handler 生命周期
-
-```
-注册阶段:
-  Handler 实现 Trait / 编写 handler.json
-       |
-       v
-  注册到 HandlerRegistry
-       |
-       v
-  生成 tool_definitions 供 LLM 使用
-
-调用阶段:
-  LLM 返回 tool_calls
-       |
-       v
-  参数验证 (Schema 校验 + 默认值补全)
-       |
-       v
-  确认检查 (risk_level / requires_confirmation)
-       |
-       v
-  执行 Handler (execute 方法)
-       |
-       v
-  结果序列化 (HandlerResult -> JSON)
-       |
-       v
-  返回给 LLM (tool 角色消息)
-
-卸载阶段:
-  从 HandlerRegistry 移除
-       |
-       v
-  释放资源
-```
-
-### 6.5 版本兼容性
-
-| Handler 版本 | DocAgent 版本 | 变更说明 |
-|-----------|--------------|----------|
-| 1.0.0 | >= 0.1.0 | 初始版本，9 个内置 Handler |
-
-> 自定义 Handler 的 `version` 字段遵循语义化版本规范（SemVer）。
-> 主版本号变更表示不兼容的 API 变更，次版本号变更表示向后兼容的功能新增，修订号变更表示向后兼容的问题修复。

@@ -2,7 +2,8 @@
 
 > 项目：DocAgent AI文档处理桌面应用
 > 技术栈：Tauri 2 + Rust后端 + React前端
-> 版本：1.0.0
+> 版本：0.1.6
+> 最后更新：2026-06-14
 
 ---
 
@@ -15,22 +16,24 @@
 - [5. 会话相关命令](#5-会话相关命令)
 - [6. 工作区相关命令](#6-工作区相关命令)
 - [7. 文档相关命令](#7-文档相关命令)
-- [8. Handler相关命令](#8-handler相关命令)
+- [8. Handler/Tool相关命令](#8-handlertool相关命令)
 - [9. 设置相关命令](#9-设置相关命令)
 - [10. 模板相关命令](#10-模板相关命令)
-- [11. Tauri事件定义](#11-tauri事件定义)
-- [13. Python Sidecar通信协议](#13-python-sidecar通信协议)
-- [14. 错误码定义](#14-错误码定义)
+- [11. 日志相关命令](#11-日志相关命令)
+- [12. 更新相关命令](#12-更新相关命令)
+- [13. Tauri事件定义](#13-tauri事件定义)
+- [14. Python Sidecar通信协议](#14-python-sidecar通信协议)
+- [15. 错误码定义](#15-错误码定义)
 
 ---
 
 ## 1. 概述
 
-本文档定义了 DocAgent 桌面应用中所有 Tauri 命令（Command）、事件（Event）、Python Sidecar 通信协议及错误码的完整接口规范。
+本文档定义了 DocAgent 桌面应用中所有 Tauri 命令、事件、Python Sidecar 通信协议及错误码的完整接口规范。
 
-- **Rust后端**：通过 `#[tauri::command]` 宏暴露命令，供前端通过 `invoke` 调用。
-- **React前端**：通过 `@tauri-apps/api/core` 的 `invoke` 函数调用后端命令，通过 `@tauri-apps/api/event` 的 `listen` 函数监听后端事件。
-- **Python Sidecar**：通过 stdin/stdout JSON 协议与 Rust 后端通信，负责文档处理的核心逻辑。
+- **Rust后端**：通过 `#[tauri::command]` 暴露 **48 个命令**（跨 10 个模块），供前端通过 `invoke` 调用
+- **React前端**：通过 `@tauri-apps/api/core` 的 `invoke` 调用后端命令，通过 `@tauri-apps/api/event` 的 `listen` 监听后端事件
+- **Python Sidecar**：通过 stdin/stdout JSON 通信，负责文档处理
 
 ---
 
@@ -41,7 +44,6 @@
 ```typescript
 import { invoke } from "@tauri-apps/api/core";
 
-// 通用调用模板
 const result = await invoke<ReturnType>("command_name", {
   param1: value1,
   param2: value2,
@@ -53,21 +55,17 @@ const result = await invoke<ReturnType>("command_name", {
 ```typescript
 import { listen } from "@tauri-apps/api/event";
 
-const unlisten = await listen<EventType>("event:name", (event) => {
+const unlisten = await listen<PayloadType>("event:name", (event) => {
   console.log(event.payload);
 });
-
-// 取消监听
 unlisten();
 ```
 
 ### 2.3 统一错误响应
 
-所有返回 `Result<T>` 的命令，在错误时前端会收到 `Error` 对象：
-
 ```typescript
 interface CommandError {
-  code: number;      // 错误码，参见第14节
+  code: number;      // 错误码，参见第15节
   message: string;   // 人类可读的错误描述
 }
 ```
@@ -75,384 +73,264 @@ interface CommandError {
 ### 2.4 命名约定
 
 - Rust命令函数：`snake_case`
-- 前端调用名称：与Rust函数名一致，使用 `snake_case`
+- 前端调用封装：`camelCase`（见 `src/services/tauri.ts`）
 - 事件名称：`模块:动作`，如 `agent:thinking`
-- 类型名称：`PascalCase`
+- Rust Payload：`#[serde(rename_all = "camelCase")]`
 
 ---
 
 ## 3. LLM相关命令
 
-> 源文件：`commands/llm.rs`
+> 源文件：`commands/llm.rs`（10个命令）
 
 ### 3.1 test_connection
 
-测试指定LLM Provider的连接是否可用。
-
-**Rust签名：**
+测试指定LLM Provider的连接可用性。
 
 ```rust
 #[tauri::command]
-async fn test_connection(provider_id: String) -> Result<ConnectionResult, CommandError>
+async fn test_connection(provider_id: String, state: State<'_, AppState>) -> Result<ConnectionResult, CommandError>
 ```
 
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| provider_id | String | 是 | Provider的唯一标识 |
-
-**返回类型：**
-
-```rust
-struct ConnectionResult {
-    success: bool,
-    latency_ms: u64,
-    model_info: Option<ModelInfo>,
-    error_message: Option<String>,
-}
-
-struct ModelInfo {
-    model_name: String,
-    max_tokens: u32,
-    supports_streaming: bool,
-    supports_tool_call: bool,
-}
-```
-
-**前端调用：**
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| provider_id | String | 是 | Provider唯一标识 |
 
 ```typescript
-const result = await invoke<ConnectionResult>("test_connection", {
-  providerId: "openai-main",
-});
+const result = await invoke<ConnectionResult>("test_connection", { providerId: "openai-main" });
+// { success: bool, latencyMs: u64, modelInfo?: ModelInfo, errorMessage?: string }
 ```
 
----
+### 3.2 test_connection_with_config
 
-### 3.2 list_providers
+使用提供的配置测试连接（不保存）。
+
+```rust
+#[tauri::command]
+async fn test_connection_with_config(config: ProviderConfig, provider_id: Option<String>, state: State<'_, AppState>) -> Result<ConnectionResult, CommandError>
+```
+
+### 3.3 list_providers
 
 列出所有已配置的LLM Provider。
 
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn list_providers() -> Vec<ProviderInfo>
+async fn list_providers(state: State<'_, AppState>) -> Result<Vec<ProviderInfo>, CommandError>
 ```
-
-**参数：** 无
-
-**返回类型：**
-
-```rust
-struct ProviderInfo {
-    id: String,
-    name: String,
-    provider_type: String,       // "openai" | "anthropic" | "ollama" | "custom"
-    api_base: String,
-    model: String,
-    is_default: bool,
-    is_available: bool,
-    created_at: String,          // ISO 8601
-}
-```
-
-**前端调用：**
 
 ```typescript
 const providers = await invoke<ProviderInfo[]>("list_providers");
 ```
 
----
+### 3.4 add_provider
 
-### 3.3 add_provider
-
-添加一个新的LLM Provider配置。
-
-**Rust签名：**
+添加新的LLM Provider配置。
 
 ```rust
 #[tauri::command]
-async fn add_provider(config: ProviderConfig) -> Result<(), CommandError>
+async fn add_provider(config: ProviderConfig, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
 
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| config | ProviderConfig | 是 | Provider配置信息 |
-
-```rust
-struct ProviderConfig {
-    name: String,
-    provider_type: String,       // "openai" | "anthropic" | "ollama" | "custom"
-    api_base: String,
-    api_key: String,             // 加密存储
-    model: String,
-    extra_params: Option<HashMap<String, serde_json::Value>>,
-}
-```
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
-
-```typescript
-await invoke("add_provider", {
-  config: {
-    name: "My OpenAI",
-    providerType: "openai",
-    apiBase: "https://api.openai.com/v1",
-    apiKey: "sk-xxx",
-    model: "gpt-4o",
-    extraParams: null,
-  },
-});
-```
-
----
-
-### 3.4 update_provider
+### 3.5 update_provider
 
 更新已有的Provider配置。
 
-**Rust签名：**
+```rust
+#[tauri::command]
+async fn update_provider(provider_id: String, config: ProviderConfig, state: State<'_, AppState>) -> Result<(), CommandError>
+```
+
+### 3.6 delete_provider
+
+删除指定Provider配置。
 
 ```rust
 #[tauri::command]
-async fn update_provider(provider_id: String, config: ProviderConfig) -> Result<(), CommandError>
+async fn delete_provider(provider_id: String, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
 
-**参数：**
+### 3.7 set_default_provider
 
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| provider_id | String | 是 | 要更新的Provider标识 |
-| config | ProviderConfig | 是 | 新的Provider配置 |
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
-
-```typescript
-await invoke("update_provider", {
-  providerId: "openai-main",
-  config: { /* ... */ },
-});
-```
-
----
-
-### 3.5 delete_provider
-
-删除指定的Provider配置。
-
-**Rust签名：**
+设置默认LLM Provider。
 
 ```rust
 #[tauri::command]
-async fn delete_provider(provider_id: String) -> Result<(), CommandError>
+async fn set_default_provider(provider_id: String, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
 
-**参数：**
+### 3.8 health_check_providers
 
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| provider_id | String | 是 | 要删除的Provider标识 |
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
-
-```typescript
-await invoke("delete_provider", { providerId: "openai-main" });
-```
-
----
-
-### 3.6 set_default_provider
-
-设置默认的LLM Provider。
-
-**Rust签名：**
+对所有Provider执行健康检查。
 
 ```rust
 #[tauri::command]
-async fn set_default_provider(provider_id: String) -> Result<(), CommandError>
+async fn health_check_providers(state: State<'_, AppState>) -> Result<HashMap<String, ConnectionResult>, CommandError>
 ```
 
-**参数：**
+### 3.9 force_recover_providers
 
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| provider_id | String | 是 | 设为默认的Provider标识 |
+强制恢复所有被标记为不可用的Provider。
 
-**返回类型：** `Result<(), CommandError>`
+```rust
+#[tauri::command]
+async fn force_recover_providers(state: State<'_, AppState>) -> Result<(), CommandError>
+```
 
-**前端调用：**
+### 3.10 get_network_status
 
-```typescript
-await invoke("set_default_provider", { providerId: "openai-main" });
+获取当前网络状态。
+
+```rust
+#[tauri::command]
+async fn get_network_status(state: State<'_, AppState>) -> Result<String, CommandError>
+```
+
+### ProviderConfig 类型
+
+```rust
+struct ProviderConfig {
+    id: Option<String>,
+    name: String,
+    provider_type: String,                // "openai" | "anthropic" | "ollama" | "gemini" | "custom"
+    api_base: String,
+    api_key: String,
+    model: String,
+    is_default: bool,
+    context_window: Option<u32>,          // 上下文窗口大小
+    supports_vision: Option<bool>,        // 是否支持图片多模态
+    extra_params: Option<HashMap<String, Value>>,
+    temperature: Option<f64>,
+    max_tokens: Option<u32>,
+    top_p: Option<f64>,
+}
 ```
 
 ---
 
 ## 4. Agent相关命令
 
-> 源文件：`commands/agent.rs`
+> 源文件：`commands/agent.rs`（5个命令）
 
 ### 4.1 start_agent
 
-启动Agent执行任务。Agent通过事件（Event）异步推送执行过程和结果。
-
-**Rust签名：**
+启动Agent执行任务，通过事件流式推送结果。
 
 ```rust
 #[tauri::command]
-async fn start_agent(session_id: String, prompt: String, options: Option<AgentOptions>) -> Result<(), CommandError>
+async fn start_agent(session_id: String, prompt: String, options: Option<Value>, app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
 
-**参数：**
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| session_id | String | 关联的会话ID |
+| prompt | String | 用户输入的任务描述 |
+| options | Option\<Value\> | Agent执行选项（JSON对象） |
 
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| session_id | String | 是 | 关联的会话ID |
-| prompt | String | 是 | 用户输入的任务描述 |
-| options | Option\<AgentOptions\> | 否 | Agent执行选项 |
-
-```rust
-struct AgentOptions {
-    provider_id: Option<String>,       // 指定使用的Provider，不填则使用默认
-    max_iterations: Option<u32>,       // 最大迭代次数，默认20
-    auto_confirm: Option<bool>,        // 是否自动确认操作，默认false
-    handlers: Option<Vec<String>>,       // 启用的Handler列表
-    working_directory: Option<String>, // 工作目录
-}
-```
-
-**返回类型：** `Result<(), CommandError>`
-
-执行结果通过以下事件推送：
-- `agent:thinking` - Agent思考中
-- `agent:content` - Agent输出内容
-- `agent:tool_call` - Agent调用工具
-- `agent:tool_result` - 工具执行结果
-- `agent:confirm` - 需要用户确认
-- `agent:todo_update` - 任务进度更新
-- `agent:done` - 执行完成
-- `agent:error` - 执行出错
-- `agent:stopped` - 被用户中断
-
-**前端调用：**
+options 支持字段：`provider_id`, `max_iterations`(默认20), `auto_confirm`
 
 ```typescript
 await invoke("start_agent", {
   sessionId: "sess-xxx",
-  prompt: "请将这份Word文档转换为PDF格式",
-  options: {
-    providerId: "openai-main",
-    maxIterations: 30,
-    autoConfirm: false,
-    handlers: ["document-converter"],
-    workingDirectory: "C:\\Users\\docs",
-  },
+  prompt: "请生成一份文档",
+  options: { providerId: "openai-main", maxIterations: 30 },
 });
 ```
-
----
 
 ### 4.2 stop_agent
 
 中断正在执行的Agent任务。
 
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn stop_agent(session_id: String) -> Result<(), CommandError>
+async fn stop_agent(session_id: String, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| session_id | String | 是 | 要中断的会话ID |
-
-**返回类型：** `Result<(), CommandError>`
-
-中断成功后，前端将收到 `agent:stopped` 事件。
-
-**前端调用：**
-
-```typescript
-await invoke("stop_agent", { sessionId: "sess-xxx" });
-```
-
----
 
 ### 4.3 confirm_operation
 
-确认Agent请求的操作。当Agent执行需要用户确认的操作时（`agent:confirm`事件），前端调用此命令进行确认或拒绝。
-
-**Rust签名：**
+确认或拒绝Agent请求的操作。
 
 ```rust
 #[tauri::command]
-async fn confirm_operation(session_id: String, operation_id: String, approved: bool, feedback: Option<String>) -> Result<(), CommandError>
+async fn confirm_operation(session_id: String, operation_id: String, approved: bool, feedback: Option<String>, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
 
-**参数：**
+### 4.4 get_context_usage
 
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| session_id | String | 是 | 会话ID |
-| operation_id | String | 是 | 操作ID，来自`agent:confirm`事件 |
-| approved | bool | 是 | true=批准，false=拒绝 |
-| feedback | Option\<String\> | 否 | 用户的附加反馈信息 |
+获取当前会话的Token用量信息。
 
-**返回类型：** `Result<(), CommandError>`
+```rust
+#[tauri::command]
+async fn get_context_usage(session_id: String, state: State<'_, AppState>) -> Result<ContextUsageInfo, CommandError>
+```
 
-**前端调用：**
+### 4.5 is_agent_running
 
-```typescript
-await invoke("confirm_operation", {
-  sessionId: "sess-xxx",
-  operationId: "op-123",
-  approved: true,
-  feedback: "请确保保留原始格式",
-});
+检查指定会话的Agent是否正在运行。
+
+```rust
+#[tauri::command]
+async fn is_agent_running(session_id: String, state: State<'_, AppState>) -> Result<bool, CommandError>
 ```
 
 ---
 
 ## 5. 会话相关命令
 
-> 源文件：`commands/session.rs`
+> 源文件：`commands/session.rs`（6个命令）
 
 ### 5.1 create_session
 
-创建新的对话会话。
+```rust
+#[tauri::command]
+async fn create_session(params: CreateSessionParams, app_handle: AppHandle, state: State<'_, AppState>) -> Result<Session, CommandError>
+```
 
-**Rust签名：**
+### 5.2 list_sessions
 
 ```rust
 #[tauri::command]
-async fn create_session(params: CreateSessionParams) -> Result<Session, CommandError>
+async fn list_sessions(filter: Option<SessionFilter>, state: State<'_, AppState>) -> Result<Vec<SessionSummary>, CommandError>
 ```
 
-**参数：**
+### 5.3 get_session
 
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| params | CreateSessionParams | 是 | 创建会话的参数 |
+```rust
+#[tauri::command]
+async fn get_session(session_id: String, state: State<'_, AppState>) -> Result<SessionDetail, CommandError>
+```
+
+### 5.4 delete_session
+
+```rust
+#[tauri::command]
+async fn delete_session(session_id: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), CommandError>
+```
+
+### 5.5 update_session_title
+
+```rust
+#[tauri::command]
+async fn update_session_title(session_id: String, title: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), CommandError>
+```
+
+### 5.6 clear_all_sessions
+
+清除所有会话（返回删除的会话数）。
+
+```rust
+#[tauri::command]
+async fn clear_all_sessions(app_handle: AppHandle, state: State<'_, AppState>) -> Result<u64, CommandError>
+```
+
+### 数据类型
 
 ```rust
 struct CreateSessionParams {
-    title: Option<String>,              // 会话标题，不填则自动生成
-    workspace_id: Option<String>,       // 关联的工作区ID
-    provider_id: Option<String>,        // 使用的Provider
-    template_id: Option<String>,        // 关联的模板ID
+    title: Option<String>,
+    workspace_id: Option<String>,
+    provider_id: Option<String>,
+    template_id: Option<String>,
 }
 
 struct Session {
@@ -461,677 +339,223 @@ struct Session {
     workspace_id: Option<String>,
     provider_id: String,
     template_id: Option<String>,
-    created_at: String,                 // ISO 8601
-    updated_at: String,                 // ISO 8601
-    status: String,                     // "active" | "archived"
+    created_at: String,
+    updated_at: String,
+    status: String,                   // "active" | "archived"
 }
-```
 
-**返回类型：** `Result<Session, CommandError>`
-
-**前端调用：**
-
-```typescript
-const session = await invoke<Session>("create_session", {
-  params: {
-    title: "文档处理任务",
-    workspaceId: "ws-001",
-    providerId: "openai-main",
-    templateId: null,
-  },
-});
-```
-
----
-
-### 5.2 list_sessions
-
-列出所有会话的摘要信息。
-
-**Rust签名：**
-
-```rust
-#[tauri::command]
-async fn list_sessions(filter: Option<SessionFilter>) -> Vec<SessionSummary>
-```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| filter | Option\<SessionFilter\> | 否 | 筛选条件 |
-
-```rust
 struct SessionFilter {
-    workspace_id: Option<String>,
-    status: Option<String>,             // "active" | "archived"
-    search: Option<String>,             // 按标题搜索
-    limit: Option<u32>,                 // 返回数量限制，默认50
-    offset: Option<u32>,                // 偏移量，默认0
+    status: Option<String>,
+    search: Option<String>,
+    limit: Option<u32>,
+    offset: Option<u32>,
 }
 
 struct SessionSummary {
-    id: String,
-    title: String,
-    status: String,
-    message_count: u32,
-    last_message_preview: Option<String>,
-    created_at: String,
-    updated_at: String,
+    id: String, title: String, status: String, message_count: u32,
+    last_message_preview: Option<String>, created_at: String, updated_at: String,
 }
-```
 
-**返回类型：** `Vec<SessionSummary>`
-
-**前端调用：**
-
-```typescript
-const sessions = await invoke<SessionSummary[]>("list_sessions", {
-  filter: { status: "active", limit: 20 },
-});
-```
-
----
-
-### 5.3 get_session
-
-获取会话的完整详情，包括消息历史。
-
-**Rust签名：**
-
-```rust
-#[tauri::command]
-async fn get_session(session_id: String) -> Result<SessionDetail, CommandError>
-```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| session_id | String | 是 | 会话ID |
-
-```rust
 struct SessionDetail {
     session: Session,
     messages: Vec<Message>,
 }
-
-struct Message {
-    id: String,
-    role: String,                       // "user" | "assistant" | "system"
-    content: String,
-    tool_calls: Option<Vec<ToolCall>>,
-    created_at: String,
-}
-
-struct ToolCall {
-    id: String,
-    name: String,
-    arguments: serde_json::Value,
-    result: Option<serde_json::Value>,
-}
-```
-
-**返回类型：** `Result<SessionDetail, CommandError>`
-
-**前端调用：**
-
-```typescript
-const detail = await invoke<SessionDetail>("get_session", {
-  sessionId: "sess-xxx",
-});
-```
-
----
-
-### 5.4 delete_session
-
-删除指定会话及其所有消息。
-
-**Rust签名：**
-
-```rust
-#[tauri::command]
-async fn delete_session(session_id: String) -> Result<(), CommandError>
-```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| session_id | String | 是 | 要删除的会话ID |
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
-
-```typescript
-await invoke("delete_session", { sessionId: "sess-xxx" });
-```
-
----
-
-### 5.5 update_session_title
-
-更新会话标题。
-
-**Rust签名：**
-
-```rust
-#[tauri::command]
-async fn update_session_title(session_id: String, title: String) -> Result<(), CommandError>
-```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| session_id | String | 是 | 会话ID |
-| title | String | 是 | 新标题 |
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
-
-```typescript
-await invoke("update_session_title", {
-  sessionId: "sess-xxx",
-  title: "新的会话标题",
-});
 ```
 
 ---
 
 ## 6. 工作区相关命令
 
-> 源文件：`commands/workspace.rs`
+> 源文件：`commands/workspace.rs`（6个命令）
 
 ### 6.1 list_workspaces
 
-列出所有已配置的工作区。
-
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn list_workspaces() -> Vec<WorkspaceInfo>
+async fn list_workspaces(state: State<'_, AppState>) -> Result<Vec<WorkspaceInfo>, CommandError>
 ```
-
-**参数：** 无
-
-**返回类型：**
-
-```rust
-struct WorkspaceInfo {
-    id: String,
-    name: String,
-    path: String,                       // 工作区根路径
-    is_active: bool,                    // 是否为当前活动工作区
-    file_count: u32,                    // 文件数量
-    created_at: String,
-    last_accessed: String,
-}
-```
-
-**前端调用：**
-
-```typescript
-const workspaces = await invoke<WorkspaceInfo[]>("list_workspaces");
-```
-
----
 
 ### 6.2 add_workspace
 
-添加一个新的工作区目录。
-
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn add_workspace(path: String, name: Option<String>) -> Result<WorkspaceInfo, CommandError>
+async fn add_workspace(path: String, name: Option<String>, app_handle: AppHandle, state: State<'_, AppState>) -> Result<WorkspaceInfo, CommandError>
 ```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| path | String | 是 | 工作区目录的绝对路径 |
-| name | Option\<String\> | 否 | 工作区名称，不填则使用目录名 |
-
-**返回类型：** `Result<WorkspaceInfo, CommandError>`
-
-**前端调用：**
-
-```typescript
-const workspace = await invoke<WorkspaceInfo>("add_workspace", {
-  path: "D:\\Projects\\MyDocs",
-  name: "我的文档项目",
-});
-```
-
----
 
 ### 6.3 remove_workspace
 
-移除工作区（仅从应用中移除，不删除实际文件）。
-
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn remove_workspace(workspace_id: String) -> Result<(), CommandError>
+async fn remove_workspace(workspace_id: String, app_handle: AppHandle, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| workspace_id | String | 是 | 要移除的工作区ID |
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
-
-```typescript
-await invoke("remove_workspace", { workspaceId: "ws-001" });
-```
-
----
 
 ### 6.4 set_active_workspace
 
-设置当前活动的工作区。
-
-**Rust签名：**
+发射 `workspace:change` 事件。
 
 ```rust
 #[tauri::command]
-async fn set_active_workspace(workspace_id: String) -> Result<(), CommandError>
+async fn set_active_workspace(workspace_id: String, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| workspace_id | String | 是 | 设为活动的工作区ID |
-
-**返回类型：** `Result<(), CommandError>`
-
-切换成功后，前端将收到 `workspace:changed` 事件。
-
-**前端调用：**
-
-```typescript
-await invoke("set_active_workspace", { workspaceId: "ws-001" });
-```
-
----
 
 ### 6.5 get_file_tree
 
-获取指定工作区的文件树结构。
-
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn get_file_tree(workspace_id: String, path: Option<String>, depth: Option<u32>) -> Vec<FileNode>
+async fn get_file_tree(workspace_id: String, path: Option<String>, depth: Option<u32>, state: State<'_, AppState>) -> Result<Vec<FileNode>, CommandError>
 ```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| workspace_id | String | 是 | 工作区ID |
-| path | Option\<String\> | 否 | 相对路径，不填则从根目录开始 |
-| depth | Option\<u32\> | 否 | 目录深度限制，默认3 |
-
-```rust
-struct FileNode {
-    name: String,
-    path: String,                       // 相对路径
-    is_dir: bool,
-    size: Option<u64>,                  // 文件大小（字节）
-    modified: Option<String>,           // 最后修改时间
-    extension: Option<String>,          // 文件扩展名
-    children: Option<Vec<FileNode>>,    // 子节点（仅目录有）
-}
-```
-
-**返回类型：** `Vec<FileNode>`
-
-**前端调用：**
-
-```typescript
-const tree = await invoke<FileNode[]>("get_file_tree", {
-  workspaceId: "ws-001",
-  path: "docs/chapters",
-  depth: 2,
-});
-```
-
----
 
 ### 6.6 search_files
 
-在工作区中搜索文件。
-
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn search_files(workspace_id: String, query: String, options: Option<SearchOptions>) -> Vec<SearchResult>
-```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| workspace_id | String | 是 | 工作区ID |
-| query | String | 是 | 搜索关键词 |
-| options | Option\<SearchOptions\> | 否 | 搜索选项 |
-
-```rust
-struct SearchOptions {
-    extensions: Option<Vec<String>>,    // 限定文件扩展名，如 ["docx", "pdf"]
-    max_results: Option<u32>,           // 最大结果数，默认50
-    include_content: Option<bool>,      // 是否搜索文件内容，默认false
-}
-
-struct SearchResult {
-    path: String,                       // 文件相对路径
-    name: String,
-    extension: String,
-    size: u64,
-    modified: String,
-    match_type: String,                 // "name" | "content"
-    match_preview: Option<String>,      // 匹配内容预览
-    line_number: Option<u32>,           // 内容匹配时的行号
-}
-```
-
-**返回类型：** `Vec<SearchResult>`
-
-**前端调用：**
-
-```typescript
-const results = await invoke<SearchResult[]>("search_files", {
-  workspaceId: "ws-001",
-  query: "合同模板",
-  options: { extensions: ["docx"], maxResults: 20, includeContent: true },
-});
+async fn search_files(workspace_id: String, query: String, options: Option<SearchOptions>, state: State<'_, AppState>) -> Result<Vec<SearchResult>, CommandError>
 ```
 
 ---
 
 ## 7. 文档相关命令
 
-> 源文件：`commands/document.rs`
+> 源文件：`commands/document.rs`（10个命令）
 
 ### 7.1 preview_document
 
-获取文档的预览内容（纯文本/Markdown格式）。
-
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn preview_document(workspace_id: String, path: String) -> Result<PreviewContent, CommandError>
+async fn preview_document(workspace_id: String, path: String, state: State<'_, AppState>) -> Result<PreviewContent, CommandError>
 ```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| workspace_id | String | 是 | 工作区ID |
-| path | String | 是 | 文档相对路径 |
-
-```rust
-struct PreviewContent {
-    path: String,
-    file_type: String,                  // "docx" | "xlsx" | "pptx" | "pdf" | "md"
-    content: String,                    // 预览文本内容
-    page_count: Option<u32>,            // 页数（适用于PDF/DOCX）
-    sheet_names: Option<Vec<String>>,   // 工作表名称（适用于XLSX）
-    metadata: Option<DocumentMetadata>,
-}
-
-struct DocumentMetadata {
-    title: Option<String>,
-    author: Option<String>,
-    created: Option<String>,
-    modified: Option<String>,
-    word_count: Option<u32>,
-}
-```
-
-**返回类型：** `Result<PreviewContent, CommandError>`
-
-**前端调用：**
-
-```typescript
-const preview = await invoke<PreviewContent>("preview_document", {
-  workspaceId: "ws-001",
-  path: "reports/年度报告.docx",
-});
-```
-
----
 
 ### 7.2 get_document_versions
 
-获取文档的版本历史记录。
-
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn get_document_versions(workspace_id: String, path: String) -> Vec<VersionInfo>
+async fn get_document_versions(workspace_id: String, path: String, state: State<'_, AppState>) -> Result<Vec<VersionInfo>, CommandError>
 ```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| workspace_id | String | 是 | 工作区ID |
-| path | String | 是 | 文档相对路径 |
-
-```rust
-struct VersionInfo {
-    version_id: String,
-    path: String,
-    timestamp: String,                  // ISO 8601
-    operation: String,                  // "create" | "modify" | "convert" | "rollback"
-    description: String,                // 操作描述
-    size: u64,                          // 文件大小
-    session_id: Option<String>,         // 关联的会话ID
-}
-```
-
-**返回类型：** `Vec<VersionInfo>`
-
-**前端调用：**
-
-```typescript
-const versions = await invoke<VersionInfo[]>("get_document_versions", {
-  workspaceId: "ws-001",
-  path: "reports/年度报告.docx",
-});
-```
-
----
 
 ### 7.3 rollback_version
 
-将文档回滚到指定的历史版本。
+```rust
+#[tauri::command]
+async fn rollback_version(workspace_id: String, path: String, version_id: String, state: State<'_, AppState>) -> Result<(), CommandError>
+```
 
-**Rust签名：**
+### 7.4 get_version_content
+
+获取历史版本的内容预览。
 
 ```rust
 #[tauri::command]
-async fn rollback_version(workspace_id: String, path: String, version_id: String) -> Result<(), CommandError>
+async fn get_version_content(workspace_id: String, path: String, version_id: String, state: State<'_, AppState>) -> Result<PreviewContent, CommandError>
 ```
 
-**参数：**
+### 7.5 create_file
 
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| workspace_id | String | 是 | 工作区ID |
-| path | String | 是 | 文档相对路径 |
-| version_id | String | 是 | 目标版本ID |
+```rust
+#[tauri::command]
+async fn create_file(workspace_id: String, path: String, state: State<'_, AppState>) -> Result<(), CommandError>
+```
 
-**返回类型：** `Result<(), CommandError>`
+### 7.6 create_directory
 
-回滚成功后，前端将收到 `file:changed` 事件。
+```rust
+#[tauri::command]
+async fn create_directory(workspace_id: String, path: String, state: State<'_, AppState>) -> Result<(), CommandError>
+```
 
-**前端调用：**
+### 7.7 rename_file
 
-```typescript
-await invoke("rollback_version", {
-  workspaceId: "ws-001",
-  path: "reports/年度报告.docx",
-  versionId: "v-003",
-});
+```rust
+#[tauri::command]
+async fn rename_file(workspace_id: String, old_path: String, new_path: String, state: State<'_, AppState>) -> Result<(), CommandError>
+```
+
+### 7.8 delete_file
+
+```rust
+#[tauri::command]
+async fn delete_file(workspace_id: String, path: String, state: State<'_, AppState>) -> Result<(), CommandError>
+```
+
+### 7.9 show_in_file_manager
+
+在系统文件管理器中打开文件所在目录。
+
+```rust
+#[tauri::command]
+async fn show_in_file_manager(workspace_id: String, path: String, state: State<'_, AppState>) -> Result<(), CommandError>
+```
+
+### 7.10 get_pdf_data
+
+获取PDF文件的base64编码数据（用于前端渲染）。
+
+```rust
+#[tauri::command]
+async fn get_pdf_data(workspace_id: String, path: String, state: State<'_, AppState>) -> Result<String, CommandError>
 ```
 
 ---
 
-## 8. Handler相关命令
+## 8. Handler/Tool相关命令
 
-> 源文件：`commands/handler.rs`
+> 源文件：`commands/handler.rs`（2个命令）
 
 ### 8.1 list_handlers
 
-列出所有可用的Handler（内置）。
-
-**Rust签名：**
+列出所有已注册的Handler（5个文档类型内置Handler）。
 
 ```rust
 #[tauri::command]
-async fn list_handlers() -> Vec<HandlerInfo>
+async fn list_handlers(state: State<'_, AppState>) -> Result<Vec<HandlerInfo>, CommandError>
 ```
 
-**参数：** 无
+### 8.2 list_tools
 
-**返回类型：**
+列出所有已注册的Tool（8个文件系统内置Tool）。
 
 ```rust
-struct HandlerInfo {
-    id: String,
-    name: String,
-    description: String,
-    category: String,                   // "document" | "data" | "format" | "custom"
-    is_builtin: bool,                   // 是否为内置Handler
-    is_enabled: bool,                   // 是否已启用
-    version: String,
-    params_schema: Option<serde_json::Value>,  // 参数JSON Schema
-    supported_types: Vec<String>,       // 支持的文档类型
-}
-```
-
-**前端调用：**
-
-```typescript
-const handlers = await invoke<HandlerInfo[]>("list_handlers");
+#[tauri::command]
+async fn list_tools(state: State<'_, AppState>) -> Result<Vec<ToolInfo>, CommandError>
 ```
 
 ---
 
 ## 9. 设置相关命令
 
-> 源文件：`commands/settings.rs`
+> 源文件：`commands/settings.rs`（2个命令）
 
 ### 9.1 get_settings
 
-获取应用的全局设置。
-
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn get_settings() -> AppSettings
+async fn get_settings(state: State<'_, AppState>) -> Result<AppSettings, CommandError>
 ```
 
-**参数：** 无
-
-**返回类型：**
+返回的 AppSettings 结构：
 
 ```rust
 struct AppSettings {
-    general: GeneralSettings,
-    agent: AgentSettings,
-    appearance: AppearanceSettings,
-    advanced: AdvancedSettings,
-}
-
-struct GeneralSettings {
-    language: String,                   // "zh-CN" | "en-US"
-    auto_update: bool,                  // 是否自动检查更新
-    startup_on_boot: bool,              // 是否开机自启
-}
-
-struct AgentSettings {
-    default_provider_id: Option<String>,
-    max_iterations: u32,                // 默认最大迭代次数
-    auto_confirm: bool,                 // 默认自动确认
-    confirm_dangerous_ops: bool,        // 危险操作始终需确认
-    timeout_seconds: u32,               // 单次执行超时时间
-}
-
-struct AppearanceSettings {
-    theme: String,                      // "light" | "dark" | "system"
-    font_size: u32,                     // 编辑器字号
-    sidebar_width: u32,                 // 侧边栏宽度
-}
-
-struct AdvancedSettings {
-    max_concurrent_agents: u32,         // 最大并发Agent数
-    log_level: String,                  // "trace" | "debug" | "info" | "warn" | "error"
-    data_dir: String,                   // 数据存储目录
-    cache_size_mb: u32,                 // 缓存大小上限
+    general: GeneralSettings,           // author_name, author_email, author_company, confirmation_level
+    appearance: AppearanceSettings,     // theme_mode, language, language_follow_system
+    version_snapshot: VersionSnapshot,   // retention_policy, max_count, max_days
+    workspace: WorkspaceDefaults,       // default_workspace_id
+    shortcuts: Shortcuts,               // new_session, close_session, send_message, toggle_sidebar, quick_prompt
+    update: UpdateSettings,             // auto_check
 }
 ```
-
-**返回类型：** `AppSettings`
-
-**前端调用：**
-
-```typescript
-const settings = await invoke<AppSettings>("get_settings");
-```
-
----
 
 ### 9.2 update_settings
 
-更新应用设置（部分更新，仅更新传入的字段）。
-
-**Rust签名：**
-
 ```rust
 #[tauri::command]
-async fn update_settings(settings: PartialAppSettings) -> Result<(), CommandError>
+async fn update_settings(settings: Value, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
 
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| settings | PartialAppSettings | 是 | 要更新的设置字段（部分更新） |
-
-`PartialAppSettings` 与 `AppSettings` 结构相同，但所有字段均为 `Option` 类型，仅传入需要更新的字段。
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
+settings 为 Partial JSON，仅传入需要更新的字段。
 
 ```typescript
 await invoke("update_settings", {
-  settings: {
-    general: { language: "en-US" },
-    appearance: { theme: "dark" },
-  },
+  settings: { general: { authorName: "新名字" } },
 });
 ```
 
@@ -1139,701 +563,340 @@ await invoke("update_settings", {
 
 ## 10. 模板相关命令
 
-> 源文件：`commands/template.rs`
+> 源文件：`commands/template.rs`（5个命令）
 
 ### 10.1 list_templates
 
-列出所有可用的文档模板。
+```rust
+#[tauri::command]
+async fn list_templates(state: State<'_, AppState>) -> Result<Vec<PromptTemplate>, CommandError>
+```
 
-**Rust签名：**
+### 10.2 get_template
 
 ```rust
 #[tauri::command]
-async fn list_templates(category: Option<String>) -> Vec<TemplateInfo>
+async fn get_template(template_id: String, state: State<'_, AppState>) -> Result<PromptTemplate, CommandError>
 ```
 
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| category | Option\<String\> | 否 | 按分类筛选，如 "report"、"contract" |
-
-```rust
-struct TemplateInfo {
-    id: String,
-    name: String,
-    description: String,
-    category: String,
-    file_type: String,                  // "docx" | "xlsx" | "pptx" | "md"
-    is_builtin: bool,
-    is_custom: bool,
-    preview_path: Option<String>,       // 预览图路径
-    created_at: String,
-    updated_at: String,
-}
-```
-
-**返回类型：** `Vec<TemplateInfo>`
-
-**前端调用：**
-
-```typescript
-const templates = await invoke<TemplateInfo[]>("list_templates", {
-  category: "report",
-});
-```
-
----
-
-### 10.2 add_template
-
-添加自定义模板。
-
-**Rust签名：**
+### 10.3 create_template
 
 ```rust
 #[tauri::command]
-async fn add_template(config: TemplateConfig) -> Result<(), CommandError>
+async fn create_template(params: CreateTemplateParams, state: State<'_, AppState>) -> Result<PromptTemplate, CommandError>
 ```
 
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| config | TemplateConfig | 是 | 模板配置 |
-
-```rust
-struct TemplateConfig {
-    name: String,
-    description: String,
-    category: String,
-    file_type: String,
-    source_path: String,                // 模板源文件路径
-}
-```
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
-
-```typescript
-await invoke("add_template", {
-  config: {
-    name: "季度报告模板",
-    description: "适用于季度业务报告",
-    category: "report",
-    fileType: "docx",
-    sourcePath: "D:\\Templates\\quarterly.docx",
-  },
-});
-```
-
----
-
-### 10.3 update_template
-
-更新自定义模板信息。
-
-**Rust签名：**
+### 10.4 update_template
 
 ```rust
 #[tauri::command]
-async fn update_template(template_id: String, config: TemplateConfig) -> Result<(), CommandError>
+async fn update_template(template_id: String, params: UpdateTemplateParams, state: State<'_, AppState>) -> Result<PromptTemplate, CommandError>
 ```
 
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| template_id | String | 是 | 模板ID |
-| config | TemplateConfig | 是 | 新的模板配置 |
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
-
-```typescript
-await invoke("update_template", {
-  templateId: "tpl-001",
-  config: { /* ... */ },
-});
-```
-
----
-
-### 10.4 delete_template
-
-删除自定义模板（内置模板不可删除）。
-
-**Rust签名：**
+### 10.5 delete_template
 
 ```rust
 #[tauri::command]
-async fn delete_template(template_id: String) -> Result<(), CommandError>
-```
-
-**参数：**
-
-| 参数名 | 类型 | 必填 | 说明 |
-|--------|------|------|------|
-| template_id | String | 是 | 要删除的模板ID |
-
-**返回类型：** `Result<(), CommandError>`
-
-**前端调用：**
-
-```typescript
-await invoke("delete_template", { templateId: "tpl-001" });
+async fn delete_template(template_id: String, state: State<'_, AppState>) -> Result<(), CommandError>
 ```
 
 ---
 
-## 11. Tauri事件定义
+## 11. 日志相关命令
 
-所有事件均为 Rust 后端向前端推送，前端通过 `listen` 监听。
+> 源文件：`commands/log.rs`（2个命令）
 
-### 11.1 Agent事件
-
-| 事件名 | 说明 | Payload类型 | 触发时机 |
-|--------|------|-------------|----------|
-| `agent:thinking` | Agent思考中 | `ThinkingPayload` | Agent开始处理新步骤 |
-| `agent:content` | Agent输出文本内容 | `ContentPayload` | Agent生成文本回复 |
-| `agent:tool_call` | Agent调用工具 | `ToolCallPayload` | Agent发起工具调用 |
-| `agent:tool_result` | 工具执行结果 | `ToolResultPayload` | 工具执行完成 |
-| `agent:confirm` | 需要用户确认 | `ConfirmPayload` | Agent操作需确认 |
-| `agent:todo_update` | 任务进度更新 | `TodoUpdatePayload` | Agent更新任务列表 |
-| `agent:done` | 执行完成 | `DonePayload` | Agent任务完成 |
-| `agent:error` | 执行出错 | `ErrorPayload` | Agent执行遇到错误 |
-| `agent:stopped` | 被用户中断 | `StoppedPayload` | Agent被stop_agent中断 |
-
-**Payload定义：**
+### 11.1 get_log_path
 
 ```rust
-struct ThinkingPayload {
-    session_id: String,
-    step: u32,
-    thought: String,
-}
-
-struct ContentPayload {
-    session_id: String,
-    message_id: String,
-    content: String,
-    is_streaming: bool,                 // 是否为流式输出（后续还有内容）
-}
-
-struct ToolCallPayload {
-    session_id: String,
-    call_id: String,
-    tool_name: String,
-    arguments: serde_json::Value,
-}
-
-struct ToolResultPayload {
-    session_id: String,
-    call_id: String,
-    success: bool,
-    result: serde_json::Value,
-    error: Option<String>,
-    duration_ms: u64,
-}
-
-struct ConfirmPayload {
-    session_id: String,
-    operation_id: String,
-    operation_type: String,             // "file_write" | "file_delete" | "command" | "api_call"
-    description: String,
-    details: serde_json::Value,         // 操作详细信息
-    risk_level: String,                 // "low" | "medium" | "high"
-}
-
-struct TodoUpdatePayload {
-    session_id: String,
-    todos: Vec<TodoItem>,
-}
-
-struct TodoItem {
-    id: String,
-    content: String,
-    status: String,                     // "pending" | "in_progress" | "completed" | "failed"
-}
-
-struct DonePayload {
-    session_id: String,
-    summary: String,
-    total_steps: u32,
-    total_tokens: u64,
-    duration_ms: u64,
-}
-
-struct ErrorPayload {
-    session_id: String,
-    code: u32,
-    message: String,
-    recoverable: bool,
-}
-
-struct StoppedPayload {
-    session_id: String,
-    completed_steps: u32,
-    reason: String,                     // "user_requested" | "timeout"
-}
+#[tauri::command]
+async fn get_log_path(app_handle: AppHandle) -> Result<LogPathInfo, CommandError>
 ```
 
-**前端监听示例：**
-
-```typescript
-import { listen } from "@tauri-apps/api/event";
-
-// 监听Agent内容输出
-const unlisten = await listen<ContentPayload>("agent:content", (event) => {
-  const { session_id, content, is_streaming } = event.payload;
-  appendToChat(session_id, content, is_streaming);
-});
-
-// 监听Agent确认请求
-await listen<ConfirmPayload>("agent:confirm", (event) => {
-  const { operation_id, description, risk_level } = event.payload;
-  showConfirmDialog(operation_id, description, risk_level);
-});
-```
-
----
-
-### 11.2 系统事件
-
-| 事件名 | 说明 | Payload类型 | 触发时机 |
-|--------|------|-------------|----------|
-| `session:updated` | 会话信息更新 | `SessionUpdatePayload` | 会话属性变更 |
-| `workspace:changed` | 工作区切换 | `WorkspaceChangePayload` | 活动工作区变更 |
-| `file:changed` | 文件变更 | `FileChangePayload` | 工作区文件增删改 |
-
-**Payload定义：**
+### 11.2 get_error_log
 
 ```rust
-struct SessionUpdatePayload {
-    session_id: String,
-    change_type: String,                // "created" | "updated" | "deleted" | "title_changed"
-    data: Option<serde_json::Value>,
-}
-
-struct WorkspaceChangePayload {
-    workspace_id: String,
-    workspace_name: String,
-    workspace_path: String,
-}
-
-struct FileChangePayload {
-    workspace_id: String,
-    change_type: String,                // "created" | "modified" | "deleted" | "renamed"
-    path: String,
-    old_path: Option<String>,           // 重命名时的原路径
-}
+#[tauri::command]
+async fn get_error_log(app_handle: AppHandle) -> Result<String, CommandError>
 ```
 
 ---
 
-## 12. Python Sidecar通信协议
+## 12. 更新相关命令
 
-Python Sidecar 通过 stdin/stdout 与 Rust 后端通信，使用 JSON 格式进行数据交换。
+> 源文件：`commands/update.rs`（2个命令，仅desktop平台）
 
-### 12.1 通信架构
+### 12.1 check_update
+
+```rust
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<UpdateInfo>, CommandError>
+```
+
+### 12.2 download_and_install_update
+
+```rust
+#[tauri::command]
+async fn download_and_install_update(app: AppHandle, on_event: Channel<DownloadEvent>) -> Result<(), CommandError>
+```
+
+---
+
+## 13. Tauri事件定义
+
+### 13.1 Agent事件
+
+| 事件名 | 说明 | Payload | 触发时机 |
+|--------|------|---------|----------|
+| `agent:thinking` | 普通思考链 | `ThinkingPayload` | Agent思考过程 |
+| `agent:deep_thinking` | 深度思考链 | `DeepThinkingPayload` | Extended Thinking输出 |
+| `agent:content` | 回复内容 | `ContentPayload` | 流式输出文本 |
+| `agent:tool_call` | Tool调用 | `ToolCallPayload` | 发起工具调用 |
+| `agent:tool_result` | Tool结果 | `ToolResultPayload` | 工具执行完成 |
+| `agent:confirm` | 需确认 | `ConfirmPayload` | 高风险操作需确认 |
+| `agent:todo_update` | Todo更新 | `TodoUpdatePayload` | 任务进度更新 |
+| `agent:context_update` | Token用量 | `ContextUsagePayload` | Token用量变化 |
+| `agent:code_streaming` | 代码流 | `CodeStreamingPayload` | Code Interpreter代码 |
+| `agent:network_retry` | 网络重试 | `NetworkRetryPayload` | LLM请求重试 |
+| `agent:done` | 完成 | `DonePayload` | Agent任务完成 |
+| `agent:error` | 错误 | `ErrorPayload` | 执行出错 |
+| `agent:stopped` | 中断 | `StoppedPayload` | 被用户中断 |
+
+### 13.2 系统事件
+
+| 事件名 | 说明 | Payload |
+|--------|------|---------|
+| `session:updated` | 会话变更 | `SessionUpdatePayload` |
+| `workspace:change` | 工作区切换 | `WorkspaceChangePayload` |
+| `workspace:directory_deleted` | 工作区目录被外部删除 | `WorkspaceDirectoryDeletedPayload` |
+| `file:change` | 文件变更 | `FileChangePayload` |
+| `llm:provider_switch` | Provider自动切换 | `ProviderSwitchPayload` |
+| `system:network_change` | 网络状态变化 | `NetworkChangePayload` |
+
+### 13.3 核心Payload结构
+
+```rust
+struct DeepThinkingPayload { session_id, step, thought, is_streaming, iteration? }
+struct ContentPayload { session_id, message_id, content, is_streaming, iteration? }
+struct ToolCallPayload { session_id, call_id, tool_name, arguments, iteration? }
+struct ToolResultPayload { session_id, call_id, success, result, error?, duration_ms }
+struct ConfirmPayload { session_id, operation_id, operation_type, description, details, risk_level }
+struct CodeStreamingPayload { session_id, call_id, code_delta, is_final }
+struct NetworkRetryPayload { session_id, attempt, max_attempts, reason }
+struct ContextUsagePayload { session_id, context_usage: ContextUsageInfo }
+struct ErrorPayload { session_id, code, message, recoverable }
+struct StoppedPayload { session_id, completed_steps, reason }
+struct FileChangePayload { workspace_id, change_type, path, old_path? }
+struct ProviderSwitchPayload { from_provider_id, to_provider_id, reason, is_automatic }
+struct NetworkChangePayload { status, previous_status }
+```
+
+---
+
+## 14. Python Sidecar通信协议
+
+### 14.1 通信架构
 
 ```
 Rust后端 ──JSON──> stdin  ┌──────────────┐  stdout ──JSON──> Rust后端
-                          │ Python       │
-                          │ Sidecar      │
-                          │ (文档处理)    │
-                          └──────────────┘
+                         │ Python        │
+                         │ Sidecar       │
+                         └──────────────┘
 ```
 
-- 通信方式：JSON over stdin/stdout
-- 编码：UTF-8
-- 消息分隔：每条消息以换行符 `\n` 结尾
-- 并发处理：每条请求携带唯一 `id`，响应通过 `id` 匹配
+- 消息分隔：每条 JSON 以换行符 `\n` 结尾
+- 超时：120秒（代码执行）/ 60秒（文档操作）
 
-### 12.2 请求格式
+### 14.2 请求格式
 
 ```json
 {
   "id": "uuid-string",
-  "action": "generate|modify|convert|read",
-  "type": "docx|xlsx|pptx|pdf|md",
-  "params": {
-    // 动作相关参数
-  }
+  "action": "read|convert|analyze|execute|ping|validate",
+  "type": "docx|xlsx|pptx|pdf|md|code|txt",
+  "params": { "input_path": "...", ... }
 }
 ```
 
-**字段说明：**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| id | String | 是 | 请求唯一标识，用于匹配响应 |
-| action | String | 是 | 操作类型 |
-| type | String | 是 | 文档类型 |
-| params | Object | 是 | 操作参数，具体结构取决于action和type |
-
-### 12.3 响应格式
+### 14.3 响应格式
 
 ```json
 {
   "id": "uuid-string",
   "success": true,
-  "data": {
-    // 结果数据
-  },
+  "data": { ... },
   "error": null
 }
 ```
 
-**字段说明：**
+### 14.4 Action详细定义
 
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| id | String | 是 | 对应请求的唯一标识 |
-| success | bool | 是 | 操作是否成功 |
-| data | Object | 否 | 成功时的结果数据 |
-| error | String | 否 | 失败时的错误信息 |
+| Action | 说明 | 适用类型 |
+|--------|------|----------|
+| `read` | 读取文档内容（文本+元数据） | docx/xlsx/pptx/pdf/md |
+| `convert` | 格式转换 | docx/pdf/md（如 docx→pdf） |
+| `analyze` | 文档分析（统计+结构） | docx/xlsx/pptx/pdf/md |
+| `execute` | 执行Python代码（Code Interpreter） | code |
+| `ping` | 健康检查 | 通用 |
+| `validate` | 文档校验 | docx/xlsx/pptx/pdf |
 
-### 12.4 Action详细定义
+### 14.5 支持的文档类型与操作矩阵
 
-#### generate - 生成文档
-
-根据模板和参数生成新文档。
-
-```json
-// 请求
-{
-  "id": "req-001",
-  "action": "generate",
-  "type": "docx",
-  "params": {
-    "template_path": "/templates/report.docx",
-    "output_path": "/output/生成报告.docx",
-    "variables": {
-      "title": "2025年度报告",
-      "author": "DocAgent",
-      "date": "2025-05-14"
-    },
-    "content": "可选的正文内容（Markdown格式）"
-  }
-}
-
-// 响应
-{
-  "id": "req-001",
-  "success": true,
-  "data": {
-    "output_path": "/output/生成报告.docx",
-    "file_size": 102400,
-    "page_count": 5
-  },
-  "error": null
-}
-```
-
-#### modify - 修改文档
-
-对现有文档进行修改。
-
-```json
-// 请求
-{
-  "id": "req-002",
-  "action": "modify",
-  "type": "docx",
-  "params": {
-    "input_path": "/docs/合同.docx",
-    "output_path": "/docs/合同_修改版.docx",
-    "operations": [
-      {
-        "type": "replace_text",
-        "target": "旧公司名称",
-        "replacement": "新公司名称"
-      },
-      {
-        "type": "insert_paragraph",
-        "position": 3,
-        "text": "新增条款内容",
-        "style": "normal"
-      },
-      {
-        "type": "delete_section",
-        "section_index": 2
-      }
-    ]
-  }
-}
-
-// 响应
-{
-  "id": "req-002",
-  "success": true,
-  "data": {
-    "output_path": "/docs/合同_修改版.docx",
-    "operations_applied": 3,
-    "file_size": 98304
-  },
-  "error": null
-}
-```
-
-#### convert - 格式转换
-
-在不同文档格式之间转换。
-
-```json
-// 请求
-{
-  "id": "req-003",
-  "action": "convert",
-  "type": "pdf",
-  "params": {
-    "input_path": "/docs/报告.docx",
-    "output_path": "/docs/报告.pdf",
-    "source_type": "docx",
-    "options": {
-      "quality": "high",
-      "preserve_layout": true,
-      "embed_fonts": true
-    }
-  }
-}
-
-// 响应
-{
-  "id": "req-003",
-  "success": true,
-  "data": {
-    "output_path": "/docs/报告.pdf",
-    "source_type": "docx",
-    "target_type": "pdf",
-    "page_count": 5,
-    "file_size": 204800
-  },
-  "error": null
-}
-```
-
-#### read - 读取文档
-
-提取文档内容。
-
-```json
-// 请求
-{
-  "id": "req-004",
-  "action": "read",
-  "type": "xlsx",
-  "params": {
-    "input_path": "/data/销售数据.xlsx",
-    "options": {
-      "sheet_name": "Sheet1",
-      "range": "A1:Z100",
-      "include_formatting": false,
-      "include_formulas": true
-    }
-  }
-}
-
-// 响应
-{
-  "id": "req-004",
-  "success": true,
-  "data": {
-    "sheet_name": "Sheet1",
-    "rows": 100,
-    "columns": 26,
-    "content": [
-      ["姓名", "部门", "销售额"],
-      ["张三", "技术部", "50000"]
-    ],
-    "metadata": {
-      "author": "admin",
-      "created": "2025-01-15T10:30:00Z"
-    }
-  },
-  "error": null
-}
-```
-
-### 12.5 错误响应示例
-
-```json
-{
-  "id": "req-005",
-  "success": false,
-  "data": null,
-  "error": "文件不存在: /docs/不存在的文件.docx"
-}
-```
-
-### 12.6 支持的文档类型与操作矩阵
-
-| 类型 | generate | modify | convert | read |
-|------|----------|--------|---------|------|
-| docx | 支持 | 支持 | 支持 | 支持 |
-| xlsx | 支持 | 支持 | 支持 | 支持 |
-| pptx | 支持 | 支持 | 支持 | 支持 |
-| pdf | 不支持 | 不支持 | 支持（仅输出） | 支持 |
-| md | 支持 | 支持 | 支持 | 支持 |
+| 类型 | read | convert | analyze | execute |
+|------|------|---------|---------|---------|
+| docx | 支持 | 支持 | 支持 | - |
+| xlsx | 支持 | 支持 | 支持 | - |
+| pptx | 支持 | 支持 | 支持 | - |
+| pdf | 支持 | 支持 | 支持 | - |
+| md/txt | 支持 | 支持 | 支持 | - |
+| code | - | - | - | 支持 |
 
 ---
 
-## 13. 错误码定义
+## 15. 错误码定义
 
-### 13.1 错误码结构
+### 15.1 错误码结构
 
-错误码为4位数字，格式为 `Exxxx`，其中 `E` 为固定前缀，`xxxx` 为4位数字编号。
+4位数字，按模块分段：
 
-### 13.2 错误码范围
-
-| 范围 | 模块 | 说明 |
+| 范围 | 模块 | 数量 |
 |------|------|------|
-| 1000-1999 | LLM | LLM相关错误 |
-| 2000-2999 | Agent | Agent相关错误 |
-| 3000-3999 | Document | 文档处理错误 |
-| 4000-4999 | Database | 数据库错误 |
-| 5000-5999 | Config | 配置错误 |
-| 6000-6999 | FileSystem | 文件系统错误 |
+| 1000-1999 | LLM | 14个 |
+| 2000-2999 | Agent | 8个 |
+| 3000-3999 | 文档处理 | 12个 |
+| 4000-4999 | 数据库 | 7个 |
+| 5000-5999 | 配置 | 8个 |
+| 6000-6999 | 文件系统 | 8个 |
+| 7000-7999 | 运行时 | 1个 |
+| 8000-8999 | 更新 | 5个 |
+| 9000-9999 | Tool | 4个 |
 
-### 13.3 LLM相关错误 (1xxx)
+### 15.2 LLM错误 (1xxx)
 
-| 错误码 | 常量名 | 说明 | 处理建议 |
-|--------|--------|------|----------|
-| 1001 | LLM_CONNECTION_FAILED | 连接LLM服务失败 | 检查网络连接和API地址 |
-| 1002 | LLM_AUTH_FAILED | API密钥认证失败 | 检查API密钥是否正确 |
-| 1003 | LLM_RATE_LIMITED | 请求频率超限 | 等待后重试或升级套餐 |
-| 1004 | LLM_QUOTA_EXCEEDED | 配额已用尽 | 检查账户余额或更换Provider |
-| 1005 | LLM_MODEL_NOT_FOUND | 指定的模型不存在 | 检查模型名称是否正确 |
-| 1006 | LLM_TIMEOUT | 请求超时 | 增加超时时间或重试 |
-| 1007 | LLM_INVALID_REQUEST | 请求参数无效 | 检查请求参数格式 |
-| 1008 | LLM_STREAM_ERROR | 流式响应中断 | 重试请求 |
-| 1009 | LLM_PROVIDER_UNAVAILABLE | Provider服务不可用 | 切换到其他Provider |
-| 1010 | LLM_RESPONSE_PARSE_ERROR | 响应解析失败 | 检查模型兼容性 |
+| 码 | 常量名 | 说明 |
+|----|--------|------|
+| 1001 | LLM_CONNECTION_FAILED | 连接LLM服务失败 |
+| 1002 | LLM_AUTH_FAILED | API密钥认证失败 |
+| 1003 | LLM_RATE_LIMITED | 请求频率超限 |
+| 1004 | LLM_QUOTA_EXCEEDED | 配额已用尽 |
+| 1005 | LLM_MODEL_NOT_FOUND | 指定模型不存在 |
+| 1006 | LLM_TIMEOUT | 请求超时 |
+| 1007 | LLM_INVALID_REQUEST | 请求参数无效 |
+| 1008 | LLM_STREAM_ERROR | 流式响应中断 |
+| 1009 | LLM_PROVIDER_UNAVAILABLE | Provider不可用 |
+| 1010 | LLM_RESPONSE_PARSE_ERROR | 响应解析失败 |
+| 1011 | LLM_DNS_RESOLVE_FAILED | DNS解析失败 |
+| 1012 | LLM_CONNECTION_REFUSED | 连接被拒绝 |
+| 1013 | LLM_SSL_ERROR | SSL/TLS握手失败 |
+| 1014 | LLM_NETWORK_UNREACHABLE | 网络不可达 |
 
-### 13.4 Agent相关错误 (2xxx)
+### 15.3 Agent错误 (2xxx)
 
-| 错误码 | 常量名 | 说明 | 处理建议 |
-|--------|--------|------|----------|
-| 2001 | AGENT_ALREADY_RUNNING | Agent已在运行中 | 等待当前任务完成或中断 |
-| 2002 | AGENT_NOT_RUNNING | Agent未在运行 | 无需处理 |
-| 2003 | AGENT_MAX_ITERATIONS | 达到最大迭代次数 | 增加迭代上限或简化任务 |
-| 2004 | AGENT_CONFIRMATION_TIMEOUT | 确认操作超时 | 及时响应确认请求 |
-| 2005 | AGENT_OPERATION_REJECTED | 操作被用户拒绝 | 修改任务描述后重试 |
-| 2006 | AGENT_HANDLER_NOT_FOUND | 指定的Handler不存在 | 检查Handler ID |
-| 2007 | AGENT_HANDLER_DISABLED | Handler已被禁用 | 启用对应Handler |
-| 2008 | AGENT_EXECUTION_ERROR | Agent执行内部错误 | 查看日志获取详细信息 |
-| 2010 | AGENT_SESSION_NOT_FOUND | 关联的会话不存在 | 检查会话ID |
+| 码 | 常量名 | 说明 |
+|----|--------|------|
+| 2001 | AGENT_ALREADY_RUNNING | Agent已在运行 |
+| 2002 | AGENT_NOT_RUNNING | Agent未在运行 |
+| 2003 | AGENT_MAX_ITERATIONS | 达到最大迭代次数 |
+| 2004 | AGENT_CONFIRMATION_TIMEOUT | 确认操作超时 |
+| 2005 | AGENT_OPERATION_REJECTED | 操作被用户拒绝 |
+| 2006 | AGENT_HANDLER_NOT_FOUND | Handler不存在 |
+| 2008 | AGENT_EXECUTION_ERROR | Agent执行内部错误 |
+| 2010 | AGENT_SESSION_NOT_FOUND | 会话不存在 |
 
-### 13.5 文档处理错误 (3xxx)
+### 15.4 文档处理错误 (3xxx)
 
-| 错误码 | 常量名 | 说明 | 处理建议 |
-|--------|--------|------|----------|
-| 3001 | DOC_FILE_NOT_FOUND | 文档文件不存在 | 检查文件路径 |
-| 3002 | DOC_FORMAT_UNSUPPORTED | 不支持的文档格式 | 检查文件扩展名 |
-| 3003 | DOC_PARSE_ERROR | 文档解析失败 | 文件可能已损坏 |
-| 3004 | DOC_WRITE_ERROR | 文档写入失败 | 检查输出路径权限 |
-| 3005 | DOC_CONVERT_ERROR | 格式转换失败 | 检查源文件和目标格式兼容性 |
-| 3006 | DOC_TEMPLATE_NOT_FOUND | 模板文件不存在 | 检查模板路径 |
-| 3007 | DOC_TEMPLATE_ERROR | 模板渲染失败 | 检查模板变量是否完整 |
-| 3008 | DOC_VERSION_NOT_FOUND | 版本记录不存在 | 检查版本ID |
-| 3009 | DOC_ROLLBACK_FAILED | 版本回滚失败 | 检查版本文件完整性 |
-| 3010 | DOC_SIDECAR_ERROR | Python Sidecar通信错误 | 检查Sidecar进程状态 |
-| 3011 | DOC_PERMISSION_DENIED | 文档访问权限不足 | 检查文件读写权限 |
-| 3012 | DOC_FILE_TOO_LARGE | 文件过大 | 压缩文件或拆分处理 |
+| 码 | 常量名 | 说明 |
+|----|--------|------|
+| 3001 | DOC_FILE_NOT_FOUND | 文件不存在 |
+| 3002 | DOC_FORMAT_UNSUPPORTED | 不支持的格式 |
+| 3003 | DOC_PARSE_ERROR | 解析失败 |
+| 3004 | DOC_WRITE_ERROR | 写入失败 |
+| 3005 | DOC_CONVERT_ERROR | 转换失败 |
+| 3006 | DOC_TEMPLATE_NOT_FOUND | 模板不存在 |
+| 3007 | DOC_TEMPLATE_ERROR | 模板渲染失败 |
+| 3008 | DOC_VERSION_NOT_FOUND | 版本记录不存在 |
+| 3009 | DOC_ROLLBACK_FAILED | 回滚失败 |
+| 3010 | DOC_SIDECAR_ERROR | Sidecar通信错误 |
+| 3011 | DOC_PERMISSION_DENIED | 权限不足 |
+| 3012 | DOC_FILE_TOO_LARGE | 文件过大 |
 
-### 13.6 数据库错误 (4xxx)
+### 15.5 数据库错误 (4xxx)
 
-| 错误码 | 常量名 | 说明 | 处理建议 |
-|--------|--------|------|----------|
-| 4001 | DB_CONNECTION_FAILED | 数据库连接失败 | 检查数据库文件权限 |
-| 4002 | DB_QUERY_FAILED | 查询执行失败 | 查看日志获取SQL详情 |
-| 4003 | DB_RECORD_NOT_FOUND | 记录不存在 | 检查查询条件 |
-| 4004 | DB_RECORD_EXISTS | 记录已存在 | 使用更新操作替代 |
-| 4005 | DB_CONSTRAINT_VIOLATION | 约束冲突 | 检查数据完整性 |
-| 4006 | DB_MIGRATION_FAILED | 数据库迁移失败 | 检查迁移脚本 |
-| 4007 | DB_CORRUPTED | 数据库损坏 | 从备份恢复 |
+| 码 | 常量名 | 说明 |
+|----|--------|------|
+| 4001 | DB_CONNECTION_FAILED | 连接失败 |
+| 4002 | DB_QUERY_FAILED | 查询失败 |
+| 4003 | DB_RECORD_NOT_FOUND | 记录不存在 |
+| 4004 | DB_RECORD_EXISTS | 记录已存在 |
+| 4005 | DB_CONSTRAINT_VIOLATION | 约束冲突 |
+| 4006 | DB_MIGRATION_FAILED | 迁移失败 |
+| 4007 | DB_CORRUPTED | 数据库损坏 |
 
-### 13.7 配置错误 (5xxx)
+### 15.6 配置错误 (5xxx)
 
-| 错误码 | 常量名 | 说明 | 处理建议 |
-|--------|--------|------|----------|
-| 5001 | CONFIG_INVALID_FORMAT | 配置格式无效 | 检查JSON格式 |
-| 5002 | CONFIG_MISSING_FIELD | 缺少必填配置项 | 补充缺失配置 |
-| 5003 | CONFIG_INVALID_VALUE | 配置值无效 | 检查配置值范围 |
-| 5004 | CONFIG_IMPORT_FAILED | 配置导入失败 | 检查导入文件格式 |
-| 5005 | CONFIG_EXPORT_FAILED | 配置导出失败 | 检查磁盘空间 |
-| 5006 | CONFIG_PROVIDER_NOT_FOUND | Provider配置不存在 | 先添加Provider |
-| 5007 | CONFIG_DEFAULT_PROVIDER_REQUIRED | 需要设置默认Provider | 设置默认Provider |
+| 码 | 常量名 | 说明 |
+|----|--------|------|
+| 5001 | CONFIG_INVALID_FORMAT | 配置格式无效 |
+| 5002 | CONFIG_MISSING_FIELD | 缺少必填配置项 |
+| 5003 | CONFIG_INVALID_VALUE | 配置值无效 |
+| 5004 | CONFIG_IMPORT_FAILED | 导入失败 |
+| 5005 | CONFIG_EXPORT_FAILED | 导出失败 |
+| 5006 | CONFIG_PROVIDER_NOT_FOUND | Provider不存在 |
+| 5007 | CONFIG_DEFAULT_PROVIDER_REQUIRED | 需要设置默认Provider |
+| 5008 | CONFIG_WORKSPACE_PATH_EXISTS | 工作区路径已存在 |
 
-### 13.8 文件系统错误 (6xxx)
+### 15.7 文件系统错误 (6xxx)
 
-| 错误码 | 常量名 | 说明 | 处理建议 |
-|--------|--------|------|----------|
-| 6001 | FS_PATH_NOT_FOUND | 路径不存在 | 检查路径是否正确 |
-| 6002 | FS_PERMISSION_DENIED | 权限不足 | 以管理员身份运行或修改权限 |
-| 6003 | FS_ALREADY_EXISTS | 文件/目录已存在 | 更换名称或删除已有项 |
-| 6004 | FS_NOT_A_DIRECTORY | 路径不是目录 | 检查路径类型 |
-| 6005 | FS_DISK_FULL | 磁盘空间不足 | 清理磁盘空间 |
-| 6006 | FS_IO_ERROR | IO读写错误 | 检查磁盘健康状态 |
-| 6007 | FS_WATCH_ERROR | 文件监听失败 | 检查系统inotify/FSEvents限制 |
-| 6008 | FS_ENCODING_ERROR | 文件编码错误 | 检查文件编码格式 |
+| 码 | 常量名 | 说明 |
+|----|--------|------|
+| 6001 | FS_PATH_NOT_FOUND | 路径不存在 |
+| 6002 | FS_PERMISSION_DENIED | 权限不足 |
+| 6003 | FS_ALREADY_EXISTS | 文件/目录已存在 |
+| 6004 | FS_NOT_A_DIRECTORY | 路径不是目录 |
+| 6005 | FS_DISK_FULL | 磁盘空间不足 |
+| 6006 | FS_IO_ERROR | IO读写错误 |
+| 6007 | FS_WATCH_ERROR | 文件监听失败 |
+| 6008 | FS_ENCODING_ERROR | 文件编码错误 |
 
----
+### 15.8 运行时错误 (7xxx)
 
-## 附录A：类型索引
+| 码 | 常量名 | 说明 |
+|----|--------|------|
+| 7001 | RUNTIME_EVENT_EMIT_ERROR | 事件发射错误 |
 
-以下为本文档中所有自定义类型的快速索引：
+### 15.9 更新错误 (8xxx)
 
-| 类型名 | 所属模块 | 首次出现位置 |
-|--------|----------|-------------|
-| ConnectionResult | LLM | 3.1 |
-| ModelInfo | LLM | 3.1 |
-| ProviderInfo | LLM | 3.2 |
-| ProviderConfig | LLM | 3.3 |
-| AgentOptions | Agent | 4.1 |
-| Session | Session | 5.1 |
-| CreateSessionParams | Session | 5.1 |
-| SessionFilter | Session | 5.2 |
-| SessionSummary | Session | 5.2 |
-| SessionDetail | Session | 5.3 |
-| Message | Session | 5.3 |
-| ToolCall | Session | 5.3 |
-| WorkspaceInfo | Workspace | 6.1 |
-| FileNode | Workspace | 6.5 |
-| SearchOptions | Workspace | 6.6 |
-| SearchResult | Workspace | 6.6 |
-| PreviewContent | Document | 7.1 |
-| DocumentMetadata | Document | 7.1 |
-| VersionInfo | Document | 7.2 |
-| HandlerInfo | Handler | 8.1 |
-| AppSettings | Settings | 9.1 |
-| GeneralSettings | Settings | 9.1 |
-| AgentSettings | Settings | 9.1 |
-| AppearanceSettings | Settings | 9.1 |
-| AdvancedSettings | Settings | 9.1 |
-| TemplateInfo | Template | 10.1 |
-| TemplateConfig | Template | 10.2 |
-| CommandError | 通用 | 2.3 |
+| 码 | 常量名 | 说明 |
+|----|--------|------|
+| 8001 | UPDATE_CHECK_FAILED | 更新检查失败 |
+| 8002 | UPDATE_DOWNLOAD_FAILED | 下载失败 |
+| 8003 | UPDATE_INSTALL_FAILED | 安装失败 |
+| 8004 | UPDATE_NO_UPDATE_AVAILABLE | 没有可用更新 |
+| 8005 | UPDATE_NETWORK_ERROR | 更新网络错误 |
+
+### 15.10 Tool错误 (9xxx)
+
+| 码 | 常量名 | 说明 |
+|----|--------|------|
+| 9001 | TOOL_NOT_FOUND | 工具不存在 |
+| 9002 | TOOL_INVALID_PARAMS | 参数无效 |
+| 9003 | TOOL_EXECUTION_ERROR | 执行失败 |
+| 9004 | TOOL_PATH_OUT_OF_BOUNDS | 路径越界 |
 
 ---
 
-## 附录B：事件Payload类型索引
+## 附录：命令数量汇总
 
-| 类型名 | 所属事件 | 首次出现位置 |
-|--------|----------|-------------|
-| ThinkingPayload | agent:thinking | 11.1 |
-| ContentPayload | agent:content | 11.1 |
-| ToolCallPayload | agent:tool_call | 11.1 |
-| ToolResultPayload | agent:tool_result | 11.1 |
-| ConfirmPayload | agent:confirm | 11.1 |
-| TodoUpdatePayload | agent:todo_update | 11.1 |
-| TodoItem | agent:todo_update | 11.1 |
-| DonePayload | agent:done | 11.1 |
-| ErrorPayload | agent:error | 11.1 |
-| StoppedPayload | agent:stopped | 11.1 |
-| SessionUpdatePayload | session:updated | 11.2 |
-| WorkspaceChangePayload | workspace:changed | 11.2 |
-| FileChangePayload | file:changed | 11.2 |
+| 模块 | 命令数 | 说明 |
+|------|--------|------|
+| llm.rs | 10 | Provider管理+测试+健康检查 |
+| agent.rs | 5 | 启动/停止/确认/状态查询 |
+| session.rs | 6 | 会话CRUD+清空 |
+| document.rs | 10 | 文档预览/版本/文件操作 |
+| workspace.rs | 6 | 工作区CRUD+文件树+搜索 |
+| handler.rs | 2 | Handler/Tool列表查询 |
+| settings.rs | 2 | 设置读写 |
+| template.rs | 5 | 模板CRUD |
+| log.rs | 2 | 日志路径/错误日志 |
+| update.rs | 2 | 更新检查/安装(桌面端) |
+| **合计** | **48+2** | **10个模块，46+2个(桌面)命令** |
