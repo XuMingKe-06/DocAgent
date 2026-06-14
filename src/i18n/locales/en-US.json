@@ -150,7 +150,8 @@
     "conversationHistory": "Conversation History",
     "llmResponse": "LLM Response",
     "approachingLimitDetail": "Context near limit ({{retained}}/{{total}} messages)",
-    "compressedDetail": "History compressed (retained {{retained}}/{{total}} messages)"
+    "compressedDetail": "History compressed (retained {{retained}}/{{total}} messages)",
+    "cacheHitRate": "Cache Hit Rate"
   },
   "todo": {
     "sectionTitle": "Task Progress",

@@ -1,4 +1,4 @@
-use crate::models::llm::{ChatMessage, LlmToolCall};
+use crate::models::llm::{ChatMessage, ChatUsage, LlmToolCall};
 use super::prompts::document_design::get_design_guide_by_type;
 use super::prompts::task_type::TaskType;
 use super::prompts::token_budget::{TokenBudgetManager, HistoryCompressionConfig};
@@ -93,6 +93,10 @@ pub struct AgentContext {
     current_step: String,
     /// 工具定义（Tool + Handler）的估算 Token 数，由 executor 在构建 tool definitions 后设置
     pub function_definitions_tokens: usize,
+    /// 生命周期累计缓存命中 tokens（运行时累计，当前会话期间有效）
+    pub lifetime_cache_hit_tokens: u64,
+    /// 生命周期累计缓存未命中 tokens（运行时累计，当前会话期间有效）
+    pub lifetime_cache_miss_tokens: u64,
 }
 
 impl AgentContext {
@@ -111,6 +115,8 @@ impl AgentContext {
             completed_steps: Vec::new(),
             current_step: String::new(),
             function_definitions_tokens: 0,
+            lifetime_cache_hit_tokens: 0,
+            lifetime_cache_miss_tokens: 0,
         }
     }
 
@@ -132,7 +138,15 @@ impl AgentContext {
     /// 计算当前上下文窗口使用信息
     /// response_tokens: 当前轮 LLM 响应的估算 Token 数，由 executor 传入
     /// function_definitions_tokens 使用 self.function_definitions_tokens（由 executor 在构建 tool definitions 后设置）
-    pub fn calculate_context_usage(&self, response_tokens: usize, model_name: String) -> crate::models::llm::ContextUsageInfo {
+    /// usage: API 返回的真实 token 用量（含缓存字段）
+    /// cache_type: Provider 缓存类型标识
+    pub fn calculate_context_usage(
+        &mut self,
+        response_tokens: usize,
+        model_name: String,
+        cache_type: String,
+        usage: Option<&ChatUsage>,
+    ) -> crate::models::llm::ContextUsageInfo {
         let system_prompt_tokens = crate::services::agent::prompts::token_budget::TokenBudgetManager::estimate_tokens(&self.system_prompt);
         let conversation_tokens = crate::services::agent::prompts::token_budget::TokenBudgetManager::estimate_tokens(
             &self.messages.iter().map(|m| m.content.as_str()).collect::<String>()
@@ -164,6 +178,21 @@ impl AgentContext {
             self.messages.len().min(keep_count)
         };
 
+        // --- 缓存统计（累积跨轮） ---
+        let (cache_hit_tokens, cache_miss_tokens, cache_creation_tokens) = match usage {
+            Some(u) => (u.prompt_cache_hit_tokens, u.prompt_cache_miss_tokens, u.cache_creation_input_tokens),
+            None => (0, 0, 0),
+        };
+
+        self.lifetime_cache_hit_tokens += cache_hit_tokens;
+        self.lifetime_cache_miss_tokens += cache_miss_tokens;
+        let total_lifetime = self.lifetime_cache_hit_tokens + self.lifetime_cache_miss_tokens;
+        let cache_hit_rate = if total_lifetime > 0 {
+            self.lifetime_cache_hit_tokens as f64 / total_lifetime as f64
+        } else {
+            0.0
+        };
+
         crate::models::llm::ContextUsageInfo {
             context_window: self.token_budget.context_window(),
             system_prompt_tokens,
@@ -175,6 +204,13 @@ impl AgentContext {
             model_name,
             total_message_count,
             retained_message_count,
+            cache_hit_tokens,
+            cache_miss_tokens,
+            cache_creation_tokens,
+            lifetime_cache_hit_tokens: self.lifetime_cache_hit_tokens,
+            lifetime_cache_miss_tokens: self.lifetime_cache_miss_tokens,
+            cache_hit_rate,
+            provider_cache_type: cache_type,
         }
     }
 
@@ -344,6 +380,18 @@ impl AgentContext {
         self.completed_steps.push(step_description);
     }
 
+    /// 返回已完成的步骤列表格式化描述
+    pub fn format_completed_steps(&self) -> String {
+        if self.completed_steps.is_empty() {
+            return String::new();
+        }
+        let mut result = String::from("已完成步骤：\n");
+        for (i, step) in self.completed_steps.iter().enumerate() {
+            result.push_str(&format!("{}. {}\n", i + 1, step));
+        }
+        result
+    }
+
     /// 设置当前正在执行的步骤
     pub fn set_current_step(&mut self, step_description: String) {
         self.current_step = step_description;
@@ -372,27 +420,43 @@ impl AgentContext {
     /// 获取针对指定迭代轮次优化后的消息列表
     /// 与 get_messages 的区别：
     /// 1. 压缩早期迭代的 reasoning_content（保留最近 1 轮完整，更早轮次截取前 200 字符）
-    /// 2. 迭代 > 1 时在系统提示词后追加上下文提示，告知 LLM 这是继续推理
+    /// 2. 迭代 > 1 时将迭代上下文作为独立 user 消息（不修改 system prompt），保持前缀稳定
     /// 3. 根据迭代阶段动态注入规范层和迭代上下文
     /// 4. 对话历史超过预算时进行滑动窗口压缩
+    ///
+    /// 缓存优化说明：
+    /// 系统提示词始终保持原始内容不变（从 token 0 匹配），迭代上下文作为独立 user 消息追加，
+    /// 确保 DeepSeek 磁盘缓存可命中稳定前缀（系统提示词 + 工具定义 + 首条 user 消息开头）
     pub fn get_messages_for_iteration(&self, current_iteration: u32) -> Vec<ChatMessage> {
-        // 构建系统提示词，迭代 > 1 时追加结构化迭代上下文
-        let system_content = if current_iteration > 1 {
-            let iteration_context = self.build_iteration_context(current_iteration);
-            format!("{}\n\n{}", self.system_prompt, iteration_context)
-        } else {
-            self.system_prompt.clone()
-        };
-
+        // 系统提示词始终为原始内容，不附加任何迭代上下文
         let mut all = vec![ChatMessage {
             role: "system".to_string(),
-            content: system_content,
+            content: self.system_prompt.clone(),
             content_parts: None,
             tool_calls: None,
             tool_call_id: None,
             reasoning_content: None,
             attachments: None,
         }];
+
+        // 迭代上下文作为独立 user 消息（不修改 system prompt）
+        if current_iteration > 1 {
+            all.push(ChatMessage {
+                role: "user".to_string(),
+                content: format!(
+                    "<iteration_context>\n## 当前执行进度\n\n迭代轮次: {}/{}\n{}当前步骤: [进行中] {}\n\n请基于以上进度继续执行，不要重复已完成的步骤。\n</iteration_context>",
+                    current_iteration,
+                    self.max_iterations,
+                    self.format_completed_steps(),
+                    self.current_step,
+                ),
+                content_parts: None,
+                tool_calls: None,
+                tool_call_id: None,
+                reasoning_content: None,
+                attachments: None,
+            });
+        }
 
         // 对话历史压缩处理
         let compression_result = self.compress_history_if_needed();
@@ -431,6 +495,7 @@ impl AgentContext {
     }
 
     /// 构建结构化的迭代上下文
+    #[allow(dead_code)]
     fn build_iteration_context(&self, current_iteration: u32) -> String {
         let mut context = String::from("<iteration_context>\n## 当前执行进度\n\n");
         context.push_str(&format!("迭代轮次: {}/{}\n", current_iteration, self.max_iterations));
@@ -958,7 +1023,7 @@ mod tests {
         assert!(!messages[0].content.contains("iteration_context"));
     }
 
-    /// 测试后续迭代时系统提示词追加迭代上下文
+    /// 测试后续迭代时迭代上下文作为独立 user 消息（不修改 system prompt）
     #[test]
     fn test_get_messages_for_iteration_later_iteration() {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
@@ -968,11 +1033,15 @@ mod tests {
 
         let messages = ctx.get_messages_for_iteration(2);
 
-        // 系统消息应该包含迭代上下文
+        // 系统消息应为原始内容，不包含迭代上下文
         assert_eq!(messages[0].role, "system");
-        assert!(messages[0].content.contains("iteration_context"));
-        assert!(messages[0].content.contains("已完成步骤"));
-        assert!(messages[0].content.starts_with("你是助手"));
+        assert_eq!(messages[0].content, "你是助手");
+        assert!(!messages[0].content.contains("iteration_context"));
+
+        // 迭代上下文应该在第二条消息（独立 user 消息）
+        assert_eq!(messages[1].role, "user");
+        assert!(messages[1].content.contains("iteration_context"));
+        assert!(messages[1].content.contains("已完成步骤"));
     }
 
     /// 测试早期 reasoning_content 超过阈值时被压缩
@@ -1456,7 +1525,7 @@ mod tests {
         ctx.add_assistant_message("好的，我来帮你生成", None, None);
         ctx.function_definitions_tokens = 500;
 
-        let usage = ctx.calculate_context_usage(0, "gpt-4o".to_string());
+        let usage = ctx.calculate_context_usage(0, "gpt-4o".to_string(), String::new(), None);
         assert_eq!(usage.context_window, 128_000);
         assert_eq!(usage.model_name, "gpt-4o");
         assert!(usage.system_prompt_tokens > 0);
@@ -1472,7 +1541,7 @@ mod tests {
     fn test_small_context_window_budget() {
         let mut ctx = AgentContext::new("session-1".to_string(), "你是助手".to_string(), 8192);
         ctx.function_definitions_tokens = 200;
-        let usage = ctx.calculate_context_usage(0, "llama3".to_string());
+        let usage = ctx.calculate_context_usage(0, "llama3".to_string(), String::new(), None);
         assert_eq!(usage.context_window, 8192);
         assert_eq!(usage.function_definitions_tokens, 200);
     }
@@ -1482,7 +1551,7 @@ mod tests {
     fn test_large_context_window_budget() {
         let mut ctx = AgentContext::new("session-1".to_string(), "你是助手".to_string(), 1_000_000);
         ctx.function_definitions_tokens = 1000;
-        let usage = ctx.calculate_context_usage(0, "gemini-1.5-pro".to_string());
+        let usage = ctx.calculate_context_usage(0, "gemini-1.5-pro".to_string(), String::new(), None);
         assert_eq!(usage.context_window, 1_000_000);
         // 使用率极低
         let usage_pct = usage.total_used_tokens as f64 / usage.context_window as f64;
@@ -1494,7 +1563,7 @@ mod tests {
     fn test_calculate_context_usage_empty_messages() {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
         ctx.function_definitions_tokens = 500;
-        let usage = ctx.calculate_context_usage(0, "gpt-4o".to_string());
+        let usage = ctx.calculate_context_usage(0, "gpt-4o".to_string(), String::new(), None);
         assert!(usage.conversation_tokens == 0);
         assert!(usage.system_prompt_tokens > 0);
         assert_eq!(usage.compression_status, "normal");
@@ -1511,7 +1580,7 @@ mod tests {
             ctx.add_user_message(&format!("这是第{}条用户消息，内容比较长以便超过预算限制", i));
             ctx.add_assistant_message(&format!("这是第{}条助手回复，内容也比较长", i), None, None);
         }
-        let usage = ctx.calculate_context_usage(0, "llama3".to_string());
+        let usage = ctx.calculate_context_usage(0, "llama3".to_string(), String::new(), None);
         // 对话历史应超过预算，标记为已压缩
         assert!(usage.compression_status == "compressed" || usage.compression_status == "critical");
         let usage_pct = usage.total_used_tokens as f64 / usage.context_window as f64;

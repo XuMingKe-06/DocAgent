@@ -384,6 +384,13 @@ pub async fn get_context_usage(
         model_name,
         total_message_count,
         retained_message_count,
+        cache_hit_tokens: 0,
+        cache_miss_tokens: 0,
+        cache_creation_tokens: 0,
+        lifetime_cache_hit_tokens: 0,
+        lifetime_cache_miss_tokens: 0,
+        cache_hit_rate: 0.0,
+        provider_cache_type: String::new(),
     })
 }
 

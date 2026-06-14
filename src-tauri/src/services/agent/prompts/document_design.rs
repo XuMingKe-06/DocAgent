@@ -17,9 +17,15 @@ pub const WORD_DESIGN_GUIDE: &str = r#"
 - 字体: 拉丁字体 Arial，东亚字体 微软雅黑
 - 页边距: 2.54cm（1 inch）四边
 
-### 页面尺寸（DXA 单位，1440 DXA = 1 inch）
-- US Letter: 12240 x 15840 DXA
+### 页面尺寸
+- US Letter: 12240 x 15840（单位 DXA，1440 DXA = 1 inch）
 - A4: 11906 x 16838 DXA（默认）
+
+**重要：不要导入 `Dxa`！** `from docx.shared import Dxa` 会触发 `ImportError`，因为 `docx.shared` 中没有 `Dxa` 类。正确导入方式：
+```python
+from docx.shared import Inches, Cm, Pt, Emu
+```
+页面尺寸直接使用 `Inches` 或 `Cm` 换算：`Inches(8.5)` = Letter 宽，`Cm(21)` = A4 宽。
 
 ### 表格规范
 - 表头应用蓝色背景和粗体样式

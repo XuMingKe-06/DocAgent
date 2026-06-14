@@ -10,7 +10,7 @@ use crate::config::app_settings::ConfirmationLevel;
 use crate::errors::CommandError;
 use crate::events::emitter::AgentEmitter;
 use crate::events::types::*;
-use crate::models::llm::{ChatMessage, LlmToolCall};
+use crate::models::llm::{ChatMessage, ChatUsage, LlmToolCall};
 use crate::services::llm::router::LlmRouter;
 use crate::services::handler::registry::HandlerRegistry;
 use crate::services::tool::registry::ToolRegistry;
@@ -445,13 +445,12 @@ impl<R: Runtime> AgentExecutor<R> {
     }
 
     /// 发射上下文窗口使用情况事件
-    async fn emit_context_usage(&self, ctx: &AgentContext, response_tokens: usize) {
-        // 获取当前模型名称
+    async fn emit_context_usage(&self, ctx: &mut AgentContext, response_tokens: usize, usage: Option<&ChatUsage>) {
         let model_name = self.router.current_model_name();
+        let cache_type = self.router.current_cache_type().to_string();
 
-        let usage_info = ctx.calculate_context_usage(response_tokens, model_name);
+        let usage_info = ctx.calculate_context_usage(response_tokens, model_name, cache_type, usage);
 
-        // 持久化上下文窗口使用信息到数据库，确保切换会话后数据一致
         if let Some(ref persist_fn) = self.context_usage_persist_fn {
             persist_fn(&ctx.session_id, &usage_info);
         }
@@ -475,7 +474,14 @@ impl<R: Runtime> AgentExecutor<R> {
                 let reg = self.registry.lock().await;
                 reg.tool_definitions()
             };
-            [tool_defs, handler_defs].concat()
+            let mut all = [tool_defs, handler_defs].concat();
+            // 按 function.name 字母序稳定排序，确保相同工具集产生相同 JSON 序列化
+            all.sort_by(|a, b| {
+                let name_a = a["function"]["name"].as_str().unwrap_or("");
+                let name_b = b["function"]["name"].as_str().unwrap_or("");
+                name_a.cmp(name_b)
+            });
+            all
         };
         let tools: Vec<crate::models::llm::ToolDefinition> = tool_defs_json
             .iter()
@@ -577,6 +583,8 @@ impl<R: Runtime> AgentExecutor<R> {
             let mut reasoning_content = String::new();
             let mut collected_tool_calls: HashMap<u32, LlmToolCall> = HashMap::new();
             let mut message_id = String::new();
+            // 从流中捕获最后一个携带 usage 的 chunk（含缓存字段）
+            let mut final_usage: Option<ChatUsage> = None;
             // 跟踪流式响应的 finish_reason，用于检测响应截断（DeepSeek R1 等推理模型
             // 的 reasoning_content 可能耗尽 max_tokens 导致实际响应被截断）
             let mut finish_reason: Option<String> = None;
@@ -698,6 +706,11 @@ impl<R: Runtime> AgentExecutor<R> {
                             if choice.finish_reason.is_some() {
                                 finish_reason = choice.finish_reason.clone();
                             }
+                        }
+
+                        // 保存最后一个包含 usage 的 chunk（含缓存字段）
+                        if chunk.usage.is_some() {
+                            final_usage = chunk.usage.clone();
                         }
                     }
                     Err(e) => {
@@ -1357,8 +1370,12 @@ impl<R: Runtime> AgentExecutor<R> {
                 ctx.mark_persisted();
 
                 // 有 tool_calls 的迭代完成后发射上下文使用情况
-                let response_tokens = crate::services::agent::prompts::token_budget::TokenBudgetManager::estimate_tokens(&assistant_content);
-                self.emit_context_usage(ctx, response_tokens).await;
+                let response_tokens = if let Some(ref usage) = final_usage {
+                    usage.completion_tokens as usize
+                } else {
+                    crate::services::agent::prompts::token_budget::TokenBudgetManager::estimate_tokens(&assistant_content)
+                };
+                self.emit_context_usage(ctx, response_tokens, final_usage.as_ref()).await;
 
                 // 继续循环，让 LLM 处理工具结果
                 continue;
@@ -1416,8 +1433,12 @@ impl<R: Runtime> AgentExecutor<R> {
             ctx.mark_persisted();
 
             // 正常完成前发射上下文使用情况
-            let response_tokens = crate::services::agent::prompts::token_budget::TokenBudgetManager::estimate_tokens(&assistant_content);
-            self.emit_context_usage(ctx, response_tokens).await;
+            let response_tokens = if let Some(ref usage) = final_usage {
+                usage.completion_tokens as usize
+            } else {
+                crate::services::agent::prompts::token_budget::TokenBudgetManager::estimate_tokens(&assistant_content)
+            };
+            self.emit_context_usage(ctx, response_tokens, final_usage.as_ref()).await;
 
             self.emitter.emit_todo_update(TodoUpdatePayload {
                 session_id: ctx.session_id.clone(),

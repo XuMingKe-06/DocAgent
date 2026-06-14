@@ -538,11 +538,17 @@ impl GeminiAdapter {
             })
             .unwrap_or_default();
 
-        // 映射 Gemini usageMetadata 到内部 ChatUsage 格式
+        // 映射 Gemini usageMetadata 到内部 ChatUsage 格式（含缓存字段）
         let usage = value["usageMetadata"].as_object().map(|u| ChatUsage {
             prompt_tokens: u["promptTokenCount"].as_u64().unwrap_or(0),
             completion_tokens: u["candidatesTokenCount"].as_u64().unwrap_or(0),
             total_tokens: u["totalTokenCount"].as_u64().unwrap_or(0),
+            prompt_cache_hit_tokens: u["cachedContentTokenCount"].as_u64().unwrap_or(0),
+            prompt_cache_miss_tokens: u["promptTokenCount"].as_u64().unwrap_or(0)
+                .saturating_sub(u["cachedContentTokenCount"].as_u64().unwrap_or(0)),
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            cached_content_token_count: u["cachedContentTokenCount"].as_u64().unwrap_or(0),
         });
 
         Ok(ChatResponse { id, choices, usage })
@@ -625,7 +631,20 @@ impl GeminiAdapter {
             })
             .unwrap_or_default();
 
-        Ok(StreamChunk { id, choices })
+        // 提取 usageMetadata（含缓存字段，仅在最后一个 chunk 中存在）
+        let usage = value["usageMetadata"].as_object().map(|u| ChatUsage {
+            prompt_tokens: u["promptTokenCount"].as_u64().unwrap_or(0),
+            completion_tokens: u["candidatesTokenCount"].as_u64().unwrap_or(0),
+            total_tokens: u["totalTokenCount"].as_u64().unwrap_or(0),
+            prompt_cache_hit_tokens: u["cachedContentTokenCount"].as_u64().unwrap_or(0),
+            prompt_cache_miss_tokens: u["promptTokenCount"].as_u64().unwrap_or(0)
+                .saturating_sub(u["cachedContentTokenCount"].as_u64().unwrap_or(0)),
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            cached_content_token_count: u["cachedContentTokenCount"].as_u64().unwrap_or(0),
+        });
+
+        Ok(StreamChunk { id, choices, usage })
     }
 }
 
@@ -888,7 +907,20 @@ impl LlmProvider for GeminiAdapter {
                                                 })
                                                 .unwrap_or_default();
 
-                                            let chunk = StreamChunk { id, choices };
+                                            // 提取 usageMetadata（含缓存字段，仅在最后一个 chunk 中存在）
+                                            let usage = value.get("usageMetadata").and_then(|u| u.as_object()).map(|u| ChatUsage {
+                                                prompt_tokens: u["promptTokenCount"].as_u64().unwrap_or(0),
+                                                completion_tokens: u["candidatesTokenCount"].as_u64().unwrap_or(0),
+                                                total_tokens: u["totalTokenCount"].as_u64().unwrap_or(0),
+                                                prompt_cache_hit_tokens: u["cachedContentTokenCount"].as_u64().unwrap_or(0),
+                                                prompt_cache_miss_tokens: u["promptTokenCount"].as_u64().unwrap_or(0)
+                                                    .saturating_sub(u["cachedContentTokenCount"].as_u64().unwrap_or(0)),
+                                                cache_creation_input_tokens: 0,
+                                                cache_read_input_tokens: 0,
+                                                cached_content_token_count: u["cachedContentTokenCount"].as_u64().unwrap_or(0),
+                                            });
+
+                                            let chunk = StreamChunk { id, choices, usage };
                                             if tx.send(Ok(chunk)).await.is_err() {
                                                 return;
                                             }

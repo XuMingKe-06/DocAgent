@@ -486,12 +486,19 @@ impl AnthropicAdapter {
             other => other.to_string(),
         });
 
-        // 映射 usage（Anthropic 使用 input_tokens / output_tokens）
+        // 映射 usage（Anthropic 使用 input_tokens / output_tokens + 缓存字段）
         let usage = value["usage"].as_object().map(|u| ChatUsage {
             prompt_tokens: u["input_tokens"].as_u64().unwrap_or(0),
             completion_tokens: u["output_tokens"].as_u64().unwrap_or(0),
             total_tokens: u["input_tokens"].as_u64().unwrap_or(0)
                 + u["output_tokens"].as_u64().unwrap_or(0),
+            // Anthropic 缓存字段（Prompt Caching）
+            prompt_cache_hit_tokens: u["cache_read_input_tokens"].as_u64().unwrap_or(0),
+            prompt_cache_miss_tokens: u["input_tokens"].as_u64().unwrap_or(0)
+                .saturating_sub(u["cache_read_input_tokens"].as_u64().unwrap_or(0)),
+            cache_creation_input_tokens: u["cache_creation_input_tokens"].as_u64().unwrap_or(0),
+            cache_read_input_tokens: u["cache_read_input_tokens"].as_u64().unwrap_or(0),
+            cached_content_token_count: 0,
         });
 
         Ok(ChatResponse {
@@ -560,6 +567,8 @@ impl LlmProvider for AnthropicAdapter {
             let mut buffer = String::new();
             // tool_use 块的计数器，用于生成 OpenAI 兼容的 tool_call index
             let mut tool_call_counter: u32 = 0;
+            // 收集 message_start 中的输入 usage（含缓存字段）
+            let mut input_usage: Option<ChatUsage> = None;
 
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
@@ -598,11 +607,27 @@ impl LlmProvider for AnthropicAdapter {
 
                             match msg_type {
                                 "message_start" => {
-                                    // 消息开始，提取 message id 和 role
+                                    // 消息开始，提取 message id 和 role，以及 usage（含缓存字段）
                                     let msg_id = data["message"]["id"]
                                         .as_str()
                                         .unwrap_or("")
                                         .to_string();
+
+                                    // 捕获输入 usage（含 cache 字段）
+                                    if let Some(u) = data["message"]["usage"].as_object() {
+                                        input_usage = Some(ChatUsage {
+                                            prompt_tokens: u["input_tokens"].as_u64().unwrap_or(0),
+                                            completion_tokens: 0,
+                                            total_tokens: u["input_tokens"].as_u64().unwrap_or(0),
+                                            prompt_cache_hit_tokens: u["cache_read_input_tokens"].as_u64().unwrap_or(0),
+                                            prompt_cache_miss_tokens: u["input_tokens"].as_u64().unwrap_or(0)
+                                                .saturating_sub(u["cache_read_input_tokens"].as_u64().unwrap_or(0)),
+                                            cache_creation_input_tokens: u["cache_creation_input_tokens"].as_u64().unwrap_or(0),
+                                            cache_read_input_tokens: u["cache_read_input_tokens"].as_u64().unwrap_or(0),
+                                            cached_content_token_count: 0,
+                                        });
+                                    }
+
                                     let chunk = StreamChunk {
                                         id: msg_id,
                                         choices: vec![StreamChoice {
@@ -615,7 +640,8 @@ impl LlmProvider for AnthropicAdapter {
                                             },
                                             finish_reason: None,
                                         }],
-                                    };
+                                    usage: None,
+                                };
                                     if tx.send(Ok(chunk)).await.is_err() {
                                         return;
                                     }
@@ -654,7 +680,8 @@ impl LlmProvider for AnthropicAdapter {
                                                     },
                                                     finish_reason: None,
                                                 }],
-                                            };
+                                            usage: None,
+                                        };
                                             if tx.send(Ok(chunk)).await.is_err() {
                                                 return;
                                             }
@@ -685,7 +712,8 @@ impl LlmProvider for AnthropicAdapter {
                                                     },
                                                     finish_reason: None,
                                                 }],
-                                            };
+                                            usage: None,
+                                        };
                                             if tx.send(Ok(chunk)).await.is_err() {
                                                 return;
                                             }
@@ -716,7 +744,8 @@ impl LlmProvider for AnthropicAdapter {
                                                     },
                                                     finish_reason: None,
                                                 }],
-                                            };
+                                            usage: None,
+                                        };
                                             if tx.send(Ok(chunk)).await.is_err() {
                                                 return;
                                             }
@@ -735,7 +764,8 @@ impl LlmProvider for AnthropicAdapter {
                                                     },
                                                     finish_reason: None,
                                                 }],
-                                            };
+                                            usage: None,
+                                        };
                                             if tx.send(Ok(chunk)).await.is_err() {
                                                 return;
                                             }
@@ -746,7 +776,7 @@ impl LlmProvider for AnthropicAdapter {
                                 "content_block_stop" => {
                                 }
                                 "message_delta" => {
-                                    // 消息级别更新，包含 stop_reason 和 usage
+                                    // 消息级别更新，包含 stop_reason 和 usage（output_tokens）
                                     let stop_reason = data["delta"]["stop_reason"]
                                         .as_str()
                                         .map(|r| match r {
@@ -756,6 +786,29 @@ impl LlmProvider for AnthropicAdapter {
                                             "stop_sequence" => "stop".to_string(),
                                             other => other.to_string(),
                                         });
+
+                                    // 从 message_delta 提取 output 用量，与 input_usage 合并
+                                    let usage = data.get("usage").and_then(|u| u.as_object()).map(|u| {
+                                        let output_tokens = u["output_tokens"].as_u64().unwrap_or(0);
+                                        let total_input = input_usage.as_ref()
+                                            .map(|i| i.prompt_tokens)
+                                            .unwrap_or(0);
+                                        ChatUsage {
+                                            prompt_tokens: total_input,
+                                            completion_tokens: output_tokens,
+                                            total_tokens: total_input + output_tokens,
+                                            prompt_cache_hit_tokens: input_usage.as_ref()
+                                                .map(|i| i.prompt_cache_hit_tokens).unwrap_or(0),
+                                            prompt_cache_miss_tokens: input_usage.as_ref()
+                                                .map(|i| i.prompt_cache_miss_tokens).unwrap_or(0),
+                                            cache_creation_input_tokens: input_usage.as_ref()
+                                                .map(|i| i.cache_creation_input_tokens).unwrap_or(0),
+                                            cache_read_input_tokens: input_usage.as_ref()
+                                                .map(|i| i.cache_read_input_tokens).unwrap_or(0),
+                                            cached_content_token_count: 0,
+                                        }
+                                    });
+
                                     let chunk = StreamChunk {
                                         id: String::new(),
                                         choices: vec![StreamChoice {
@@ -768,7 +821,8 @@ impl LlmProvider for AnthropicAdapter {
                                             },
                                             finish_reason: stop_reason,
                                         }],
-                                    };
+                                    usage,
+                                };
                                     if tx.send(Ok(chunk)).await.is_err() {
                                         return;
                                     }
@@ -829,6 +883,8 @@ impl LlmProvider for AnthropicAdapter {
             let mut buffer = String::new();
             // tool_use 块的计数器，用于生成 OpenAI 兼容的 tool_call index
             let mut tool_call_counter: u32 = 0;
+            // 收集 message_start 中的输入 usage（含缓存字段）
+            let mut input_usage: Option<ChatUsage> = None;
 
             while let Some(chunk_result) = stream.next().await {
                 match chunk_result {
@@ -871,9 +927,23 @@ impl LlmProvider for AnthropicAdapter {
 
                             match event_type.as_str() {
                                 "message_start" => {
-                                    // 消息开始，提取 message id
-                                    let msg_id = value["message"]["id"].as_str().unwrap_or("").to_string();
-                                    let _ = msg_id; // 保留用于日志
+                                    // 消息开始，提取 message id 和 usage（含缓存字段）
+                                    let _ = value["message"]["id"].as_str().unwrap_or("").to_string();
+
+                                    // 捕获输入 usage（含 cache 字段）
+                                    if let Some(u) = value["message"]["usage"].as_object() {
+                                        input_usage = Some(ChatUsage {
+                                            prompt_tokens: u["input_tokens"].as_u64().unwrap_or(0),
+                                            completion_tokens: 0,
+                                            total_tokens: u["input_tokens"].as_u64().unwrap_or(0),
+                                            prompt_cache_hit_tokens: u["cache_read_input_tokens"].as_u64().unwrap_or(0),
+                                            prompt_cache_miss_tokens: u["input_tokens"].as_u64().unwrap_or(0)
+                                                .saturating_sub(u["cache_read_input_tokens"].as_u64().unwrap_or(0)),
+                                            cache_creation_input_tokens: u["cache_creation_input_tokens"].as_u64().unwrap_or(0),
+                                            cache_read_input_tokens: u["cache_read_input_tokens"].as_u64().unwrap_or(0),
+                                            cached_content_token_count: 0,
+                                        });
+                                    }
                                 }
                                 "content_block_start" => {
                                     // 新内容块开始
@@ -902,7 +972,8 @@ impl LlmProvider for AnthropicAdapter {
                                                     },
                                                     finish_reason: None,
                                                 }],
-                                            };
+                                            usage: None,
+                                        };
                                             if tx.send(Ok(chunk)).await.is_err() {
                                                 return;
                                             }
@@ -930,7 +1001,8 @@ impl LlmProvider for AnthropicAdapter {
                                                         },
                                                         finish_reason: None,
                                                     }],
-                                                };
+                                                usage: None,
+                                            };
                                                 if tx.send(Ok(chunk)).await.is_err() {
                                                     return;
                                                 }
@@ -950,7 +1022,8 @@ impl LlmProvider for AnthropicAdapter {
                                                         },
                                                         finish_reason: None,
                                                     }],
-                                                };
+                                                usage: None,
+                                            };
                                                 if tx.send(Ok(chunk)).await.is_err() {
                                                     return;
                                                 }
@@ -977,7 +1050,8 @@ impl LlmProvider for AnthropicAdapter {
                                                         },
                                                         finish_reason: None,
                                                     }],
-                                                };
+                                                usage: None,
+                                            };
                                                 if tx.send(Ok(chunk)).await.is_err() {
                                                     return;
                                                 }
@@ -990,7 +1064,7 @@ impl LlmProvider for AnthropicAdapter {
                                     // 内容块结束，无需特殊处理
                                 }
                                 "message_delta" => {
-                                    // 消息级增量（包含 stop_reason）
+                                    // 消息级增量（包含 stop_reason 和 usage）
                                     if let Some(delta) = value.get("delta") {
                                         let stop_reason = delta["stop_reason"].as_str().map(|r| match r {
                                             "end_turn" => "stop".to_string(),
@@ -998,6 +1072,28 @@ impl LlmProvider for AnthropicAdapter {
                                             "max_tokens" => "length".to_string(),
                                             "stop_sequence" => "stop".to_string(),
                                             other => other.to_string(),
+                                        });
+
+                                        // 从 message_delta 提取 output 用量，与 input_usage 合并
+                                        let usage = value.get("usage").and_then(|u| u.as_object()).map(|u| {
+                                            let output_tokens = u["output_tokens"].as_u64().unwrap_or(0);
+                                            let total_input = input_usage.as_ref()
+                                                .map(|i| i.prompt_tokens)
+                                                .unwrap_or(0);
+                                            ChatUsage {
+                                                prompt_tokens: total_input,
+                                                completion_tokens: output_tokens,
+                                                total_tokens: total_input + output_tokens,
+                                                prompt_cache_hit_tokens: input_usage.as_ref()
+                                                    .map(|i| i.prompt_cache_hit_tokens).unwrap_or(0),
+                                                prompt_cache_miss_tokens: input_usage.as_ref()
+                                                    .map(|i| i.prompt_cache_miss_tokens).unwrap_or(0),
+                                                cache_creation_input_tokens: input_usage.as_ref()
+                                                    .map(|i| i.cache_creation_input_tokens).unwrap_or(0),
+                                                cache_read_input_tokens: input_usage.as_ref()
+                                                    .map(|i| i.cache_read_input_tokens).unwrap_or(0),
+                                                cached_content_token_count: 0,
+                                            }
                                         });
 
                                         let chunk = StreamChunk {
@@ -1012,6 +1108,7 @@ impl LlmProvider for AnthropicAdapter {
                                                 },
                                                 finish_reason: stop_reason,
                                             }],
+                                            usage,
                                         };
                                         if tx.send(Ok(chunk)).await.is_err() {
                                             return;

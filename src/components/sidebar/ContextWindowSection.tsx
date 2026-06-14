@@ -34,6 +34,25 @@ const SECTIONS = [
   { key: "response", labelKey: "contextWindow.llmResponse", colorVar: "--color-context-response" },
 ] as const;
 
+/** 缓存命中率文字显示 */
+function CacheHitRateBar({ hitRate }: { hitRate: number }) {
+  const { t } = useTranslation();
+  const percent = Math.round(hitRate * 100);
+  const color =
+    percent >= 70
+      ? "var(--color-success)"
+      : percent >= 40
+        ? "var(--color-warning)"
+        : "var(--color-error)";
+
+  return (
+    <div className="cw-cache-simple">
+      <span className="cw-cache-simple-label">{t('contextWindow.cacheHitRate')}</span>
+      <span className="cw-cache-simple-value" style={{ color }}>{percent}%</span>
+    </div>
+  );
+}
+
 export function ContextWindowSection() {
   const { t } = useTranslation();
   // Agent 运行时从 useWorkflowStore 获取实时上下文使用数据
@@ -57,6 +76,8 @@ export function ContextWindowSection() {
       compressionStatus,
       totalMessageCount,
       retainedMessageCount,
+      cacheHitRate,
+      providerCacheType,
     } = contextUsage;
 
     const usagePercent = contextWindow > 0 ? Math.round((totalUsedTokens / contextWindow) * 100) : 0;
@@ -125,6 +146,11 @@ export function ContextWindowSection() {
                   : t('contextWindow.compressedDetail', { retained: retainedMessageCount, total: totalMessageCount })}
               </span>
             </div>
+          )}
+
+          {/* 缓存命中率显示 */}
+          {providerCacheType !== "none" && (
+            <CacheHitRateBar hitRate={cacheHitRate} />
           )}
         </div>
 
@@ -271,6 +297,25 @@ function CWStyles() {
         border-radius: 50%;
         background: var(--color-warning, #faad14);
         flex-shrink: 0;
+      }
+
+      /* ===== 缓存命中率（简洁文字） ===== */
+      .cw-cache-simple {
+        margin-top: 3px;
+        padding-top: 3px;
+        border-top: 1px solid var(--color-border-secondary);
+        display: flex;
+        gap: 4px;
+        align-items: baseline;
+      }
+      .cw-cache-simple-label {
+        font-size: 10px;
+        color: var(--color-text-tertiary);
+      }
+      .cw-cache-simple-value {
+        font-size: 11px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
       }
     `}</style>
   );

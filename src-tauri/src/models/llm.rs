@@ -90,6 +90,30 @@ pub struct ContextUsageInfo {
     pub total_message_count: usize,
     /// 压缩后保留的消息数
     pub retained_message_count: usize,
+
+    // --- 新增缓存统计字段 ---
+
+    /// 本轮请求的缓存命中 tokens（来自 API 响应）
+    #[serde(default)]
+    pub cache_hit_tokens: u64,
+    /// 本轮请求的缓存未命中 tokens（来自 API 响应）
+    #[serde(default)]
+    pub cache_miss_tokens: u64,
+    /// 本轮请求的缓存创建 tokens（Anthropic）
+    #[serde(default)]
+    pub cache_creation_tokens: u64,
+    /// 生命周期累计缓存命中 tokens
+    #[serde(default)]
+    pub lifetime_cache_hit_tokens: u64,
+    /// 生命周期累计缓存未命中 tokens
+    #[serde(default)]
+    pub lifetime_cache_miss_tokens: u64,
+    /// 缓存命中率（0.0 - 1.0），实时计算
+    #[serde(default)]
+    pub cache_hit_rate: f64,
+    /// Provider 缓存类型标识: "deepseek" | "anthropic" | "gemini" | "none"
+    #[serde(default)]
+    pub provider_cache_type: String,
 }
 
 /// 连接测试结果
@@ -174,21 +198,41 @@ pub struct ChatChoice {
     pub finish_reason: Option<String>,
 }
 
-/// Token 用量
+/// Token 用量（含缓存信息）
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ChatUsage {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
     pub total_tokens: u64,
+
+    // --- 新增缓存字段 ---
+
+    /// DeepSeek: 命中缓存的输入 tokens
+    #[serde(default)]
+    pub prompt_cache_hit_tokens: u64,
+    /// DeepSeek: 未命中缓存的输入 tokens
+    #[serde(default)]
+    pub prompt_cache_miss_tokens: u64,
+    /// Anthropic: 缓存创建消耗的 tokens
+    #[serde(default)]
+    pub cache_creation_input_tokens: u64,
+    /// Anthropic: 缓存读取消耗的 tokens
+    #[serde(default)]
+    pub cache_read_input_tokens: u64,
+    /// Gemini: 缓存命中 tokens
+    #[serde(default)]
+    pub cached_content_token_count: u64,
 }
 
-/// 流式响应块
+/// 流式响应块（携带可选 usage，仅在最后一个 chunk 中存在）
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamChunk {
     pub id: String,
     pub choices: Vec<StreamChoice>,
+    #[serde(default)]
+    pub usage: Option<ChatUsage>,
 }
 
 /// 流式选项

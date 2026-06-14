@@ -157,6 +157,22 @@ export interface ContextUsageInfo {
   totalMessageCount: number;
   /** 压缩后保留的消息数 */
   retainedMessageCount: number;
+
+  // --- 新增缓存字段 ---
+  /** 本轮请求的缓存命中 tokens */
+  cacheHitTokens: number;
+  /** 本轮请求的缓存未命中 tokens */
+  cacheMissTokens: number;
+  /** 本轮请求的缓存创建 tokens（Anthropic） */
+  cacheCreationTokens: number;
+  /** 生命周期累计缓存命中 tokens */
+  lifetimeCacheHitTokens: number;
+  /** 生命周期累计缓存未命中 tokens */
+  lifetimeCacheMissTokens: number;
+  /** 缓存命中率（0.0 - 1.0） */
+  cacheHitRate: number;
+  /** Provider 缓存类型标识: "deepseek" | "anthropic" | "gemini" | "none" */
+  providerCacheType: string;
 }
 
 // ----- 模板相关类型 -----

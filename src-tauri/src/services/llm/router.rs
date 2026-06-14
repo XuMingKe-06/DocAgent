@@ -683,4 +683,27 @@ impl LlmRouter {
             .map(|m| m.model.clone())
             .unwrap_or_default()
     }
+
+    /// 获取当前默认 Provider 的缓存类型
+    /// 返回 "deepseek" | "anthropic" | "gemini" | "none"
+    pub fn current_cache_type(&self) -> &str {
+        self.default_id
+            .as_ref()
+            .and_then(|id| self.meta.get(id))
+            .map(|m| match m.provider_type.as_str() {
+                "openai" | "custom" => {
+                    // DeepSeek 使用 OpenAI 兼容接口，通过模型名判断
+                    if m.model.to_lowercase().contains("deepseek") {
+                        "deepseek"
+                    } else {
+                        "none"
+                    }
+                }
+                "anthropic" => "anthropic",
+                "gemini" => "gemini",
+                "ollama" => "none",
+                _ => "none",
+            })
+            .unwrap_or("none")
+    }
 }

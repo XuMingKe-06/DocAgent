@@ -357,6 +357,11 @@ impl OpenAiAdapter {
             prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0),
             completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0),
             total_tokens: u["total_tokens"].as_u64().unwrap_or(0),
+            prompt_cache_hit_tokens: u["prompt_cache_hit_tokens"].as_u64().unwrap_or(0),
+            prompt_cache_miss_tokens: u["prompt_cache_miss_tokens"].as_u64().unwrap_or(0),
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+            cached_content_token_count: 0,
         });
 
         Ok(ChatResponse {
@@ -467,7 +472,19 @@ impl LlmProvider for OpenAiAdapter {
                                                     }).collect::<Vec<_>>()
                                                 }).unwrap_or_default();
 
-                                            let chunk = StreamChunk { id, choices };
+                                            // 提取 usage（仅在最后一个 chunk 中存在）
+                                            let usage = value.get("usage").map(|u| ChatUsage {
+                                                prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0),
+                                                completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0),
+                                                total_tokens: u["total_tokens"].as_u64().unwrap_or(0),
+                                                prompt_cache_hit_tokens: u["prompt_cache_hit_tokens"].as_u64().unwrap_or(0),
+                                                prompt_cache_miss_tokens: u["prompt_cache_miss_tokens"].as_u64().unwrap_or(0),
+                                                cache_creation_input_tokens: 0,
+                                                cache_read_input_tokens: 0,
+                                                cached_content_token_count: 0,
+                                            });
+
+                                            let chunk = StreamChunk { id, choices, usage };
                                             if tx.send(Ok(chunk)).await.is_err() {
                                                 return;
                                             }
@@ -571,7 +588,19 @@ impl LlmProvider for OpenAiAdapter {
                                                 }).collect::<Vec<_>>()
                                             }).unwrap_or_default();
 
-                                            let chunk = StreamChunk { id, choices };
+                                            // 提取 usage（仅在最后一个 chunk 中存在）
+                                            let usage = value.get("usage").map(|u| ChatUsage {
+                                                prompt_tokens: u["prompt_tokens"].as_u64().unwrap_or(0),
+                                                completion_tokens: u["completion_tokens"].as_u64().unwrap_or(0),
+                                                total_tokens: u["total_tokens"].as_u64().unwrap_or(0),
+                                                prompt_cache_hit_tokens: u["prompt_cache_hit_tokens"].as_u64().unwrap_or(0),
+                                                prompt_cache_miss_tokens: u["prompt_cache_miss_tokens"].as_u64().unwrap_or(0),
+                                                cache_creation_input_tokens: 0,
+                                                cache_read_input_tokens: 0,
+                                                cached_content_token_count: 0,
+                                            });
+
+                                            let chunk = StreamChunk { id, choices, usage };
                                             if tx.send(Ok(chunk)).await.is_err() {
                                                 return;
                                             }
