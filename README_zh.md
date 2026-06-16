@@ -5,7 +5,7 @@
 **AI 驱动的文档处理 Agent，用对话搞定一切文档工作**
 
 [![Windows](https://img.shields.io/badge/platform-Windows-blue?logo=windows)](https://github.com/user-attachments/docagent)
-[![Version](https://img.shields.io/badge/version-0.2.0-4ccd24)](https://github.com/XuMingKe-06/DocAgent/releases)
+[![Version](https://img.shields.io/badge/version-0.2.1-4ccd24)](https://github.com/XuMingKe-06/DocAgent/releases)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.x-orange?logo=tauri)](https://v2.tauri.app/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb?logo=react)](https://react.dev/)
 [![Rust](https://img.shields.io/badge/Rust-1.80+-000000?logo=rust)](https://www.rust-lang.org/)
@@ -41,7 +41,7 @@ DocAgent 是一款**本地优先**的 AI 文档处理桌面应用。你只需用
 
 ### 代码解释器 —— 文档生成全新范式
 
-v0.2.0 核心亮点：AI 编写并执行 Python 代码，直接操作文档对象模型。从"描述式生成"升级为"代码级控制"——生成结果更精准，复杂格式不再是难题。
+v0.2.1 核心亮点：AI 编写并执行 Python 代码，直接操作文档对象模型。从"描述式生成"升级为"代码级控制"——生成结果更精准，复杂格式不再是难题。
 
 - **读取-修改-保存工作流**：先读取现有文档结构，再编写代码精准修改，最后保存——全程在本地沙箱中安全执行
 - **全格式覆盖**：Word、Excel、PPT、PDF、Markdown，一个引擎全搞定

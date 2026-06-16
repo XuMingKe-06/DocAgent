@@ -5,7 +5,7 @@
 **AI-Powered Document Agent - Handle All Document Tasks Through Conversation**
 
 [![Windows](https://img.shields.io/badge/platform-Windows-blue?logo=windows)](https://github.com/user-attachments/docagent)
-[![Version](https://img.shields.io/badge/version-0.2.0-4ccd24)](https://github.com/XuMingKe-06/DocAgent/releases)
+[![Version](https://img.shields.io/badge/version-0.2.1-4ccd24)](https://github.com/XuMingKe-06/DocAgent/releases)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.x-orange?logo=tauri)](https://v2.tauri.app/)
 [![React 19](https://img.shields.io/badge/React-19-61dafb?logo=react)](https://react.dev/)
 [![Rust](https://img.shields.io/badge/Rust-1.80+-000000?logo=rust)](https://www.rust-lang.org/)
@@ -41,7 +41,7 @@ Flexible integration with mainstream LLM services like OpenAI, Anthropic Claude,
 
 ### Code Interpreter -- Document Generation Reimagined
 
-The core highlight of v0.2.0: AI writes and executes Python code to directly manipulate document object models. From "descriptive generation" to "code-level control" -- results are more precise, complex formatting is no longer a struggle.
+The core highlight of v0.2.1: AI writes and executes Python code to directly manipulate document object models. From "descriptive generation" to "code-level control" -- results are more precise, complex formatting is no longer a struggle.
 
 - **Read-modify-save workflow**: Read existing document structure, write code for precise modifications, save -- all executed in a local sandbox
 - **Full format coverage**: Word, Excel, PPT, PDF, Markdown -- one engine handles them all
