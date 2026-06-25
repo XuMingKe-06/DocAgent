@@ -97,6 +97,9 @@ pub struct AgentContext {
     pub lifetime_cache_hit_tokens: u64,
     /// 生命周期累计缓存未命中 tokens（运行时累计，当前会话期间有效）
     pub lifetime_cache_miss_tokens: u64,
+    /// 上一次 code_interpreter_handler 执行的代码（完整代码，含 patch 应用后的结果）
+    /// 用于 patch 模式的基准代码，None 表示尚无可用基准
+    last_code: Option<String>,
 }
 
 impl AgentContext {
@@ -117,6 +120,7 @@ impl AgentContext {
             function_definitions_tokens: 0,
             lifetime_cache_hit_tokens: 0,
             lifetime_cache_miss_tokens: 0,
+            last_code: None,
         }
     }
 
@@ -350,6 +354,17 @@ impl AgentContext {
             reasoning_content: None,
             attachments: None,
         });
+    }
+
+    /// 设置上一次 code_interpreter_handler 执行的代码（用于 patch 模式基准）
+    /// 成功和失败都会保存，失败时保存的是已应用 patch 后的完整代码
+    pub fn set_last_code(&mut self, code: String) {
+        self.last_code = Some(code);
+    }
+
+    /// 获取上一次执行的代码（用于 patch 模式基准）
+    pub fn last_code(&self) -> Option<&str> {
+        self.last_code.as_deref()
     }
 
     /// 回滚最后一条助手消息（用于截断重试时移除不完整的 assistant message）
@@ -911,6 +926,12 @@ impl AgentContext {
 5. 超时错误 -> 简化操作参数后重试一次
 6. 重试2次仍失败 -> 向用户报告详细错误，建议手动处理
 
+当 code_interpreter_handler 执行失败时（重要）：
+1. 优先使用 patches 参数在原代码基础上局部修正，而非重写整个代码
+2. 错误反馈中已包含原始代码，请基于该代码定位错误
+3. 保留原代码的总体结构，仅修改出错的部分
+4. 仅当错误严重到无法局部修正（如结构问题、需要大幅重构）时，才重写完整 code
+
 当用户拒绝确认时：
 1. 尊重用户决定，不重复请求相同操作
 2. 询问用户是否希望以其他方式完成任务
@@ -1020,10 +1041,11 @@ mod tests {
         assert_eq!(messages[0].content, "你是助手");
         assert!(!messages[0].content.contains("iteration_context"));
 
-        // 迭代上下文应该在第二条消息（独立 user 消息）
-        assert_eq!(messages[1].role, "user");
-        assert!(messages[1].content.contains("iteration_context"));
-        assert!(messages[1].content.contains("已完成步骤"));
+        // 迭代上下文作为独立 user 消息追加到末尾（缓存优化：保持前缀稳定）
+        let last_msg = messages.last().expect("消息列表不应为空");
+        assert_eq!(last_msg.role, "user");
+        assert!(last_msg.content.contains("iteration_context"));
+        assert!(last_msg.content.contains("已完成步骤"));
     }
 
     /// 测试早期 reasoning_content 超过阈值时被压缩
@@ -1292,7 +1314,8 @@ mod tests {
         assert!(layer.contains("确认机制说明"));
     }
 
-    /// 测试迭代上下文构建
+    /// 测试迭代上下文构建（通过 get_messages_for_iteration 间接验证）
+    /// 原 build_iteration_context 方法已内联到 get_messages_for_iteration
     #[test]
     fn test_iteration_context() {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
@@ -1301,14 +1324,17 @@ mod tests {
         ctx.record_completed_step("读取了报告.docx".to_string());
         ctx.set_current_step("修改报告.docx中的日期".to_string());
 
-        let context = ctx.build_iteration_context(3);
+        // 第 3 轮迭代时，get_messages_for_iteration 会在末尾追加迭代上下文 user 消息
+        let messages = ctx.get_messages_for_iteration(3);
+        let last_msg = messages.last().expect("消息列表不应为空");
 
-        assert!(context.contains("<iteration_context>"));
-        assert!(context.contains("迭代轮次: 3/20"));
-        assert!(context.contains("列出了工作区文件"));
-        assert!(context.contains("读取了报告.docx"));
-        assert!(context.contains("修改报告.docx中的日期"));
-        assert!(context.contains("不要重复已完成的步骤"));
+        assert_eq!(last_msg.role, "user");
+        assert!(last_msg.content.contains("<iteration_context>"));
+        assert!(last_msg.content.contains("迭代轮次: 3/20"));
+        assert!(last_msg.content.contains("列出了工作区文件"));
+        assert!(last_msg.content.contains("读取了报告.docx"));
+        assert!(last_msg.content.contains("修改报告.docx中的日期"));
+        assert!(last_msg.content.contains("不要重复已完成的步骤"));
     }
 
     /// 测试任务类型更新
@@ -1642,5 +1668,73 @@ mod tests {
         // 大上下文窗口应注入规范层和示例层
         assert!(prompt.contains("<guide type=\"docx\">"));
         assert!(prompt.contains("<examples>"));
+    }
+
+    /// 测试 last_code 初始状态为 None
+    #[test]
+    fn test_last_code_initial_state_is_none() {
+        let ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
+        assert!(ctx.last_code().is_none());
+    }
+
+    /// 测试 set_last_code 后可正确获取
+    #[test]
+    fn test_set_last_code_then_get() {
+        let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
+        ctx.set_last_code("print('hello')".to_string());
+        assert_eq!(ctx.last_code(), Some("print('hello')"));
+    }
+
+    /// 测试 set_last_code 多次调用：后值覆盖前值
+    #[test]
+    fn test_set_last_code_overwrites_previous() {
+        let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
+        ctx.set_last_code("first code".to_string());
+        assert_eq!(ctx.last_code(), Some("first code"));
+
+        ctx.set_last_code("second code".to_string());
+        assert_eq!(ctx.last_code(), Some("second code"));
+    }
+
+    /// 测试 set_last_code 空字符串：存储空字符串，last_code() 返回 Some("")
+    /// executor 的 patch 模式注入逻辑会检查 !code.is_empty()，空字符串被视为无基准
+    #[test]
+    fn test_set_last_code_empty_string() {
+        let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
+        ctx.set_last_code("".to_string());
+        // 存储的是 Some("")，但 executor 会通过 is_empty() 检查拒绝使用
+        assert_eq!(ctx.last_code(), Some(""));
+    }
+
+    /// 测试 set_last_code 含多行代码：完整保留换行和缩进
+    #[test]
+    fn test_set_last_code_multiline_code() {
+        let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
+        let code = "def hello():\n    print('hi')\n    return None\n";
+        ctx.set_last_code(code.to_string());
+        assert_eq!(ctx.last_code(), Some(code));
+    }
+
+    /// 测试 set_last_code 含中文字符：完整保留 UTF-8 内容
+    #[test]
+    fn test_set_last_code_chinese_characters() {
+        let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
+        let code = "doc.add_paragraph('标题内容')";
+        ctx.set_last_code(code.to_string());
+        assert_eq!(ctx.last_code(), Some(code));
+    }
+
+    /// 测试 last_code 在会话间独立（不同 AgentContext 实例互不影响）
+    #[test]
+    fn test_last_code_isolated_between_sessions() {
+        let mut ctx1 = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
+        let ctx2 = AgentContext::new_default("session-2".to_string(), "你是助手".to_string());
+
+        ctx1.set_last_code("code from session 1".to_string());
+
+        // session-2 的 last_code 仍为 None
+        assert!(ctx2.last_code().is_none());
+        // session-1 的 last_code 正确
+        assert_eq!(ctx1.last_code(), Some("code from session 1"));
     }
 }

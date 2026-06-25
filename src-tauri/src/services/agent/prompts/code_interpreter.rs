@@ -53,4 +53,37 @@ pub const CODE_INTERPRETER_GUIDE: &str = r#"
     doc.add_heading('结论与建议', level=1)
     doc.add_paragraph('基于以上分析，我们建议...')
     doc.save(working_dir + "/报告.docx")
+
+#### 代码修正策略（重要）
+
+当 code_interpreter_handler 执行失败时，**优先使用 patches 参数在原代码基础上局部修正**，而非重写整个代码：
+
+1. 分析错误信息，定位错误位置
+2. 使用 patches 参数提供搜索替换块（无需提供 code 参数）：
+   - search: 原代码中需要修改的片段（必须唯一匹配，建议包含足够上下文）
+   - replace: 修正后的片段
+3. 可同时提供多个 patches 修正多处错误
+4. 仅当原代码结构问题严重或需要大幅重构时，才重写完整 code
+
+##### patch 使用示例
+
+假设上一次执行的代码中 `doc.add_paragrah('标题')` 有拼写错误，修正方式：
+
+    {
+        "description": "修正 add_paragraph 拼写错误",
+        "patches": [
+            {
+                "search": "doc.add_paragrah('标题')",
+                "replace": "doc.add_paragraph('标题')"
+            }
+        ]
+    }
+
+##### patch 使用要点
+
+- search 片段必须与原代码**完全一致**（包括空格、缩进、换行）
+- search 片段必须在原代码中**唯一匹配**，否则需包含更多上下文
+- 一次可提供多个 patches，按顺序应用
+- 系统会自动以上一次执行的代码作为基准，无需手动传入 base_code
+- 如果错误涉及多处，提供多个 patches 比重写完整 code 更高效
 "#;

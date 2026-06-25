@@ -1331,6 +1331,35 @@ impl<R: Runtime> AgentExecutor<R> {
                         safe_params["workspace_root"] = json!(ctx.workspace_path);
                     }
 
+                    // 对 code_interpreter_handler 的 patch 模式，注入上一次代码作为 base_code
+                    // patch 模式由 LLM 提供 patches 参数触发，系统自动注入 base_code（LLM 无需也无法手动传入）
+                    if tool_call.name == "code_interpreter_handler" && safe_params.get("patches").is_some() {
+                        match ctx.last_code() {
+                            Some(code) if !code.is_empty() => {
+                                safe_params["base_code"] = json!(code);
+                                log::debug!("patch 模式: 已注入 base_code, session_id={}, code_len={}",
+                                    ctx.session_id, code.len());
+                            }
+                            _ => {
+                                // 无可用基准代码，返回明确错误引导 LLM 改用完整 code
+                                let err_msg = "使用 patch 模式但没有可用的上一次代码基准。请改用完整 code 参数，或确保先执行过一次完整代码。";
+                                let result_content = format!("错误: {}", err_msg);
+                                log::warn!("patch 模式无可用基准代码, session_id={}", ctx.session_id);
+                                self.emitter.emit_tool_result(ToolResultPayload {
+                                    session_id: ctx.session_id.clone(),
+                                    call_id: tool_call.id.clone(),
+                                    success: false,
+                                    result: json!(null),
+                                    error: Some(err_msg.to_string()),
+                                    duration_ms: 0,
+                                }).ok();
+                                ctx.add_tool_result(&tool_call.id, &result_content);
+                                ctx.record_completed_step(format!("{} - 失败: {}", tool_call.name, err_msg));
+                                continue;
+                            }
+                        }
+                    }
+
                     // 在文件修改/删除操作前自动创建版本快照
                     if let Some(ref snapshot_fn) = self.snapshot_fn {
                         let files_to_snapshot = self.extract_snapshot_paths(&tool_call.name, &safe_params);
@@ -1402,11 +1431,38 @@ impl<R: Runtime> AgentExecutor<R> {
                     let duration_ms = tool_start.elapsed().as_millis() as u64;
                     log::debug!("Tool 执行完成, session_id={}, tool={}, 成功={}, 耗时={}ms", ctx.session_id, tool_call.name, result.success, duration_ms);
 
+                    // 对 code_interpreter_handler，提取并保存最终执行的代码到 ctx.last_code
+                    // 成功和失败都保存：失败时保存的是已应用 patch 后的完整代码，供下次 patch 或错误反馈使用
+                    let executed_code = if tool_call.name == "code_interpreter_handler" {
+                        result.output.as_ref()
+                            .and_then(|o| o.get("_executed_code"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                    } else {
+                        None
+                    };
+                    if let Some(code) = executed_code {
+                        ctx.set_last_code(code);
+                    }
+
+                    // 对 code_interpreter_handler，构造不含 _executed_code 的 output（避免污染前端和 LLM 上下文）
+                    let clean_output = if tool_call.name == "code_interpreter_handler" {
+                        result.output.as_ref().map(|v| {
+                            let mut cleaned = v.clone();
+                            if let Some(obj) = cleaned.as_object_mut() {
+                                obj.remove("_executed_code");
+                            }
+                            cleaned
+                        })
+                    } else {
+                        result.output.clone()
+                    };
+
                     self.emitter.emit_tool_result(ToolResultPayload {
                         session_id: ctx.session_id.clone(),
                         call_id: tool_call.id.clone(),
                         success: result.success,
-                        result: result.output.clone().unwrap_or(json!(null)),
+                        result: clean_output.clone().unwrap_or(json!(null)),
                         error: result.error.clone(),
                         duration_ms,
                     }).ok();
@@ -1414,7 +1470,7 @@ impl<R: Runtime> AgentExecutor<R> {
                     // 将工具结果添加到上下文
                     // 缓存优化：对大结果进行截断，避免巨量动态内容冲淡缓存命中率
                     let result_content = if result.success {
-                        let output_val = result.output.as_ref().map(|v| {
+                        let output_val = clean_output.as_ref().map(|v| {
                             // 如果是 JSON 对象且包含 content 字段，截断该字段
                             if let Some(obj) = v.as_object() {
                                 if let Some(content_val) = obj.get("content") {
@@ -1451,6 +1507,22 @@ impl<R: Runtime> AgentExecutor<R> {
                         } else {
                             serialized
                         }
+                    } else if tool_call.name == "code_interpreter_handler" {
+                        // code_interpreter_handler 失败：附加完整原始代码 + 错误定位提示
+                        // 引导 LLM 在原代码基础上修正而非重写
+                        // 优先从 output._executed_code 获取（代码执行失败场景），
+                        // 回退到 ctx.last_code()（patch 应用失败场景，output 为 None）
+                        let original_code = result.output.as_ref()
+                            .and_then(|o| o.get("_executed_code"))
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string())
+                            .or_else(|| ctx.last_code().map(|s| s.to_string()))
+                            .unwrap_or_default();
+                        let error_msg = result.error.clone().unwrap_or_default();
+                        format!(
+                            "错误: {}\n\n原始代码:\n```python\n{}\n```\n\n请在原代码基础上修正错误部分。你可以：\n1. 使用 patches 参数提供搜索替换块进行局部修正（推荐）\n2. 或输出修正后的完整 code\n\n注意：优先使用 patches 模式，保留原代码结构，仅修改出错的部分。",
+                            error_msg, original_code
+                        )
                     } else {
                         format!("错误: {}", result.error.clone().unwrap_or_default())
                     };
