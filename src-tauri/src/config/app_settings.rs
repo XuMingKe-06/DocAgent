@@ -214,7 +214,14 @@ pub struct AppSettings {
     /// 更新设置
     #[serde(default)]
     pub update: UpdateSettings,
+    /// Sidecar 请求超时时间（秒），0 表示使用默认值 120 秒
+    /// 用于处理 PDF 大文件、Excel 复杂计算、matplotlib 绘图等耗时操作
+    #[serde(default)]
+    pub sidecar_timeout_secs: u64,
 }
+
+/// Sidecar 默认请求超时时间（秒）
+const DEFAULT_SIDECAR_TIMEOUT_SECS: u64 = 120;
 
 /// 获取应用设置文件路径
 fn config_path(data_dir: &Path) -> std::path::PathBuf {
@@ -330,6 +337,12 @@ pub fn merge_with_defaults(
         },
         update: UpdateSettings {
             auto_check: user_settings.update.auto_check,
+        },
+        // sidecar_timeout_secs 为 0 时使用默认值（兼容旧配置文件）
+        sidecar_timeout_secs: if user_settings.sidecar_timeout_secs == 0 {
+            DEFAULT_SIDECAR_TIMEOUT_SECS
+        } else {
+            user_settings.sidecar_timeout_secs
         },
     }
 }

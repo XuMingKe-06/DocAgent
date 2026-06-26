@@ -225,9 +225,16 @@ pub fn run() {
                 }
             };
 
+            // 读取 Sidecar 超时配置（容错：加载失败时使用默认值 120 秒）
+            let sidecar_timeout_secs = config_manager
+                .load_app_settings()
+                .map(|s| s.sidecar_timeout_secs)
+                .unwrap_or(0);
+
             let sidecar_manager = crate::services::document::SidecarManager::new(
                 python_path,
                 sidecar_script_str,
+                sidecar_timeout_secs,
             );
             let doc_service = crate::services::document::DocumentService::new(sidecar_manager);
 

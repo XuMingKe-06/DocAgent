@@ -144,10 +144,22 @@ impl Tool for ListDirectoryTool {
         let resolved_dir_owned = resolved_dir.clone();
         let extensions_clone = extensions.clone();
 
-        let results = tokio::task::spawn_blocking(move || {
+        let results = match tokio::task::spawn_blocking(move || {
             let dir = std::path::Path::new(&resolved_dir_owned);
             tool_list_dir(dir, dir, max_depth, 0, &extensions_clone)
-        }).await.unwrap_or_default();
+        }).await {
+            Ok(results) => results,
+            Err(join_err) => {
+                // spawn_blocking 任务可能因 panic 失败，不应静默吞掉
+                log::error!("list_directory spawn_blocking 失败: {}", join_err);
+                return ToolResult {
+                    success: false,
+                    output: None,
+                    error: Some(format!("目录列出任务执行失败: {}", join_err)),
+                    duration_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
 
         ToolResult {
             success: true,
@@ -354,12 +366,24 @@ impl Tool for SearchFilesTool {
         let resolved_directory_owned = resolved_directory.clone();
         let extensions_clone = extensions.clone();
 
-        let results = tokio::task::spawn_blocking(move || {
+        let results = match tokio::task::spawn_blocking(move || {
             let dir_path = std::path::Path::new(&resolved_directory_owned);
             let mut results = Vec::new();
             tool_search_files(dir_path, dir_path, &query_lower, &extensions_clone, include_content, max_results, &mut results);
             results
-        }).await.unwrap_or_default();
+        }).await {
+            Ok(results) => results,
+            Err(join_err) => {
+                // spawn_blocking 任务可能因 panic 失败，不应静默吞掉
+                log::error!("search_files spawn_blocking 失败: {}", join_err);
+                return ToolResult {
+                    success: false,
+                    output: None,
+                    error: Some(format!("文件搜索任务执行失败: {}", join_err)),
+                    duration_ms: start.elapsed().as_millis() as u64,
+                };
+            }
+        };
 
         ToolResult {
             success: true,
@@ -1300,7 +1324,18 @@ impl Tool for DeleteFileTool {
                     backup_path_str = backup_path;
                 }
                 Err(e) => {
-                    log::warn!("创建备份失败: {}, 继续删除操作", e);
+                    // 备份失败时拒绝删除，避免数据丢失
+                    // 用户可显式设置 create_backup=false 跳过备份后再删除
+                    log::error!("创建备份失败: {}, 拒绝删除操作", e);
+                    return ToolResult {
+                        success: false,
+                        output: None,
+                        error: Some(format!(
+                            "创建备份失败: {}。如需跳过备份强制删除，请设置 create_backup=false 后重试",
+                            e
+                        )),
+                        duration_ms: start.elapsed().as_millis() as u64,
+                    };
                 }
             }
         }
@@ -1706,7 +1741,7 @@ impl Tool for WriteTextFileTool {
         let encoded_bytes = encoded_bytes.into_owned();
 
         let write_result = if append {
-            // 追加模式：使用 OpenOptions
+            // 追加模式：直接追加到目标文件（原子写入不适用于追加场景）
             match tokio::fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -1717,7 +1752,27 @@ impl Tool for WriteTextFileTool {
                 Err(e) => Err(e),
             }
         } else {
-            tokio::fs::write(&resolved_path, &encoded_bytes).await
+            // 非追加模式：原子写入（先写临时文件，再 rename 到目标路径）
+            // 防止写入过程中崩溃导致原文件损坏
+            let tmp_path = format!("{}.tmp", resolved_path);
+            match tokio::fs::write(&tmp_path, &encoded_bytes).await {
+                Ok(_) => {
+                    // rename 是原子操作（同文件系统内）
+                    match tokio::fs::rename(&tmp_path, &resolved_path).await {
+                        Ok(_) => Ok(()),
+                        Err(rename_err) => {
+                            // rename 失败，清理临时文件
+                            let _ = tokio::fs::remove_file(&tmp_path).await;
+                            Err(rename_err)
+                        }
+                    }
+                }
+                Err(e) => {
+                    // 写入临时文件失败，清理可能残留的临时文件
+                    let _ = tokio::fs::remove_file(&tmp_path).await;
+                    Err(e)
+                }
+            }
         };
 
         match write_result {
