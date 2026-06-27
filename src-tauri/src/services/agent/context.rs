@@ -44,9 +44,12 @@ impl AuthorInfo {
 }
 
 /// reasoning_content 压缩阈值（字符数），超过此长度的早期思考内容将被截断
-const REASONING_COMPRESS_THRESHOLD: usize = 500;
+/// 设为 1200：常见的推理段落长度在 600-1200 之间，低于此值保留完整可避免过度压缩；
+/// 仅对超过 1200 字符的长推理进行截断，平衡 token 节省与上下文完整性
+const REASONING_COMPRESS_THRESHOLD: usize = 1200;
 /// 压缩后保留的字符数
-const REASONING_COMPRESS_KEEP: usize = 200;
+/// 设为 500：保留推理的关键前提和结论，避免智能体在多轮迭代后丢失任务上下文
+const REASONING_COMPRESS_KEEP: usize = 500;
 
 /// 历史压缩结果
 pub struct CompressionResult {
@@ -1059,8 +1062,8 @@ mod tests {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
         ctx.add_user_message("你好");
 
-        // 早期的 assistant 消息，reasoning_content 超过阈值（600 > 500）
-        let long_reasoning = make_long_string(600);
+        // 早期的 assistant 消息，reasoning_content 超过阈值（1500 > 1200）
+        let long_reasoning = make_long_string(1500);
         ctx.add_assistant_message("回复1", None, Some(long_reasoning));
 
         // 最近一条有 reasoning_content 的消息（使其成为"最近一轮"）
@@ -1076,7 +1079,7 @@ mod tests {
         let compressed = early_assistant.reasoning_content.as_ref().unwrap();
         assert!(compressed.contains("...(已省略)"));
 
-        // 压缩后应该以原始内容的前 200 字符开头
+        // 压缩后应该以原始内容的前 REASONING_COMPRESS_KEEP 字符开头
         let expected_prefix = make_long_string(REASONING_COMPRESS_KEEP);
         assert!(compressed.starts_with(&expected_prefix));
     }
@@ -1087,12 +1090,12 @@ mod tests {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
         ctx.add_user_message("你好");
 
-        // 早期长 reasoning
-        let long_reasoning = make_long_string(600);
+        // 早期长 reasoning（超过阈值 1200）
+        let long_reasoning = make_long_string(1500);
         ctx.add_assistant_message("回复1", None, Some(long_reasoning));
 
         // 最近一条长 reasoning（超过阈值但不应被压缩，因为是最新的）
-        let latest_reasoning = make_long_string(700);
+        let latest_reasoning = make_long_string(1700);
         ctx.add_user_message("继续");
         ctx.add_assistant_message("回复2", None, Some(latest_reasoning.clone()));
 
@@ -1112,7 +1115,7 @@ mod tests {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
         ctx.add_user_message("你好");
 
-        // 短 reasoning（不超过阈值 500）
+        // 短 reasoning（不超过阈值 1200）
         let short_reasoning = "这是一个简短的推理过程".to_string();
         ctx.add_assistant_message("回复1", None, Some(short_reasoning.clone()));
 

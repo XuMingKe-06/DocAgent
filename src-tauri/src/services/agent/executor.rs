@@ -1511,6 +1511,16 @@ impl<R: Runtime> AgentExecutor<R> {
                                                     json!(truncated_content),
                                                 );
                                             }
+                                            // 截断必须有可观测日志，否则工具结果中间内容丢失时无法诊断
+                                            // （智能体读大文档时只看到头尾，中间章节缺失会被误判为"文档截断"）
+                                            log::info!(
+                                                "工具结果内容字段已截断, tool={}, 原始 {} 字符 -> 保留头部 {} + 尾部 {}, 省略中间 {} 字符",
+                                                tool_call.name,
+                                                total_chars,
+                                                head_chars,
+                                                tail_chars,
+                                                total_chars - MAX_TOOL_RESULT_CHARS
+                                            );
                                             return truncated;
                                         }
                                     }
@@ -1522,6 +1532,12 @@ impl<R: Runtime> AgentExecutor<R> {
                         // 最终的字符串级安全截断（防止递归嵌套等极端情况）
                         // 使用 chars().take() 避免切割多字节 UTF-8 字符导致 panic
                         if serialized.len() > MAX_TOOL_RESULT_CHARS * 2 {
+                            log::warn!(
+                                "工具结果字符串级安全截断, tool={}, 原始 {} 字节 -> 仅保留前 {} 字符（极端情况，可能丢失关键信息）",
+                                tool_call.name,
+                                serialized.len(),
+                                MAX_TOOL_RESULT_CHARS * 2
+                            );
                             let safe_truncated: String = serialized.chars().take(MAX_TOOL_RESULT_CHARS * 2).collect();
                             format!("{}...\n[已截断: 工具结果过大，仅保留前 {} 字符]",
                                 safe_truncated,

@@ -1851,13 +1851,27 @@ fn validate_existing_path_in_workspace(
         return Err("缺少工作区根目录路径，无法进行安全校验".to_string());
     }
 
-    let canonical_path = crate::utils::canonicalize(std::path::Path::new(resolved_path))
-        .map_err(|_| format!("路径不存在或无效: {}", resolved_path))?;
-
     let canonical_root = crate::utils::canonicalize(std::path::Path::new(workspace_root))
         .map_err(|_| format!("工作区根目录不存在或无效: {}", workspace_root))?;
 
-    // 路径组件级别的 starts_with 比较（避免字符串前缀匹配的绕过风险）
+    // 安全防线 1：词法归一化检查（不依赖文件系统）
+    // 即使目标文件不存在（canonicalize 会失败），也能识别 `../` 越界并拒绝
+    // 避免攻击者通过路径遍历探测文件存在性
+    let normalized_path = normalize_path_lexically(resolved_path, &canonical_root);
+    if !normalized_path.starts_with(&canonical_root) {
+        return Err(format!(
+            "路径不在工作区内，拒绝访问: {} (工作区: {})",
+            resolved_path,
+            canonical_root.display()
+        ));
+    }
+
+    // 安全防线 2：canonicalize 确认路径真实存在
+    let canonical_path = crate::utils::canonicalize(std::path::Path::new(resolved_path))
+        .map_err(|_| format!("路径不存在或无效: {}", resolved_path))?;
+
+    // 安全防线 3：组件级 starts_with 比较（避免字符串前缀匹配的绕过风险）
+    // 防止符号链接等文件系统层面的绕过
     if !canonical_path.starts_with(&canonical_root) {
         return Err(format!(
             "路径不在工作区内，拒绝访问: {} (工作区: {})",
@@ -1867,6 +1881,46 @@ fn validate_existing_path_in_workspace(
     }
 
     Ok((canonical_path, canonical_root))
+}
+
+/// 对路径进行词法归一化（不访问文件系统）
+/// 用于在 canonicalize 失败前识别 `..` 越界，避免泄露文件存在性信息
+/// 注意：这是安全防护的补充手段，不能替代 canonicalize（无法识别符号链接）
+/// Rust 标准库的 Path::components() 会保留 ParentDir(`..`) 组件，
+/// 因此必须手动解析 `..` 才能正确判断越界
+fn normalize_path_lexically(resolved_path: &str, workspace_root: &std::path::Path) -> std::path::PathBuf {
+    use std::path::Component;
+    let path = std::path::Path::new(resolved_path);
+    // 如果是相对路径，基于工作区拼接
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        workspace_root.join(path)
+    };
+
+    // 手动解析 `.` 和 `..` 组件（不访问文件系统）
+    let mut stack: Vec<std::path::Component<'_>> = Vec::new();
+    for comp in absolute.components() {
+        match comp {
+            Component::CurDir => { /* `.` 忽略 */ }
+            Component::ParentDir => {
+                // 弹出最后一个 Normal 组件（不弹出根前缀如 Prefix/RootDir）
+                if let Some(last) = stack.last() {
+                    match last {
+                        Component::Normal(_) => {
+                            stack.pop();
+                        }
+                        // 根目录或前缀（如 C:\）下不能再 `..`，忽略
+                        Component::RootDir | Component::Prefix(_) => {}
+                        Component::ParentDir => stack.push(comp), // 连续 .. 保留
+                        Component::CurDir => unreachable!(),
+                    }
+                }
+            }
+            _ => stack.push(comp),
+        }
+    }
+    stack.iter().collect::<std::path::PathBuf>()
 }
 
 /// 校验目标路径（可能不存在）的父目录是否在工作区内
