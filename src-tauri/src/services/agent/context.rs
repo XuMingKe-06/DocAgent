@@ -1,4 +1,5 @@
 use crate::models::llm::{ChatMessage, ChatUsage, LlmToolCall};
+use crate::services::tool::builtin::{format_scratchpad_summary, SharedScratchpadStates};
 use super::prompts::document_design::get_design_guide_by_type;
 use super::prompts::task_type::TaskType;
 use super::prompts::token_budget::{TokenBudgetManager, HistoryCompressionConfig};
@@ -44,9 +45,12 @@ impl AuthorInfo {
 }
 
 /// reasoning_content 压缩阈值（字符数），超过此长度的早期思考内容将被截断
-const REASONING_COMPRESS_THRESHOLD: usize = 500;
+/// 设为 1200：常见的推理段落长度在 600-1200 之间，低于此值保留完整可避免过度压缩；
+/// 仅对超过 1200 字符的长推理进行截断，平衡 token 节省与上下文完整性
+const REASONING_COMPRESS_THRESHOLD: usize = 1200;
 /// 压缩后保留的字符数
-const REASONING_COMPRESS_KEEP: usize = 200;
+/// 设为 500：保留推理的关键前提和结论，避免智能体在多轮迭代后丢失任务上下文
+const REASONING_COMPRESS_KEEP: usize = 500;
 
 /// 历史压缩结果
 pub struct CompressionResult {
@@ -87,9 +91,9 @@ pub struct AgentContext {
     token_budget: TokenBudgetManager,
     /// 历史压缩配置
     compression_config: HistoryCompressionConfig,
-    /// 已完成的步骤摘要（用于迭代上下文）
+    /// 已完成的步骤摘要（保留兼容性，不再注入消息列表）
     completed_steps: Vec<String>,
-    /// 当前正在执行的步骤描述
+    /// 当前正在执行的步骤描述（保留兼容性，不再注入消息列表）
     current_step: String,
     /// 工具定义（Tool + Handler）的估算 Token 数，由 executor 在构建 tool definitions 后设置
     pub function_definitions_tokens: usize,
@@ -100,6 +104,13 @@ pub struct AgentContext {
     /// 上一次 code_interpreter_handler 执行的代码（完整代码，含 patch 应用后的结果）
     /// 用于 patch 模式的基准代码，None 表示尚无可用基准
     last_code: Option<String>,
+    /// Scratchpad 共享状态引用（与 ScratchpadTool 共享同一 Arc）
+    /// executor 每轮迭代开始时调用 refresh_scratchpad_summary 刷新 scratchpad_summary
+    pub scratchpad_states: SharedScratchpadStates,
+    /// 当前轮次的 Scratchpad 笔记摘要（由 executor 在每轮开始时刷新）
+    /// 为 None 表示无笔记，get_messages_for_iteration 跳过注入
+    /// 为 Some(String) 表示有笔记，作为独立 user 消息追加到消息列表末尾
+    scratchpad_summary: Option<String>,
 }
 
 impl AgentContext {
@@ -108,7 +119,7 @@ impl AgentContext {
             session_id,
             messages: Vec::new(),
             system_prompt,
-            max_iterations: 20,
+            max_iterations: 100,
             persisted_count: 0,
             workspace_path: String::new(),
             workspace_id: String::new(),
@@ -121,12 +132,26 @@ impl AgentContext {
             lifetime_cache_hit_tokens: 0,
             lifetime_cache_miss_tokens: 0,
             last_code: None,
+            scratchpad_states: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
+            scratchpad_summary: None,
         }
     }
 
     /// 使用默认上下文窗口大小创建（128K），仅用于测试
     pub fn new_default(session_id: String, system_prompt: String) -> Self {
         Self::new(session_id, system_prompt, 128_000)
+    }
+
+    /// 设置 Scratchpad 共享状态引用（由 executor 在初始化时注入）
+    /// 此方法将 AgentContext 的 scratchpad_states 替换为与 ScratchpadTool 共享的同一 Arc
+    pub fn set_scratchpad_states(&mut self, states: SharedScratchpadStates) {
+        self.scratchpad_states = states;
+    }
+
+    /// 刷新 Scratchpad 摘要（由 executor 在每轮迭代开始时调用）
+    /// 从共享状态中读取当前会话的笔记，格式化为摘要字符串
+    pub fn refresh_scratchpad_summary(&mut self) {
+        self.scratchpad_summary = format_scratchpad_summary(&self.scratchpad_states, &self.session_id);
     }
 
     /// 获取 Token 预算管理器的引用
@@ -435,14 +460,20 @@ impl AgentContext {
 
     /// 获取针对指定迭代轮次优化后的消息列表
     /// 与 get_messages 的区别：
-    /// 1. 压缩早期迭代的 reasoning_content（保留最近 1 轮完整，更早轮次截取前 200 字符）
-    /// 2. 迭代 > 1 时将迭代上下文追加到**末尾**，确保 system prompt + 对话历史前缀稳定
+    /// 1. 压缩早期迭代的 reasoning_content（保留最近 1 轮完整，更早轮次截取前 500 字符）
+    /// 2. 若 Scratchpad 笔记摘要非空，作为独立 user 消息追加到末尾
     /// 3. 对话历史超过预算时进行滑动窗口压缩
     ///
     /// 缓存优化说明（DeepSeek 磁盘前缀缓存）：
-    /// 将迭代上下文放在消息列表末尾而非 system prompt 之后，确保从 token 0 开始的稳定前缀
+    /// Scratchpad 摘要放在消息列表末尾而非 system prompt 之后，确保从 token 0 开始的稳定前缀
     /// （system prompt + 首条 user 消息 + 早期 conversation history）在各迭代间保持一致。
     /// 这使 DeepSeek V4 的公共前缀检测可以缓存完整的稳定前缀部分，大幅提升跨迭代缓存命中率。
+    ///
+    /// 设计变更说明（取代原 iteration_context）：
+    /// 原 iteration_context 注入"迭代轮次 3/100"、"当前步骤"等外部硬编码元数据，
+    /// 违背 Anthropic《Effective Context Engineering for AI Agents》的"right altitude"原则
+    /// 和 "Structured Note-taking" 模式（笔记应由 agent 自主维护）。
+    /// 现改为注入 agent 自己通过 update_notes 工具写的笔记摘要，信噪比更高。
     pub fn get_messages_for_iteration(&self, current_iteration: u32) -> Vec<ChatMessage> {
         // 系统提示词始终为原始内容，不附加任何迭代上下文
         let mut all = vec![ChatMessage {
@@ -488,18 +519,15 @@ impl AgentContext {
             all.push(compressed_msg);
         }
 
-        // 缓存优化：迭代上下文作为独立 user 消息追加到**末尾**而非 system prompt 之后，
+        // 缓存优化：Scratchpad 笔记摘要作为独立 user 消息追加到**末尾**而非 system prompt 之后，
         // 确保前缀（system prompt + 对话历史）在各迭代间字节级一致，最大化 DeepSeek 磁盘缓存命中率
-        if current_iteration > 1 {
+        // 仅当 agent 已通过 update_notes 工具写入笔记时注入，无笔记则不追加任何消息
+        // current_iteration 参数保留用于未来扩展（如按迭代轮次调整注入策略）
+        let _ = current_iteration;
+        if let Some(summary) = &self.scratchpad_summary {
             all.push(ChatMessage {
                 role: "user".to_string(),
-                content: format!(
-                    "<iteration_context>\n## 当前执行进度\n\n迭代轮次: {}/{}\n{}当前步骤: [进行中] {}\n\n请基于以上进度继续执行，不要重复已完成的步骤。\n</iteration_context>",
-                    current_iteration,
-                    self.max_iterations,
-                    self.format_completed_steps(),
-                    self.current_step,
-                ),
+                content: summary.clone(),
                 content_parts: None,
                 tool_calls: None,
                 tool_call_id: None,
@@ -850,7 +878,7 @@ impl AgentContext {
 
     /// Layer 3: 策略层
     fn layer_tool_strategy() -> String {
-        r#"<tool_strategy>
+        let base = r#"<tool_strategy>
 ## 工具选择策略
 
 ### 读取操作
@@ -888,7 +916,21 @@ impl AgentContext {
 
 ### 输出风格
 - 回复和文档中不得出现任何emoji表情符号，使用文字替代（如用"完成"替代"✅"，用"注意"替代"⚠️"）
-</tool_strategy>"#.to_string()
+
+### 任务笔记管理（update_notes 工具）
+update_notes 工具是你的"草稿本"，用于在多步骤任务中自主记录关键信息，帮助你跨迭代保持上下文。
+- 何时记录：完成关键步骤（如读取了文件、确定了方案、发现了问题）后，简要记录进度和发现
+- 记录什么：已完成的步骤、关键发现、待办事项、重要决策依据（如用户偏好、文件路径）
+- 不必记录：显而易见的中间过程、无关紧要的细节
+- 笔记会自动在下一次迭代时以摘要形式提供给你，无需重复读取或搜索
+- 每条笔记控制在100字以内，聚焦关键信息；旧笔记可通过 action="clear" 清空
+- 这是一个可选工具：简单任务无需记录，复杂任务建议主动维护笔记
+</tool_strategy>"#;
+
+        // 追加 Code Interpreter 指导（patches 模式等系统级指导）
+        // 与 PromptLoader::default_tool_strategy 保持一致
+        let ci_guide = super::prompts::code_interpreter::CODE_INTERPRETER_GUIDE;
+        format!("{}\n\n{}", base, ci_guide)
     }
 
     /// Layer 4: 防幻觉层
@@ -1026,13 +1068,12 @@ mod tests {
         assert!(!messages[0].content.contains("iteration_context"));
     }
 
-    /// 测试后续迭代时迭代上下文作为独立 user 消息（不修改 system prompt）
+    /// 测试后续迭代时无 Scratchpad 笔记则不追加额外消息（取代原 iteration_context 注入）
     #[test]
     fn test_get_messages_for_iteration_later_iteration() {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
         ctx.add_user_message("你好");
         ctx.add_assistant_message("你好！", None, None);
-        ctx.record_completed_step("列出了工作区文件".to_string());
 
         let messages = ctx.get_messages_for_iteration(2);
 
@@ -1041,11 +1082,11 @@ mod tests {
         assert_eq!(messages[0].content, "你是助手");
         assert!(!messages[0].content.contains("iteration_context"));
 
-        // 迭代上下文作为独立 user 消息追加到末尾（缓存优化：保持前缀稳定）
+        // 无 Scratchpad 笔记时，不追加任何额外消息
+        // 最后一条消息应为对话历史中的最后一条（assistant 消息）
         let last_msg = messages.last().expect("消息列表不应为空");
-        assert_eq!(last_msg.role, "user");
-        assert!(last_msg.content.contains("iteration_context"));
-        assert!(last_msg.content.contains("已完成步骤"));
+        assert_eq!(last_msg.role, "assistant");
+        assert_eq!(last_msg.content, "你好！");
     }
 
     /// 测试早期 reasoning_content 超过阈值时被压缩
@@ -1054,8 +1095,8 @@ mod tests {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
         ctx.add_user_message("你好");
 
-        // 早期的 assistant 消息，reasoning_content 超过阈值（600 > 500）
-        let long_reasoning = make_long_string(600);
+        // 早期的 assistant 消息，reasoning_content 超过阈值（1500 > 1200）
+        let long_reasoning = make_long_string(1500);
         ctx.add_assistant_message("回复1", None, Some(long_reasoning));
 
         // 最近一条有 reasoning_content 的消息（使其成为"最近一轮"）
@@ -1071,7 +1112,7 @@ mod tests {
         let compressed = early_assistant.reasoning_content.as_ref().unwrap();
         assert!(compressed.contains("...(已省略)"));
 
-        // 压缩后应该以原始内容的前 200 字符开头
+        // 压缩后应该以原始内容的前 REASONING_COMPRESS_KEEP 字符开头
         let expected_prefix = make_long_string(REASONING_COMPRESS_KEEP);
         assert!(compressed.starts_with(&expected_prefix));
     }
@@ -1082,12 +1123,12 @@ mod tests {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
         ctx.add_user_message("你好");
 
-        // 早期长 reasoning
-        let long_reasoning = make_long_string(600);
+        // 早期长 reasoning（超过阈值 1200）
+        let long_reasoning = make_long_string(1500);
         ctx.add_assistant_message("回复1", None, Some(long_reasoning));
 
         // 最近一条长 reasoning（超过阈值但不应被压缩，因为是最新的）
-        let latest_reasoning = make_long_string(700);
+        let latest_reasoning = make_long_string(1700);
         ctx.add_user_message("继续");
         ctx.add_assistant_message("回复2", None, Some(latest_reasoning.clone()));
 
@@ -1107,7 +1148,7 @@ mod tests {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
         ctx.add_user_message("你好");
 
-        // 短 reasoning（不超过阈值 500）
+        // 短 reasoning（不超过阈值 1200）
         let short_reasoning = "这是一个简短的推理过程".to_string();
         ctx.add_assistant_message("回复1", None, Some(short_reasoning.clone()));
 
@@ -1272,7 +1313,7 @@ mod tests {
         assert!(!prompt.contains("<examples>"));
     }
 
-    /// 测试按任务类型构建系统提示词 - 未知类型默认注入Word规范
+    /// 测试按任务类型构建系统提示词 - 未知类型不注入任何设计规范（P4-2）
     #[test]
     fn test_build_system_prompt_with_task_unknown() {
         let budget = TokenBudgetManager::default_context();
@@ -1285,8 +1326,11 @@ mod tests {
             None,
         );
 
-        // 未知类型默认注入 Word 规范
-        assert!(prompt.contains("<guide type=\"docx\">"));
+        // P4-2: 未知类型不注入任何设计规范，避免浪费 Token 和误导 LLM
+        assert!(!prompt.contains("<guide type=\"docx\">"));
+        assert!(!prompt.contains("<guide type=\"xlsx\">"));
+        assert!(!prompt.contains("<guide type=\"pptx\">"));
+        assert!(!prompt.contains("<guide type=\"pdf\">"));
     }
 
     /// 测试规则层包含正负约束
@@ -1314,27 +1358,57 @@ mod tests {
         assert!(layer.contains("确认机制说明"));
     }
 
-    /// 测试迭代上下文构建（通过 get_messages_for_iteration 间接验证）
-    /// 原 build_iteration_context 方法已内联到 get_messages_for_iteration
+    /// 测试 Scratchpad 笔记摘要注入（取代原 iteration_context 外部硬编码注入）
+    /// 验证 agent 通过 update_notes 工具自主记录的笔记会被格式化为摘要并注入消息列表末尾
     #[test]
-    fn test_iteration_context() {
+    fn test_scratchpad_summary_injection() {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
-        ctx.max_iterations = 20;
-        ctx.record_completed_step("列出了工作区文件".to_string());
-        ctx.record_completed_step("读取了报告.docx".to_string());
-        ctx.set_current_step("修改报告.docx中的日期".to_string());
+        ctx.max_iterations = 100;
+        ctx.add_user_message("你好");
+        ctx.add_assistant_message("你好！", None, None);
 
-        // 第 3 轮迭代时，get_messages_for_iteration 会在末尾追加迭代上下文 user 消息
+        // 初始状态：无笔记，get_messages_for_iteration 不追加额外消息
+        let messages = ctx.get_messages_for_iteration(1);
+        let last_msg = messages.last().expect("消息列表不应为空");
+        assert_eq!(last_msg.role, "assistant");
+        assert_eq!(last_msg.content, "你好！");
+
+        // 通过共享状态添加笔记（模拟 agent 调用 update_notes 工具）
+        {
+            let mut states = ctx.scratchpad_states.write().expect("scratchpad states 锁中毒");
+            let state = states.entry("session-1".to_string()).or_default();
+            state.push(crate::models::tool::ScratchpadEntry {
+                content: "已列出工作区文件".to_string(),
+                iteration: 1,
+                timestamp_ms: 1000,
+            });
+            state.push(crate::models::tool::ScratchpadEntry {
+                content: "已读取报告.docx".to_string(),
+                iteration: 2,
+                timestamp_ms: 2000,
+            });
+        }
+
+        // 刷新摘要（由 executor 在每轮迭代开始时调用）
+        ctx.refresh_scratchpad_summary();
+        assert!(ctx.scratchpad_summary.is_some());
+
+        // 再次获取消息，应在末尾追加 scratchpad 摘要 user 消息
         let messages = ctx.get_messages_for_iteration(3);
         let last_msg = messages.last().expect("消息列表不应为空");
 
         assert_eq!(last_msg.role, "user");
-        assert!(last_msg.content.contains("<iteration_context>"));
-        assert!(last_msg.content.contains("迭代轮次: 3/20"));
-        assert!(last_msg.content.contains("列出了工作区文件"));
-        assert!(last_msg.content.contains("读取了报告.docx"));
-        assert!(last_msg.content.contains("修改报告.docx中的日期"));
-        assert!(last_msg.content.contains("不要重复已完成的步骤"));
+        assert!(last_msg.content.contains("<scratchpad>"));
+        assert!(last_msg.content.contains("你的任务笔记"));
+        assert!(last_msg.content.contains("已列出工作区文件"));
+        assert!(last_msg.content.contains("已读取报告.docx"));
+        assert!(last_msg.content.contains("update_notes"));
+
+        // 确认不再注入旧的 iteration_context 元数据
+        assert!(!last_msg.content.contains("<iteration_context>"));
+        assert!(!last_msg.content.contains("迭代轮次"));
+        assert!(!last_msg.content.contains("剩余"));
+        assert!(!last_msg.content.contains("不要重复已完成的步骤"));
     }
 
     /// 测试任务类型更新

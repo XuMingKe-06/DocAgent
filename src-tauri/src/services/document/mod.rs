@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, mpsc, oneshot};
 
 use crate::errors::CommandError;
 use serde_json::{json, Value};
@@ -33,6 +33,15 @@ struct SidecarRunning {
     stdout_reader: BufReader<ChildStdout>,
 }
 
+/// Sidecar 请求队列项（方案 C：请求队列解耦）
+/// 请求提交者通过 channel 发送请求，后台处理器串行处理 I/O
+struct SidecarRequest {
+    /// 请求 JSON 内容
+    request: Value,
+    /// 响应回传通道（oneshot）
+    response_tx: oneshot::Sender<Result<Value, CommandError>>,
+}
+
 /// Sidecar 进程管理器
 pub struct SidecarManager {
     /// Sidecar 运行状态（包含进程和 I/O 管道，统一锁保护）
@@ -45,16 +54,27 @@ pub struct SidecarManager {
     request_timeout: Duration,
     /// 连续健康检查失败次数
     health_check_failures: Arc<Mutex<u32>>,
+    /// 请求队列发送端（start 时创建，stop 时清空）
+    /// 后台处理器从 channel 接收请求，串行执行 I/O，避免请求提交者直接持锁
+    request_tx: Mutex<Option<mpsc::Sender<SidecarRequest>>>,
 }
 
 impl SidecarManager {
-    pub fn new(python_path: String, script_path: String) -> Self {
+    /// 创建 Sidecar 管理器
+    /// timeout_secs: 请求超时时间（秒），传 0 使用默认值 120 秒
+    pub fn new(python_path: String, script_path: String, timeout_secs: u64) -> Self {
+        let timeout = if timeout_secs == 0 {
+            DEFAULT_REQUEST_TIMEOUT_SECS
+        } else {
+            timeout_secs
+        };
         Self {
             running: Arc::new(Mutex::new(None)),
             python_path,
             script_path,
-            request_timeout: Duration::from_secs(DEFAULT_REQUEST_TIMEOUT_SECS),
+            request_timeout: Duration::from_secs(timeout),
             health_check_failures: Arc::new(Mutex::new(0)),
+            request_tx: Mutex::new(None),
         }
     }
 
@@ -155,6 +175,21 @@ impl SidecarManager {
                     stdin,
                     stdout_reader,
                 });
+                // 释放 running 锁，避免后台处理器启动时死锁
+                drop(guard);
+
+                // 创建请求队列并启动后台处理器
+                // 后台处理器从 channel 接收请求，串行执行 I/O
+                // 请求提交者通过 send_request_inner 将请求放入 channel，不直接持 running 锁
+                let (tx, rx) = mpsc::channel::<SidecarRequest>(32);
+                *self.request_tx.lock().await = Some(tx);
+
+                let running_clone = Arc::clone(&self.running);
+                let timeout = self.request_timeout;
+                tokio::spawn(async move {
+                    Self::run_processor(running_clone, rx, timeout).await;
+                });
+
                 Ok(())
             }
             Ok(Err(e)) => {
@@ -180,6 +215,10 @@ impl SidecarManager {
     /// 停止 Sidecar 进程
     pub async fn stop(&self) -> Result<(), CommandError> {
         log::info!("停止 Sidecar 进程");
+
+        // 先清空请求队列，让后台处理器退出（channel 关闭后 recv 返回 None）
+        *self.request_tx.lock().await = None;
+
         let mut guard = self.running.lock().await;
         if let Some(ref mut running) = *guard {
             // 尝试终止进程，即使失败也要清理运行状态，避免残留导致 start() 跳过启动
@@ -276,21 +315,80 @@ impl SidecarManager {
     }
 
     /// 内部发送请求实现（无超时、无重试）
+    /// 通过 channel 将请求提交给后台处理器，不直接持有 running 锁
+    /// 后台处理器串行处理 I/O，通过 oneshot 返回响应
     pub async fn send_request_inner(&self, request: Value) -> Result<Value, CommandError> {
-        let mut guard = self.running.lock().await;
+        let tx_guard = self.request_tx.lock().await;
+        let tx = tx_guard.as_ref().ok_or_else(|| {
+            log::error!("Sidecar 请求队列未初始化（Sidecar 可能未启动）");
+            CommandError::doc(3010, "Sidecar 未启动".to_string())
+        })?;
 
-        let running = guard.as_mut().ok_or_else(|| {
+        let (response_tx, response_rx) = oneshot::channel();
+        tx.send(SidecarRequest { request, response_tx }).await
+            .map_err(|_| CommandError::doc(3010, "Sidecar 请求队列已关闭".to_string()))?;
+
+        // 等待后台处理器返回响应
+        // 注意：send_request 通过 tokio::time::timeout 包裹本方法实现超时
+        // 超时后 response_rx 被 drop，后台处理器的 response_tx.send 会失败（忽略）
+        response_rx.await
+            .map_err(|_| CommandError::doc(3010, "Sidecar 响应通道已关闭".to_string()))?
+    }
+
+    /// 后台处理器：从 channel 接收请求，串行执行 I/O
+    /// 方案 C 的核心：请求提交者不直接持 running 锁，而是通过 channel 提交请求
+    /// 后台处理器持锁执行 I/O，带超时保护（防止 I/O 卡死导致锁无法释放）
+    async fn run_processor(
+        running: Arc<Mutex<Option<SidecarRunning>>>,
+        mut request_rx: mpsc::Receiver<SidecarRequest>,
+        request_timeout: Duration,
+    ) {
+        log::info!("Sidecar 请求处理器已启动");
+        while let Some(req) = request_rx.recv().await {
+            let SidecarRequest { request, response_tx } = req;
+
+            // 带超时执行 I/O，防止 Sidecar 无响应时锁被永久持有
+            let result = tokio::time::timeout(
+                request_timeout,
+                Self::process_single_request(&running, request.clone()),
+            ).await;
+
+            let response = match result {
+                Ok(Ok(response)) => Ok(response),
+                Ok(Err(e)) => Err(e),
+                Err(_) => {
+                    log::error!("Sidecar I/O 超时（{}秒），可能需要重启", request_timeout.as_secs());
+                    Err(CommandError::doc(3010, format!(
+                        "Sidecar I/O 超时（{}秒）", request_timeout.as_secs()
+                    )))
+                }
+            };
+
+            // 发送响应（如果接收端已因超时丢弃，忽略错误）
+            let _ = response_tx.send(response);
+        }
+        log::info!("Sidecar 请求处理器已停止（channel 已关闭）");
+    }
+
+    /// 处理单个请求的 I/O（持 running 锁执行 stdin 写入 + stdout 读取）
+    async fn process_single_request(
+        running: &Arc<Mutex<Option<SidecarRunning>>>,
+        request: Value,
+    ) -> Result<Value, CommandError> {
+        let mut guard = running.lock().await;
+
+        let running_state = guard.as_mut().ok_or_else(|| {
             log::error!("Sidecar 未启动, 无法发送请求");
             CommandError::doc(3010, "Sidecar 未启动".to_string())
         })?;
 
         // 写入请求
         let request_str = serde_json::to_string(&request).unwrap_or_default();
-        running.stdin.write_all(format!("{}\n", request_str).as_bytes()).await.map_err(|e| {
+        running_state.stdin.write_all(format!("{}\n", request_str).as_bytes()).await.map_err(|e| {
             log::error!("写入 Sidecar 失败: {}", e);
             CommandError::doc(3010, format!("写入 Sidecar 失败: {}", e))
         })?;
-        running.stdin.flush().await.map_err(|e| {
+        running_state.stdin.flush().await.map_err(|e| {
             log::error!("刷新 Sidecar stdin 失败: {}", e);
             CommandError::doc(3010, format!("刷新 Sidecar stdin 失败: {}", e))
         })?;
@@ -298,7 +396,7 @@ impl SidecarManager {
 
         // 读取响应
         let mut response_line = String::new();
-        let bytes_read = running.stdout_reader.read_line(&mut response_line).await.map_err(|e| {
+        let bytes_read = running_state.stdout_reader.read_line(&mut response_line).await.map_err(|e| {
             log::error!("读取 Sidecar 响应失败: {}", e);
             CommandError::doc(3010, format!("读取 Sidecar 响应失败: {}", e))
         })?;
@@ -381,6 +479,7 @@ impl DocumentService {
             if *failures >= 3 {
                 log::warn!("Sidecar 连续 {} 次健康检查失败，尝试重启", *failures);
                 *failures = 0;
+                drop(failures); // 释放锁后再操作，避免 stop/start 阻塞其他等待 failures 锁的任务
                 let _ = self.sidecar.stop().await;
                 if let Err(e) = self.sidecar.start().await {
                     log::error!("Sidecar 重启失败: {}", e.message);

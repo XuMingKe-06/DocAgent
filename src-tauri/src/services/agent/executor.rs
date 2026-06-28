@@ -97,7 +97,7 @@ impl<R: Runtime> AgentExecutor<R> {
             registry,
             emitter,
             confirm_channels,
-            max_iterations: 20,
+            max_iterations: 100,
             should_stop: Arc::new(|_| false),
             persist_fn: None,
             context_usage_persist_fn: None,
@@ -576,6 +576,13 @@ impl<R: Runtime> AgentExecutor<R> {
             log::debug!("Agent 迭代 #{}, session_id={}", iteration + 1, ctx.session_id);
 
             let current_iteration = iteration + 1;
+
+            // 每轮迭代开始时刷新 Scratchpad 笔记摘要
+            // 这会从共享状态中读取当前会话的笔记，格式化为摘要字符串
+            // get_messages_for_iteration 会将摘要作为独立 user 消息追加到末尾
+            // 设计依据：Anthropic Effective Context Engineering 的 Structured Note-taking 模式
+            ctx.refresh_scratchpad_summary();
+
             let messages = ctx.get_messages_for_iteration(current_iteration);
             
             let mut llm_retry_count = 0;
@@ -1020,6 +1027,8 @@ impl<R: Runtime> AgentExecutor<R> {
                                 return Ok(self.handle_stop_if_needed(ctx, total_steps, start_time).expect("check_stopped 返回 true 但 handle_stop_if_needed 返回 None"));
                             }
 
+                            // 重试前刷新 Scratchpad 摘要（笔记可能在重试间隔被更新）
+                            ctx.refresh_scratchpad_summary();
                             let retry_messages = ctx.get_messages_for_iteration(current_iteration);
                             match self.router.chat_stream_with_max_tokens(&retry_messages, &tools, new_max_tokens).await {
                                 Ok(mut retry_rx) => {
@@ -1259,9 +1268,6 @@ impl<R: Runtime> AgentExecutor<R> {
                     // 更新任务类型（基于已调用的工具）
                     ctx.update_task_type_from_tool(&tool_call.name, Some(&params));
 
-                    // 记录当前执行的步骤
-                    ctx.set_current_step(format!("执行 {}", tool_call.name));
-
                     if self.needs_confirmation(&tool_call.name, &params) {
                         // 高风险技能：始终发射 tool_call 事件
                         // 若流式阶段已提前发射，此处携带完整参数重新发射，前端通过 callId 去重更新
@@ -1324,11 +1330,21 @@ impl<R: Runtime> AgentExecutor<R> {
                         tool_call.name.as_str(),
                         "list_directory" | "search_files" | "read_file" | "file_info"
                         | "file_exists" | "delete_file" | "create_directory" | "write_text_file"
+                        | "rename_file" | "copy_file" | "delete_directory" | "get_file_hash"
+                        | "read_file_lines"
                         | "docx_handler" | "xlsx_handler" | "pptx_handler" | "pdf_handler"
                         | "code_interpreter_handler"  // 需要workspace_root作为working_dir
                     );
                     if needs_workspace_root && !ctx.workspace_path.is_empty() {
                         safe_params["workspace_root"] = json!(ctx.workspace_path);
+                    }
+
+                    // 对 update_notes 工具，注入 _session_id 和 _iteration
+                    // 这些系统参数以下划线开头，不暴露给 LLM（工具 schema 中未声明）
+                    // _session_id 用于按会话隔离笔记状态，_iteration 用于调试和排序
+                    if tool_call.name == "update_notes" {
+                        safe_params["_session_id"] = json!(ctx.session_id);
+                        safe_params["_iteration"] = json!(current_iteration);
                     }
 
                     // 对 code_interpreter_handler 的 patch 模式，注入上一次代码作为 base_code
@@ -1354,7 +1370,6 @@ impl<R: Runtime> AgentExecutor<R> {
                                     duration_ms: 0,
                                 }).ok();
                                 ctx.add_tool_result(&tool_call.id, &result_content);
-                                ctx.record_completed_step(format!("{} - 失败: {}", tool_call.name, err_msg));
                                 continue;
                             }
                         }
@@ -1392,7 +1407,7 @@ impl<R: Runtime> AgentExecutor<R> {
                                 success: r.success,
                                 output: r.output,
                                 error: r.error,
-                                duration_ms: r.duration_ms,
+                                duration_ms: r.duration_ms, error_code: r.error_code,
                             },
                             Err(_) => {
                                 log::error!("Tool 执行发生 panic: tool={}", tool_call.name);
@@ -1400,7 +1415,7 @@ impl<R: Runtime> AgentExecutor<R> {
                                     success: false,
                                     output: None,
                                     error: Some(format!("工具执行发生内部错误: {}", tool_call.name)),
-                                    duration_ms: 0,
+                                    duration_ms: 0, error_code: None,
                                 }
                             }
                         }
@@ -1415,7 +1430,7 @@ impl<R: Runtime> AgentExecutor<R> {
                                     success: false,
                                     output: None,
                                     error: Some(format!("处理器执行发生内部错误: {}", tool_call.name)),
-                                    duration_ms: 0,
+                                    duration_ms: 0, error_code: None,
                                 }
                             }
                         }
@@ -1424,7 +1439,7 @@ impl<R: Runtime> AgentExecutor<R> {
                             success: false,
                             output: None,
                             error: Some(format!("工具或处理器不存在: {}", tool_call.name)),
-                            duration_ms: 0,
+                            duration_ms: 0, error_code: Some(crate::errors::AGENT_HANDLER_NOT_FOUND),
                         }
                     };
 
@@ -1475,13 +1490,33 @@ impl<R: Runtime> AgentExecutor<R> {
                             if let Some(obj) = v.as_object() {
                                 if let Some(content_val) = obj.get("content") {
                                     if let Some(content_str) = content_val.as_str() {
-                                        if content_str.len() > MAX_TOOL_RESULT_CHARS {
+                                        // 使用 chars().count() 获取字符数（而非 len() 字节数）
+                                        // 避免多字节 UTF-8 字符（如中文）在字节切片时 panic
+                                        let total_chars = content_str.chars().count();
+                                        if total_chars > MAX_TOOL_RESULT_CHARS {
                                             let mut truncated = v.clone();
+                                            // 智能截断：保留头部 70% + 尾部 30%
+                                            // 避免丢失文档末尾结论、表格尾部或代码 traceback
+                                            let head_chars = MAX_TOOL_RESULT_CHARS * 7 / 10;
+                                            let tail_chars = MAX_TOOL_RESULT_CHARS - head_chars;
+                                            let head: String = content_str.chars().take(head_chars).collect();
+                                            // 反向取尾部再反序，避免收集整个字符串
+                                            let tail: String = content_str
+                                                .chars()
+                                                .rev()
+                                                .take(tail_chars)
+                                                .collect::<String>()
+                                                .chars()
+                                                .rev()
+                                                .collect();
                                             let truncated_content = format!(
-                                                "{}...\n[已截断: 原始内容 {} 字符，仅保留前 {} 字符]",
-                                                &content_str[..MAX_TOOL_RESULT_CHARS],
-                                                content_str.len(),
-                                                MAX_TOOL_RESULT_CHARS,
+                                                "{}\n\n...[已截断: 原始 {} 字符，保留头部 {} + 尾部 {}，省略中间 {} 字符]...\n\n{}",
+                                                head,
+                                                total_chars,
+                                                head_chars,
+                                                tail_chars,
+                                                total_chars - MAX_TOOL_RESULT_CHARS,
+                                                tail,
                                             );
                                             if let Some(obj) = truncated.as_object_mut() {
                                                 obj.insert(
@@ -1489,6 +1524,16 @@ impl<R: Runtime> AgentExecutor<R> {
                                                     json!(truncated_content),
                                                 );
                                             }
+                                            // 截断必须有可观测日志，否则工具结果中间内容丢失时无法诊断
+                                            // （智能体读大文档时只看到头尾，中间章节缺失会被误判为"文档截断"）
+                                            log::info!(
+                                                "工具结果内容字段已截断, tool={}, 原始 {} 字符 -> 保留头部 {} + 尾部 {}, 省略中间 {} 字符",
+                                                tool_call.name,
+                                                total_chars,
+                                                head_chars,
+                                                tail_chars,
+                                                total_chars - MAX_TOOL_RESULT_CHARS
+                                            );
                                             return truncated;
                                         }
                                     }
@@ -1500,6 +1545,12 @@ impl<R: Runtime> AgentExecutor<R> {
                         // 最终的字符串级安全截断（防止递归嵌套等极端情况）
                         // 使用 chars().take() 避免切割多字节 UTF-8 字符导致 panic
                         if serialized.len() > MAX_TOOL_RESULT_CHARS * 2 {
+                            log::warn!(
+                                "工具结果字符串级安全截断, tool={}, 原始 {} 字节 -> 仅保留前 {} 字符（极端情况，可能丢失关键信息）",
+                                tool_call.name,
+                                serialized.len(),
+                                MAX_TOOL_RESULT_CHARS * 2
+                            );
                             let safe_truncated: String = serialized.chars().take(MAX_TOOL_RESULT_CHARS * 2).collect();
                             format!("{}...\n[已截断: 工具结果过大，仅保留前 {} 字符]",
                                 safe_truncated,
@@ -1527,14 +1578,6 @@ impl<R: Runtime> AgentExecutor<R> {
                         format!("错误: {}", result.error.clone().unwrap_or_default())
                     };
                     ctx.add_tool_result(&tool_call.id, &result_content);
-
-                    // 记录已完成的步骤
-                    let step_desc = if result.success {
-                        format!("{} - 成功", tool_call.name)
-                    } else {
-                        format!("{} - 失败: {}", tool_call.name, result.error.as_deref().unwrap_or("未知错误"))
-                    };
-                    ctx.record_completed_step(step_desc);
                 }
 
                 // 每轮迭代后增量持久化，防止崩溃丢失消息
