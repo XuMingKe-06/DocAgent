@@ -88,7 +88,7 @@ cargo clean
 │  │  ├─ layout/         布局组件: TopBar, MainArea, Sidebar, InputArea, WindowControls,
 │  │  │                      NetworkStatusBanner, WorkspaceSelector, MainLayout
 │  │  ├─ workflow/       工作流时间线: WorkflowTimeline, WorkflowNode (User/Thinking/Content/Tool/Confirm/Error)
-│  │  ├─ sidebar/        右侧栏: FileTreeSection, AgentInfoSection, TodoSection, ContextWindowSection
+│  │  ├─ sidebar/        右侧栏: FileTreeSection, AgentInfoSection, ContextWindowSection
 │  │  ├─ preview/        文档预览浮层: PreviewOverlay, MarkdownPreview, PdfCanvasViewer,
 │  │  │                      VersionHistoryPanel (版本快照历史)
 │  │  ├─ settings/       设置弹窗: SettingsDialog + 8 个标签页 (LLMConfig, WorkspaceTab, HandlersTab,
@@ -157,7 +157,7 @@ cargo clean
 ### 前后端通信
 - **`invoke()`**: 请求-响应式调用（查询数据、操作触发），命令名 `snake_case`
 - **`emit()/listen()`**: 事件推送（Agent流式输出、进度更新、需确认操作等），事件名 `namespace:action`
-- Agent 事件: `agent:thinking`, `agent:deep_thinking` (深度思考链/Extended Thinking), `agent:content`, `agent:tool_call`, `agent:tool_result`, `agent:confirm`, `agent:todo_update`, `agent:context_update` (上下文窗口用量), `agent:network_retry` (网络重试), `agent:done`, `agent:error`, `agent:stopped`
+- Agent 事件: `agent:thinking`, `agent:deep_thinking` (深度思考链/Extended Thinking), `agent:content`, `agent:tool_call`, `agent:tool_result`, `agent:confirm`, `agent:context_update` (上下文窗口用量), `agent:network_retry` (网络重试), `agent:done`, `agent:error`, `agent:stopped`
 - 系统事件: `session:updated`, `workspace:change`, `file:change`, `llm:provider_switch`, `system:network_change`（各事件均有对应 Payload 结构体）
 
 ### Agent 执行流程

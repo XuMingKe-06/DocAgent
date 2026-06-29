@@ -654,7 +654,6 @@ async fn download_and_install_update(app: AppHandle, on_event: Channel<DownloadE
 | `agent:tool_call` | Tool调用 | `ToolCallPayload` | 发起工具调用 |
 | `agent:tool_result` | Tool结果 | `ToolResultPayload` | 工具执行完成 |
 | `agent:confirm` | 需确认 | `ConfirmPayload` | 高风险操作需确认 |
-| `agent:todo_update` | Todo更新 | `TodoUpdatePayload` | 任务进度更新 |
 | `agent:context_update` | Token用量 | `ContextUsagePayload` | Token用量变化 |
 | `agent:code_streaming` | 代码流 | `CodeStreamingPayload` | Code Interpreter代码 |
 | `agent:network_retry` | 网络重试 | `NetworkRetryPayload` | LLM请求重试 |

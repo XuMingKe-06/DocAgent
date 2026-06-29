@@ -10,7 +10,6 @@ pub const AGENT_CONTENT: &str = "agent:content";
 pub const AGENT_TOOL_CALL: &str = "agent:tool_call";
 pub const AGENT_TOOL_RESULT: &str = "agent:tool_result";
 pub const AGENT_CONFIRM: &str = "agent:confirm";
-pub const AGENT_TODO_UPDATE: &str = "agent:todo_update";
 pub const AGENT_DONE: &str = "agent:done";
 pub const AGENT_ERROR: &str = "agent:error";
 pub const AGENT_STOPPED: &str = "agent:stopped";
@@ -107,24 +106,6 @@ pub struct ConfirmPayload {
     pub details: serde_json::Value,
     /// 风险等级: "low" | "medium" | "high" | "critical"
     pub risk_level: String,
-}
-
-/// Todo 列表中的条目
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TodoItem {
-    pub id: String,
-    pub content: String,
-    /// 任务状态: "pending" | "in_progress" | "completed"
-    pub status: String,
-}
-
-/// Todo 列表更新
-#[derive(Serialize, Deserialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct TodoUpdatePayload {
-    pub session_id: String,
-    pub todos: Vec<TodoItem>,
 }
 
 /// Agent 执行完成

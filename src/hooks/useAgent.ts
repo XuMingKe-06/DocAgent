@@ -8,7 +8,6 @@ import {
   onAgentToolCall,
   onAgentToolResult,
   onAgentConfirm,
-  onAgentTodoUpdate,
   onAgentDone,
   onAgentError,
   onAgentStopped,
@@ -19,7 +18,6 @@ import {
   type ToolCallPayload,
   type ToolResultPayload,
   type ConfirmPayload,
-  type TodoUpdatePayload,
   type DonePayload,
   type NetworkRetryPayload,
   type CodeStreamingPayload,
@@ -37,7 +35,6 @@ export interface UseAgentReturn {
   currentToolCall: ToolCallPayload | null;
   lastToolResult: ToolResultPayload | null;
   pendingConfirmation: ConfirmPayload | null;
-  todos: TodoUpdatePayload | null;
   doneResult: DonePayload | null;
   isStopped: boolean;
   networkRetry: NetworkRetryPayload | null;
@@ -59,7 +56,6 @@ const initialState = {
   currentToolCall: null as ToolCallPayload | null,
   lastToolResult: null as ToolResultPayload | null,
   pendingConfirmation: null as ConfirmPayload | null,
-  todos: null as TodoUpdatePayload | null,
   doneResult: null as DonePayload | null,
   isStopped: false,
   networkRetry: null as NetworkRetryPayload | null,
@@ -81,7 +77,6 @@ export function useAgent(): UseAgentReturn {
   const [currentToolCall, setCurrentToolCall] = useState<ToolCallPayload | null>(null);
   const [lastToolResult, setLastToolResult] = useState<ToolResultPayload | null>(null);
   const [pendingConfirmation, setPendingConfirmation] = useState<ConfirmPayload | null>(null);
-  const [todos, setTodos] = useState<TodoUpdatePayload | null>(null);
   const [doneResult, setDoneResult] = useState<DonePayload | null>(null);
   const [isStopped, setIsStopped] = useState(false);
   const [networkRetry, setNetworkRetry] = useState<NetworkRetryPayload | null>(null);
@@ -222,19 +217,6 @@ export function useAgent(): UseAgentReturn {
           if (payload.sessionId !== sessionIdRef.current) return;
           setPendingConfirmation(payload);
         }),
-        onAgentTodoUpdate((payload) => {
-          // 后台会话：路由到缓存
-          if (payload.sessionId !== sessionIdRef.current) {
-            routeBackgroundEvent(payload.sessionId, {
-              type: "todo_update",
-              todos: payload.todos,
-            });
-            return;
-          }
-          setTodos(payload);
-          // 同步更新 useWorkflowStore 的 todos，支持按会话缓存
-          useWorkflowStore.getState().setTodos(payload.todos);
-        }),
         onAgentNetworkRetry((payload) => {
           if (payload.sessionId !== sessionIdRef.current) return;
           setNetworkRetry(payload);
@@ -321,7 +303,6 @@ export function useAgent(): UseAgentReturn {
       setCurrentToolCall(null);
       setLastToolResult(null);
       setPendingConfirmation(null);
-      setTodos(null);
       setDoneResult(null);
       setIsStopped(false);
       setNetworkRetry(null);
@@ -407,7 +388,6 @@ export function useAgent(): UseAgentReturn {
     setCurrentToolCall(initialState.currentToolCall);
     setLastToolResult(initialState.lastToolResult);
     setPendingConfirmation(initialState.pendingConfirmation);
-    setTodos(initialState.todos);
     setDoneResult(initialState.doneResult);
     setIsStopped(initialState.isStopped);
     setNetworkRetry(initialState.networkRetry);
@@ -433,7 +413,6 @@ export function useAgent(): UseAgentReturn {
     currentToolCall,
     lastToolResult,
     pendingConfirmation,
-    todos,
     doneResult,
     isStopped,
     networkRetry,

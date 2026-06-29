@@ -154,11 +154,6 @@
     "compressedDetail": "History compressed (retained {{retained}}/{{total}} messages)",
     "cacheHitRate": "Cache Hit Rate"
   },
-  "todo": {
-    "sectionTitle": "Task Progress",
-    "noTasks": "No tasks",
-    "completed": "completed"
-  },
   "settings": {
     "title": "Settings",
     "tabs": {

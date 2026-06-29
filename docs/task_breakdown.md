@@ -78,7 +78,7 @@
 - TopBar + WindowControls + WorkspaceSelector
 - WorkflowTimeline + 7 种节点类型
 - InputArea + TemplatePicker
-- Sidebar（FileTree + AgentInfo + ContextWindow + Todo）
+- Sidebar（FileTree + AgentInfo + ContextWindow）
 - PreviewOverlay（Markdown/PDF/Word/Excel/PPT/Text/Diff）
 - VersionHistoryPanel（版本列表/对比/回滚）
 - SettingsDialog（8 个标签页）

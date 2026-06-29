@@ -9,7 +9,7 @@ import { WorkflowTimeline } from "./components/workflow/WorkflowTimeline";
 import { FileTreeSection } from "./components/sidebar/FileTreeSection";
 import { AgentInfoSection } from "./components/sidebar/AgentInfoSection";
 import { ContextWindowSection } from "./components/sidebar/ContextWindowSection";
-import { TodoSection } from "./components/sidebar/TodoSection";
+
 import { ToastContainer } from "./components/common/Toast";
 import { NetworkStatusBanner } from "./components/layout/NetworkStatusBanner";
 import { useWorkflowStore } from "./stores/useWorkflowStore";
@@ -71,7 +71,7 @@ export default function App() {
   const [versionHistoryFilePath, setVersionHistoryFilePath] = useState("");
   const [versionHistoryFileName, setVersionHistoryFileName] = useState("");
 
-  const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler, loadFromMessages, executionStatus, initContextUsageListener, loadContextUsage, clearContextUsage, saveSessionToCache, restoreSessionFromCache, clearSessionCache, getCachedStreamingRefs, todos: workflowTodos, setTodos } = useWorkflowStore();
+  const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler, loadFromMessages, executionStatus, initContextUsageListener, loadContextUsage, clearContextUsage, saveSessionToCache, restoreSessionFromCache, clearSessionCache, getCachedStreamingRefs } = useWorkflowStore();
   const { switchSession, loadSessions, clearCurrentSession, currentSessionId } = useSessionStore();
   const updateSessionTitleLocal = useSessionStore((s) => s.updateSessionTitleLocal);
   const { loadSettings, initThemeListener } = useSettingsStore();
@@ -677,14 +677,13 @@ export default function App() {
     resetAgent();
     clearCurrentSession();
     clearContextUsage();
-    setTodos(null);
     streamingNodeIdRef.current = null;
     thinkingNodeIdRef.current = null;
     confirmNodeIdRef.current = null;
     currentIterationRef.current = undefined;
     lastToolCallIterationRef.current = null;
     lastClosedStreamingNodeIdRef.current = null;
-  }, [clearNodes, resetAgent, clearCurrentSession, clearContextUsage, saveSessionToCache, currentSessionId, setTodos]);
+  }, [clearNodes, resetAgent, clearCurrentSession, clearContextUsage, saveSessionToCache, currentSessionId]);
 
   // 切换到历史会话：先保存当前会话状态到缓存，再从缓存或后端恢复目标会话
   const handleSwitchSession = useCallback(async (sessionId: string) => {
@@ -807,9 +806,8 @@ export default function App() {
     } else {
       // 没有其他会话，清除上下文窗口使用信息
       clearContextUsage();
-      setTodos(null);
     }
-  }, [clearNodes, resetAgent, switchSession, setAgentSessionId, loadFromMessages, loadContextUsage, clearContextUsage, clearSessionCache, restoreSessionFromCache, getCachedStreamingRefs, setExecutionStatus, currentSessionId, setTodos]);
+  }, [clearNodes, resetAgent, switchSession, setAgentSessionId, loadFromMessages, loadContextUsage, clearContextUsage, clearSessionCache, restoreSessionFromCache, getCachedStreamingRefs, setExecutionStatus, currentSessionId]);
 
   // 打开文档预览：从后端获取文档内容并显示预览浮层
   const handleOpenPreview = useCallback(async (filePath: string, fileName: string) => {
@@ -967,14 +965,6 @@ export default function App() {
             <FileTreeSection onOpenPreview={handleOpenPreview} onOpenVersionHistory={handleOpenVersionHistory} />
             <AgentInfoSection />
             <ContextWindowSection />
-            <TodoSection
-              items={workflowTodos?.map((t) => ({
-                id: t.id,
-                text: t.content,
-                done: t.status === "completed",
-                active: t.status === "in_progress",
-              }))}
-            />
           </>
         }
       />

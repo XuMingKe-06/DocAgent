@@ -87,11 +87,6 @@ impl<R: Runtime> AgentEmitter<R> {
         self.emit_event(types::AGENT_CONFIRM, payload, true, false)
     }
 
-    /// 发射 Todo 列表更新事件（非关键）
-    pub fn emit_todo_update(&self, payload: types::TodoUpdatePayload) -> Result<(), CommandError> {
-        self.emit_event(types::AGENT_TODO_UPDATE, payload, false, false)
-    }
-
     /// 发射 Agent 执行完成事件（关键 - 前端依赖此事件更新状态）
     pub fn emit_done(&self, payload: types::DonePayload) -> Result<(), CommandError> {
         self.emit_event(types::AGENT_DONE, payload, true, false)

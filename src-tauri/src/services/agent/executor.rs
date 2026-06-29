@@ -431,43 +431,6 @@ impl<R: Runtime> AgentExecutor<R> {
         }
     }
 
-    fn emit_todo_progress(
-        &self,
-        session_id: &str,
-        current_step: u32,
-        total_possible: u32,
-        tool_name: &str,
-    ) {
-        let mut todos = Vec::new();
-
-        if current_step > 1 {
-            todos.push(TodoItem {
-                id: format!("step_{}", current_step - 1),
-                content: format!("步骤 {} 已完成", current_step - 1),
-                status: "completed".to_string(),
-            });
-        }
-
-        todos.push(TodoItem {
-            id: format!("step_{}", current_step),
-            content: format!("正在执行: {}", tool_name),
-            status: "in_progress".to_string(),
-        });
-
-        if current_step < total_possible {
-            todos.push(TodoItem {
-                id: format!("step_{}", current_step + 1),
-                content: format!("步骤 {} 待执行", current_step + 1),
-                status: "pending".to_string(),
-            });
-        }
-
-        self.emitter.emit_todo_update(TodoUpdatePayload {
-            session_id: session_id.to_string(),
-            todos,
-        }).ok();
-    }
-
     /// 发射上下文窗口使用情况事件
     async fn emit_context_usage(&self, ctx: &mut AgentContext, response_tokens: usize, usage: Option<&ChatUsage>) {
         let model_name = self.router.current_model_name();
@@ -553,15 +516,6 @@ impl<R: Runtime> AgentExecutor<R> {
             tools.len(),
             safe_prefix,
         );
-
-        self.emitter.emit_todo_update(TodoUpdatePayload {
-            session_id: ctx.session_id.clone(),
-            todos: vec![TodoItem {
-                id: "step_0".to_string(),
-                content: "正在分析用户请求...".to_string(),
-                status: "in_progress".to_string(),
-            }],
-        }).ok();
 
         for iteration in 0..self.max_iterations {
             // 检查是否被用户停止
@@ -1193,13 +1147,6 @@ impl<R: Runtime> AgentExecutor<R> {
 
                     log::info!("执行 Tool, session_id={}, tool={}, call_id={}", ctx.session_id, tool_call.name, tool_call.id);
 
-                    self.emit_todo_progress(
-                        &ctx.session_id,
-                        total_steps,
-                        self.max_iterations,
-                        &tool_call.name,
-                    );
-
                     // 尝试解析 tool_call 参数，如果响应被截断则参数可能不完整
                     let params_result = serde_json::from_str::<serde_json::Value>(&tool_call.arguments);
 
@@ -1654,15 +1601,6 @@ impl<R: Runtime> AgentExecutor<R> {
                 crate::services::agent::prompts::token_budget::TokenBudgetManager::estimate_tokens(&assistant_content)
             };
             self.emit_context_usage(ctx, response_tokens, final_usage.as_ref()).await;
-
-            self.emitter.emit_todo_update(TodoUpdatePayload {
-                session_id: ctx.session_id.clone(),
-                todos: vec![TodoItem {
-                    id: "done".to_string(),
-                    content: "任务完成".to_string(),
-                    status: "completed".to_string(),
-                }],
-            }).ok();
 
             let total_duration_ms = start_time.elapsed().as_millis() as u64;
             log::info!("Agent 执行完成, session_id={}, 总步骤={}, 总耗时={}ms", ctx.session_id, total_steps, total_duration_ms);

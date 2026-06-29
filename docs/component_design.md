@@ -47,8 +47,7 @@ App
 │   └── Sidebar                        // 右侧栏
 │       ├── FileTreeSection            // 文件树区域
 │       ├── AgentInfoSection           // Agent 信息区域
-│       ├── ContextWindowSection       // Token 用量/上下文窗口
-│       └── TodoSection                // 任务列表区域
+│       └── ContextWindowSection       // Token 用量/上下文窗口
 ├── PreviewOverlay  (lazy)             // 预览覆盖层
 │   ├── MarkdownPreview                // Markdown 预览（react-markdown+remark-gfm+rehype-hilite）
 │   ├── PdfCanvasViewer                // PDF 预览（pdfjs-dist Canvas 渲染）
@@ -230,7 +229,7 @@ interface UseAgentReturn {
 function useAgent(sessionId: string | null): UseAgentReturn;
 ```
 
-监听事件：`agent:thinking`, `agent:deep_thinking`, `agent:content`, `agent:tool_call`, `agent:tool_result`, `agent:confirm`, `agent:todo_update`, `agent:context_update`, `agent:code_streaming`, `agent:done`, `agent:error`, `agent:stopped`
+监听事件：`agent:thinking`, `agent:deep_thinking`, `agent:content`, `agent:tool_call`, `agent:tool_result`, `agent:confirm`, `agent:context_update`, `agent:code_streaming`, `agent:done`, `agent:error`, `agent:stopped`
 
 ---
 

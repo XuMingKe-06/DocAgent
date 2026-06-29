@@ -66,19 +66,6 @@ export interface ConfirmPayload {
   riskLevel: string;
 }
 
-/** Todo 列表条目 */
-export interface TodoItem {
-  id: string;
-  content: string;
-  status: string;
-}
-
-/** Todo 列表更新 */
-export interface TodoUpdatePayload {
-  sessionId: string;
-  todos: TodoItem[];
-}
-
 /** Agent 执行完成 */
 export interface DonePayload {
   sessionId: string;
@@ -239,15 +226,6 @@ export function onAgentConfirm(
   handler: (payload: ConfirmPayload) => void,
 ): Promise<UnlistenFn> {
   return listen<ConfirmPayload>("agent:confirm", (event) => {
-    handler(event.payload);
-  });
-}
-
-/** 监听 Todo 列表更新事件 */
-export function onAgentTodoUpdate(
-  handler: (payload: TodoUpdatePayload) => void,
-): Promise<UnlistenFn> {
-  return listen<TodoUpdatePayload>("agent:todo_update", (event) => {
     handler(event.payload);
   });
 }

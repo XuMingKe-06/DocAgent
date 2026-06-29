@@ -2,7 +2,7 @@ import { create } from "zustand";
 import type { WorkflowNode, WorkflowNodeType, NodeStatus, ExecutionStatus, NodeDataMap } from "../types";
 import type { Message } from "../types/session";
 import type { ContextUsageInfo } from "../types/settings";
-import type { TodoItem } from "../services/event";
+
 import { generateToolBrief } from "../utils/format";
 import { onAgentContextUpdate } from "../services/event";
 import * as tauriCmd from "../services/tauri";
@@ -15,7 +15,6 @@ export interface SessionCacheEntry {
   error: string | null;
   nodeCounter: number;
   contextUsage: ContextUsageInfo | null;
-  todos: TodoItem[] | null;
   /** 流式状态引用快照 */
   streamingNodeId: string | null;
   thinkingNodeId: string | null;
@@ -48,7 +47,6 @@ export type BackgroundAgentEvent =
   | { type: "content"; content: string; isStreaming: boolean; iteration?: number }
   | { type: "tool_call"; callId: string; toolName: string; arguments: Record<string, unknown>; iteration?: number }
   | { type: "tool_result"; callId: string; success: boolean; result: unknown; error?: string; durationMs: number }
-  | { type: "todo_update"; todos: TodoItem[] }
   | { type: "context_update"; contextUsage: ContextUsageInfo }
   | { type: "done"; summary: string; totalSteps: number; durationMs: number }
   | { type: "error"; code: number; message: string; recoverable: boolean }
@@ -62,8 +60,6 @@ interface WorkflowState {
   confirmHandler: ((approved: boolean, feedback?: string) => Promise<void>) | null;
   /** 上下文窗口使用信息（Agent 运行时实时更新） */
   contextUsage: ContextUsageInfo | null;
-  /** 任务进度列表（按会话缓存） */
-  todos: TodoItem[] | null;
   /** 按会话缓存的状态映射 */
   sessionCache: Map<string, SessionCacheEntry>;
 
@@ -82,9 +78,6 @@ interface WorkflowState {
   loadContextUsage: (sessionId: string) => Promise<void>;
   /** 清除上下文窗口使用信息（新会话/切换会话时调用） */
   clearContextUsage: () => void;
-  /** 设置任务进度列表 */
-  setTodos: (todos: TodoItem[] | null) => void;
-
   /** 将当前状态保存到指定会话的缓存 */
   saveSessionToCache: (sessionId: string, streamingRef: StreamingRefSnapshot) => void;
   /** 从指定会话的缓存恢复状态，返回是否命中缓存 */
@@ -95,8 +88,6 @@ interface WorkflowState {
   getCachedStreamingRefs: (sessionId: string) => StreamingRefSnapshot | null;
   /** 将后台 Agent 事件应用到指定会话的缓存 */
   applyBackgroundEvent: (sessionId: string, event: BackgroundAgentEvent) => void;
-  /** 获取指定会话缓存的 todos */
-  getCachedTodos: (sessionId: string) => TodoItem[] | null;
   /** 获取指定会话缓存的 contextUsage */
   getCachedContextUsage: (sessionId: string) => ContextUsageInfo | null;
 }
@@ -133,7 +124,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   error: null,
   confirmHandler: null,
   contextUsage: null,
-  todos: null,
   sessionCache: new Map(),
 
   addNode: (type, data, status = "completed", iteration) => {
@@ -169,7 +159,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
 
   clearNodes: () => {
     nodeCounter = 0;
-    // 不重置 sessionCache、todos，它们按会话管理
+    // 不重置 sessionCache，它按会话管理
     set({ nodes: [], error: null, executionStatus: "idle", confirmHandler: null, contextUsage: null });
   },
 
@@ -315,11 +305,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({ contextUsage: null });
   },
 
-  // 设置任务进度列表
-  setTodos: (todos) => {
-    set({ todos });
-  },
-
   // 将当前状态保存到指定会话的缓存
   saveSessionToCache: (sessionId: string, streamingRef: StreamingRefSnapshot) => {
     const state = get();
@@ -331,7 +316,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       error: state.error,
       nodeCounter,
       contextUsage: state.contextUsage,
-      todos: state.todos ? [...state.todos] : null,
       streamingNodeId: streamingRef.streamingNodeId,
       thinkingNodeId: streamingRef.thinkingNodeId,
       confirmNodeId: streamingRef.confirmNodeId,
@@ -363,7 +347,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       executionStatus: entry.executionStatus,
       error: entry.error,
       contextUsage: entry.contextUsage,
-      todos: entry.todos ? [...entry.todos] : null,
       confirmHandler: null,
     });
 
@@ -412,7 +395,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     let seenToolCallIds = [...entry.seenToolCallIds];
     let executionStatus = entry.executionStatus;
     let contextUsage = entry.contextUsage;
-    let todos = entry.todos;
 
     const now = Date.now();
 
@@ -607,10 +589,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         }
         break;
       }
-      case "todo_update": {
-        todos = event.todos;
-        break;
-      }
       case "context_update": {
         contextUsage = event.contextUsage;
         break;
@@ -733,7 +711,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       nodes,
       executionStatus,
       contextUsage,
-      todos,
       backgroundNodeCounter: bgNodeCounter,
       bgStreamingNodeId,
       bgThinkingNodeId,
@@ -745,12 +722,6 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     });
 
     set({ sessionCache: cache });
-  },
-
-  // 获取指定会话缓存的 todos
-  getCachedTodos: (sessionId: string) => {
-    const entry = get().sessionCache.get(sessionId);
-    return entry?.todos ?? null;
   },
 
   // 获取指定会话缓存的 contextUsage
