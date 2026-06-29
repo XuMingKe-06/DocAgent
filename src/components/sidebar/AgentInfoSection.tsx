@@ -169,7 +169,13 @@ export function AgentInfoSection() {
           }
         }}
       >
-        <span className="agent-info-title">{t('agentInfo.sectionTitle')}</span>
+        <div className="agent-info-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="agent-info-title-icon">
+            <circle cx="12" cy="8" r="4"/>
+            <path d="M20 21a8 8 0 1 0-16 0"/>
+          </svg>
+          <span>{t('agentInfo.sectionTitle')}</span>
+        </div>
         {/* 折叠箭头：默认隐藏，鼠标悬停时在右侧显示 */}
         <span
           className="agent-info-chevron"
@@ -278,11 +284,16 @@ export function AgentInfoSection() {
           background: var(--color-accent-bg);
         }
         .agent-info-title {
-          font-size: 11px;
-          font-weight: 600;
-          color: var(--color-text-secondary);
-          letter-spacing: 0.6px;
-          text-transform: uppercase;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 14px;
+          font-weight: 400;
+          color: var(--color-text-primary);
+        }
+        .agent-info-title-icon {
+          flex-shrink: 0;
+          color: var(--color-text-primary);
         }
         /* 折叠箭头：默认隐藏，鼠标悬停时在右侧显示 */
         .agent-info-chevron {
@@ -315,7 +326,7 @@ export function AgentInfoSection() {
           padding: 3px 0;
         }
         .ai-field-label {
-          font-size: 12px;
+          font-size: 13px;
           color: var(--color-text-quaternary);
           flex-shrink: 0;
         }
@@ -326,7 +337,7 @@ export function AgentInfoSection() {
           padding: 3px 10px;
           background: var(--color-bg-sub);
           border-radius: var(--radius-sm);
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 500;
           transition: background 0.2s;
         }
@@ -348,7 +359,7 @@ export function AgentInfoSection() {
           color: var(--color-text-primary);
         }
         .ai-field-value {
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 500;
           color: var(--color-text-primary);
         }
@@ -358,7 +369,7 @@ export function AgentInfoSection() {
           gap: 4px;
           padding: 2px 8px;
           border-radius: var(--radius-sm);
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 500;
           color: var(--color-text-primary);
           border: 1px solid transparent;
@@ -372,7 +383,7 @@ export function AgentInfoSection() {
           color: var(--color-accent);
         }
         .ai-field-edit {
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 500;
           padding: 2px 8px;
           border: 1.5px solid var(--color-accent);
@@ -388,7 +399,7 @@ export function AgentInfoSection() {
           outline: none;
         }
         .ai-field-select {
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 500;
           padding: 2px 8px;
           border: 1px solid transparent;
@@ -422,7 +433,7 @@ export function AgentInfoSection() {
           border-radius: var(--radius-sm);
           background: var(--color-accent-bg);
           border: 1px solid var(--color-accent-light);
-          font-size: 12px;
+          font-size: 13px;
           color: var(--color-accent);
           cursor: pointer;
           transition: all 0.2s;
@@ -451,12 +462,12 @@ export function AgentInfoSection() {
           align-items: center;
         }
         .ai-context-label {
-          font-size: 11px;
+          font-size: 12px;
           color: var(--color-text-quaternary);
           font-weight: 500;
         }
         .ai-context-value {
-          font-size: 11px;
+          font-size: 12px;
           font-weight: 600;
           color: var(--color-text-secondary);
           font-variant-numeric: tabular-nums;
@@ -479,11 +490,11 @@ export function AgentInfoSection() {
           align-items: center;
         }
         .ai-context-status {
-          font-size: 10px;
+          font-size: 11px;
           font-weight: 500;
         }
         .ai-context-percent {
-          font-size: 10px;
+          font-size: 11px;
           color: var(--color-text-quaternary);
           font-variant-numeric: tabular-nums;
         }
@@ -494,7 +505,7 @@ export function AgentInfoSection() {
           padding: 3px 6px;
           background: var(--color-warning-bg, rgba(250, 173, 20, 0.1));
           border-radius: var(--radius-sm);
-          font-size: 10px;
+          font-size: 11px;
           color: var(--color-warning, #faad14);
         }
         .ai-context-dot {
@@ -510,11 +521,11 @@ export function AgentInfoSection() {
           align-items: baseline;
         }
         .ai-cache-label {
-          font-size: 10px;
+          font-size: 11px;
           color: var(--color-text-tertiary);
         }
         .ai-cache-value {
-          font-size: 11px;
+          font-size: 12px;
           font-weight: 600;
           font-variant-numeric: tabular-nums;
         }

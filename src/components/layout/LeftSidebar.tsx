@@ -6,7 +6,7 @@ import { SessionListSection } from "../sidebar/SessionListSection";
 import { Icon } from "../common/Icon";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 
-interface RightSidebarProps {
+interface LeftSidebarProps {
   /** 文件预览回调 */
   onOpenPreview: (filePath: string, fileName: string) => void;
   /** 版本历史回调 */
@@ -21,22 +21,22 @@ interface RightSidebarProps {
   onDeleteCurrentSession: (nextSessionId: string | null) => void;
 }
 
-type RightSidebarView = "sessions" | "files";
+type LeftSidebarView = "sessions" | "files";
 
 /**
- * 右侧栏容器
+ * 左侧栏容器
  * 在「会话列表」与「工作区文件」两种视图之间切换。
  */
-export function RightSidebar({
+export function LeftSidebar({
   onOpenPreview,
   onOpenVersionHistory,
   onSwitchSession,
   onCreateSession,
   onShowFiles,
   onDeleteCurrentSession,
-}: RightSidebarProps) {
+}: LeftSidebarProps) {
   const { t } = useTranslation();
-  const [view, setView] = useState<RightSidebarView>("sessions");
+  const [view, setView] = useState<LeftSidebarView>("sessions");
   const { workspaces, currentWorkspaceId } = useWorkspaceStore();
   // 新建会话下拉菜单开关状态
   const [newSessionOpen, setNewSessionOpen] = useState(false);
@@ -84,7 +84,7 @@ export function RightSidebar({
   };
 
   return (
-    <div className="right-sidebar">
+    <div className="left-sidebar">
       {view === "files" ? (
         <>
           <div className="file-tree-header">
@@ -120,6 +120,10 @@ export function RightSidebar({
               aria-label={t('topBar.newSession')}
               onClick={() => setNewSessionOpen((prev) => !prev)}
             >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="new-session-icon">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
               <span>{t('topBar.newSession')}</span>
             </button>
 
@@ -160,7 +164,7 @@ export function RightSidebar({
       )}
 
       <style>{`
-        .right-sidebar {
+        .left-sidebar {
           display: flex;
           flex-direction: column;
           height: 100%;
@@ -185,12 +189,13 @@ export function RightSidebar({
           transition: background 0.15s;
           background: transparent;
           border: none;
-          /* 字体样式与 agent-info-title / session-list-title 保持一致 */
-          font-size: 11px;
-          font-weight: 600;
-          color: var(--color-text-secondary);
-          letter-spacing: 0.6px;
-          text-transform: uppercase;
+          font-size: 14px;
+          font-weight: 400;
+          color: var(--color-text-primary);
+        }
+        .new-session-icon {
+          flex-shrink: 0;
+          color: var(--color-text-primary);
         }
         .new-session-trigger:hover,
         .new-session-trigger-active {
@@ -229,7 +234,7 @@ export function RightSidebar({
         .new-session-empty {
           padding: 14px 12px;
           text-align: center;
-          font-size: 12px;
+          font-size: 13px;
           color: var(--color-text-quaternary);
         }
         .new-session-item {
@@ -257,7 +262,7 @@ export function RightSidebar({
           flex: 1;
         }
         .new-session-item-name {
-          font-size: 13px;
+          font-size: 14px;
           font-weight: 500;
           color: var(--color-text-primary);
           overflow: hidden;
@@ -265,7 +270,7 @@ export function RightSidebar({
           white-space: nowrap;
         }
         .new-session-item-path {
-          font-size: 11px;
+          font-size: 12px;
           color: var(--color-text-quaternary);
           font-family: var(--font-mono);
           overflow: hidden;
@@ -286,7 +291,7 @@ export function RightSidebar({
           gap: 6px;
           padding: 4px 8px;
           border-radius: var(--radius-sm);
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 500;
           color: var(--color-text-secondary);
           background: transparent;
@@ -299,7 +304,7 @@ export function RightSidebar({
           color: var(--color-accent);
         }
         .file-tree-workspace-name {
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 600;
           color: var(--color-text-primary);
           max-width: 140px;

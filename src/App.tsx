@@ -6,7 +6,7 @@ import { MainLayout } from "./components/layout/MainLayout";
 import { MainArea } from "./components/layout/MainArea";
 import { InputArea } from "./components/layout/InputArea";
 import { WorkflowTimeline } from "./components/workflow/WorkflowTimeline";
-import { RightSidebar } from "./components/layout/RightSidebar";
+import { LeftSidebar } from "./components/layout/LeftSidebar";
 
 import { ToastContainer } from "./components/common/Toast";
 import { NetworkStatusBanner } from "./components/layout/NetworkStatusBanner";
@@ -972,7 +972,7 @@ export default function App() {
         }
         sidebarVisible={sidebarVisible}
         sidebar={
-          <RightSidebar
+          <LeftSidebar
             onOpenPreview={handleOpenPreview}
             onOpenVersionHistory={handleOpenVersionHistory}
             onSwitchSession={handleSwitchSession}

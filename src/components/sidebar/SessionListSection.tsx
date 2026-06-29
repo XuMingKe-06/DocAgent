@@ -231,7 +231,17 @@ export function SessionListSection({
             }
           }}
         >
-          <span className="session-list-title">{t("sessionList.title")}</span>
+          <div className="session-list-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="session-list-title-icon">
+              <line x1="8" y1="6" x2="21" y2="6"/>
+              <line x1="8" y1="12" x2="21" y2="12"/>
+              <line x1="8" y1="18" x2="21" y2="18"/>
+              <line x1="3" y1="6" x2="3.01" y2="6"/>
+              <line x1="3" y1="12" x2="3.01" y2="12"/>
+              <line x1="3" y1="18" x2="3.01" y2="18"/>
+            </svg>
+            <span>{t("sessionList.title")}</span>
+          </div>
           {/* 收缩/展开按钮: 斜对角双向直角, 展开时朝内(可收缩), 收缩时朝外(可展开) */}
           <button
             type="button"
@@ -398,11 +408,16 @@ export function SessionListSection({
           background: var(--color-accent-bg);
         }
         .session-list-title {
-          font-size: 11px;
-          font-weight: 600;
-          color: var(--color-text-secondary);
-          letter-spacing: 0.6px;
-          text-transform: uppercase;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          font-size: 14px;
+          font-weight: 400;
+          color: var(--color-text-primary);
+        }
+        .session-list-title-icon {
+          flex-shrink: 0;
+          color: var(--color-text-primary);
         }
         /* 收缩/展开按钮: 默认隐藏, 悬停时显示; 收缩状态始终可见 */
         .session-list-collapse-btn {
@@ -450,7 +465,7 @@ export function SessionListSection({
           padding: 32px 12px;
           gap: 10px;
           color: var(--color-text-quaternary);
-          font-size: 12px;
+          font-size: 13px;
           text-align: center;
         }
         .workspace-group {
@@ -489,7 +504,7 @@ export function SessionListSection({
           flex-shrink: 0;
         }
         .workspace-name {
-          font-size: 13px;
+          font-size: 14px;
           font-weight: 500;
           color: var(--color-text-primary);
           overflow: hidden;
@@ -549,7 +564,7 @@ export function SessionListSection({
           border-color: var(--color-accent-light);
         }
         .session-item-title {
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 500;
           color: var(--color-text-primary);
           overflow: hidden;
@@ -596,7 +611,7 @@ export function SessionListSection({
         }
         .session-edit-input {
           width: 100%;
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 500;
           color: var(--color-text-primary);
           padding: 2px 6px;

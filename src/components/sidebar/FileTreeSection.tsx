@@ -697,7 +697,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
         }
         .ft-search-input {
           flex: 1;
-          font-size: 12px;
+          font-size: 13px;
           color: var(--color-text-primary);
           background: transparent;
           border: none;
@@ -743,11 +743,11 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
           opacity: 0.4;
         }
         .ft-empty-text {
-          font-size: 12px;
+          font-size: 13px;
           color: var(--color-text-quaternary);
         }
         .ft-tree {
-          font-size: 12px;
+          font-size: 13px;
         }
         .ft-item {
           display: flex;
@@ -806,7 +806,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          font-size: 12px;
+          font-size: 13px;
           line-height: 1.5;
         }
         .ft-chevron {
@@ -826,7 +826,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
         }
         .ft-rename-input {
           flex: 1;
-          font-size: 12px;
+          font-size: 13px;
           line-height: 1.5;
           padding: 1px 4px;
           border: 1px solid var(--color-accent);
