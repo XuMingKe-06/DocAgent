@@ -955,7 +955,7 @@ export default function App() {
   return (
     <div className="app flex flex-col h-screen">
       <NetworkStatusBanner />
-      <TopBar onNewSession={handleNewSession} />
+      <TopBar />
 
       <MainLayout
         mainArea={

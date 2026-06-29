@@ -699,7 +699,9 @@
     "showFiles": "View workspace files",
     "backToSessions": "Back to sessions",
     "noSessionsInWorkspace": "No sessions in this workspace",
-    "untitledWorkspace": "Other"
+    "untitledWorkspace": "Other",
+    "collapse": "Collapse session list",
+    "expand": "Expand session list"
   },
   "inputArea.removeAttachment": "Remove {{name}}",
   "update.checkFailedWithError": "Update check failed: {{error}}"

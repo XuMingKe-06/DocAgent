@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { AgentInfoSection } from "../sidebar/AgentInfoSection";
 import { FileTreeSection } from "../sidebar/FileTreeSection";
@@ -38,6 +38,9 @@ export function RightSidebar({
   const { t } = useTranslation();
   const [view, setView] = useState<RightSidebarView>("sessions");
   const { workspaces, currentWorkspaceId } = useWorkspaceStore();
+  // 新建会话下拉菜单开关状态
+  const [newSessionOpen, setNewSessionOpen] = useState(false);
+  const newSessionRef = useRef<HTMLDivElement>(null);
 
   const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId);
 
@@ -49,6 +52,35 @@ export function RightSidebar({
 
   const handleBackToSessions = () => {
     setView("sessions");
+  };
+
+  // 点击外部或 Escape 关闭新建会话下拉菜单
+  useEffect(() => {
+    if (!newSessionOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (newSessionRef.current && !newSessionRef.current.contains(e.target as Node)) {
+        setNewSessionOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setNewSessionOpen(false);
+    };
+    // 延迟添加监听，避免当前点击事件立即触发关闭
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [newSessionOpen]);
+
+  // 选择工作区后创建新会话
+  const handlePickWorkspace = (workspaceId: string) => {
+    onCreateSession(workspaceId);
+    setNewSessionOpen(false);
   };
 
   return (
@@ -78,6 +110,44 @@ export function RightSidebar({
         </>
       ) : (
         <>
+          {/* 新建会话按钮 + 工作区选择下拉菜单 */}
+          <div ref={newSessionRef} className="new-session-section">
+            <button
+              type="button"
+              className={`new-session-trigger ${newSessionOpen ? "new-session-trigger-active" : ""}`}
+              aria-haspopup="listbox"
+              aria-expanded={newSessionOpen}
+              aria-label={t('topBar.newSession')}
+              onClick={() => setNewSessionOpen((prev) => !prev)}
+            >
+              <span>{t('topBar.newSession')}</span>
+            </button>
+
+            {newSessionOpen && (
+              <div className="new-session-dropdown" role="listbox">
+                {workspaces.length === 0 ? (
+                  <div className="new-session-empty">{t('workspace.noWorkspace')}</div>
+                ) : (
+                  workspaces.map((ws) => (
+                    <div
+                      key={ws.id}
+                      className="new-session-item"
+                      role="option"
+                      aria-label={t('sessionList.newSessionForWorkspace', { workspace: ws.name })}
+                      onClick={() => handlePickWorkspace(ws.id)}
+                    >
+                      <Icon name="folder" size={14} className="new-session-item-icon" />
+                      <div className="new-session-item-info">
+                        <span className="new-session-item-name">{ws.name}</span>
+                        <span className="new-session-item-path">{ws.path}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Agent 信息区置于会话列表上方，默认收缩，可点击展开 */}
           <AgentInfoSection />
           <SessionListSection
@@ -96,6 +166,111 @@ export function RightSidebar({
           height: 100%;
           width: 100%;
           overflow: hidden;
+        }
+        /* 新建会话按钮区: 悬停背景与智能体信息标题栏一致 */
+        .new-session-section {
+          position: relative;
+          flex-shrink: 0;
+          margin: 4px 8px 0;
+        }
+        .new-session-trigger {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          width: 100%;
+          padding: 8px 12px;
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          user-select: none;
+          transition: background 0.15s;
+          background: transparent;
+          border: none;
+          /* 字体样式与 agent-info-title / session-list-title 保持一致 */
+          font-size: 11px;
+          font-weight: 600;
+          color: var(--color-text-secondary);
+          letter-spacing: 0.6px;
+          text-transform: uppercase;
+        }
+        .new-session-trigger:hover,
+        .new-session-trigger-active {
+          background: var(--color-accent-bg);
+        }
+        /* 删除全局 button:active 的 scale 缩小动画反馈 */
+        .new-session-trigger:active {
+          transform: none;
+        }
+        /* 下拉菜单: 复用 WorkspaceSelector 的视觉语言 */
+        .new-session-dropdown {
+          position: absolute;
+          top: calc(100% + 4px);
+          left: 0;
+          right: 0;
+          min-width: 200px;
+          background: var(--color-bg-elevated);
+          border: 1px solid var(--color-border-light);
+          border-radius: var(--radius-md);
+          box-shadow: var(--shadow-lg);
+          z-index: 200;
+          animation: new-session-dropdown-in 0.15s ease-out;
+          overflow: hidden;
+          padding: 4px;
+        }
+        @keyframes new-session-dropdown-in {
+          from {
+            opacity: 0;
+            transform: scale(0.96) translateY(-4px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+        .new-session-empty {
+          padding: 14px 12px;
+          text-align: center;
+          font-size: 12px;
+          color: var(--color-text-quaternary);
+        }
+        .new-session-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          transition: background 0.12s;
+          min-width: 0;
+        }
+        .new-session-item:hover {
+          background: var(--color-bg-hover);
+        }
+        .new-session-item-icon {
+          color: var(--color-text-tertiary);
+          flex-shrink: 0;
+        }
+        .new-session-item-info {
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+          min-width: 0;
+          flex: 1;
+        }
+        .new-session-item-name {
+          font-size: 13px;
+          font-weight: 500;
+          color: var(--color-text-primary);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .new-session-item-path {
+          font-size: 11px;
+          color: var(--color-text-quaternary);
+          font-family: var(--font-mono);
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
         .file-tree-header {
           display: flex;

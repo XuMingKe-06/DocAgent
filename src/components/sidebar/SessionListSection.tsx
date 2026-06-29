@@ -39,6 +39,9 @@ export function SessionListSection({
   const { sessions, currentSessionId, deleteSession, updateSessionTitle } = useSessionStore();
   const { workspaces, currentWorkspaceId } = useWorkspaceStore();
 
+  // 会话列表整体收缩状态: true 表示工作区和会话历史全部隐藏, 仅保留标题栏
+  const [collapsed, setCollapsed] = useState(false);
+
   const [expanded, setExpanded] = useState<Record<string, boolean>>(() => {
     const init: Record<string, boolean> = {};
     workspaces.forEach((w) => {
@@ -213,12 +216,36 @@ export function SessionListSection({
         document.body
       )}
 
-      <div className="session-list-section">
-        <div className="session-list-header">
+      <div className={`session-list-section ${collapsed ? "session-list-section-collapsed" : ""}`}>
+        <div
+          className="session-list-header"
+          role="button"
+          aria-label={collapsed ? t('sessionList.expand') : t('sessionList.collapse')}
+          aria-expanded={!collapsed}
+          tabIndex={0}
+          onClick={() => setCollapsed((prev) => !prev)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setCollapsed((prev) => !prev);
+            }
+          }}
+        >
           <span className="session-list-title">{t("sessionList.title")}</span>
+          {/* 收缩/展开按钮: 斜对角双向直角, 展开时朝内(可收缩), 收缩时朝外(可展开) */}
+          <button
+            type="button"
+            className={`session-list-collapse-btn ${collapsed ? "session-list-collapse-btn-visible" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setCollapsed((prev) => !prev);
+            }}
+          >
+            <Icon name={collapsed ? "chevron-diagonal-out" : "chevron-diagonal-in"} size={14} />
+          </button>
         </div>
 
-        <div className="session-list-body">
+        <div className={`session-list-body ${collapsed ? "session-list-body-collapsed" : ""}`}>
           {grouped.length === 0 ? (
             <div className="session-list-empty">
               <Icon name="history" size={28} className="opacity-30" />
@@ -348,13 +375,27 @@ export function SessionListSection({
           flex-direction: column;
           flex: 1;
           min-height: 0;
-          border-bottom: 1px solid var(--color-border-light);
+          /* margin 与 agent-info-section / new-session-section 保持一致 */
+          margin: 4px 8px;
+        }
+        /* 收缩状态: 仅保留标题栏高度, 不再占据剩余空间 */
+        .session-list-section-collapsed {
+          flex: 0;
         }
         .session-list-header {
-          padding: 10px 16px;
+          /* padding 与 agent-info-header / new-session-trigger 保持一致 */
+          padding: 8px 12px;
           display: flex;
           align-items: center;
           justify-content: space-between;
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          user-select: none;
+          transition: background 0.15s;
+        }
+        /* 悬停背景与智能体信息标题栏一致 */
+        .session-list-header:hover {
+          background: var(--color-accent-bg);
         }
         .session-list-title {
           font-size: 11px;
@@ -363,10 +404,43 @@ export function SessionListSection({
           letter-spacing: 0.6px;
           text-transform: uppercase;
         }
+        /* 收缩/展开按钮: 默认隐藏, 悬停时显示; 收缩状态始终可见 */
+        .session-list-collapse-btn {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0;
+          border-radius: var(--radius-sm);
+          color: var(--color-text-quaternary);
+          background: transparent;
+          border: none;
+          cursor: pointer;
+          transition: all 0.15s;
+          opacity: 0;
+          flex-shrink: 0;
+        }
+        .session-list-header:hover .session-list-collapse-btn,
+        .session-list-collapse-btn-visible {
+          opacity: 1;
+        }
+        .session-list-collapse-btn:hover {
+          background: var(--color-bg-hover);
+          color: var(--color-text-primary);
+        }
         .session-list-body {
           flex: 1;
           overflow-y: auto;
           padding: 0 8px 8px;
+          transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
+        }
+        /* 收缩状态: 工作区和会话历史全部隐藏 */
+        .session-list-body-collapsed {
+          flex: 0;
+          max-height: 0;
+          opacity: 0;
+          padding-top: 0;
+          padding-bottom: 0;
+          overflow: hidden;
         }
         .session-list-empty {
           display: flex;

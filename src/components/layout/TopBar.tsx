@@ -5,11 +5,7 @@ import { WindowControls } from "./WindowControls";
 import { WorkspaceSelector } from "./WorkspaceSelector";
 import type { ThemeMode } from "../../types";
 
-interface TopBarProps {
-  onNewSession: () => void;
-}
-
-export function TopBar({ onNewSession }: TopBarProps) {
+export function TopBar() {
   const { t } = useTranslation();
   const { openSettings, llmProviders, activeProviderId, settings, updateSettings } = useSettingsStore();
   const activeProvider = llmProviders.find((p) => p.id === activeProviderId);
@@ -54,14 +50,6 @@ export function TopBar({ onNewSession }: TopBarProps) {
           onClick={toggleTheme}
         >
           <Icon name={isDarkMode ? "theme" : "moon"} />
-        </button>
-        <button
-          className="topbar-btn"
-          title={t('topBar.newSession')}
-          aria-label={t('topBar.newSession')}
-          onClick={onNewSession}
-        >
-          <Icon name="plus" />
         </button>
         <button
           className="topbar-btn"

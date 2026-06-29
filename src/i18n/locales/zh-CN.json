@@ -699,7 +699,9 @@
     "showFiles": "查看工作区文件",
     "backToSessions": "返回会话列表",
     "noSessionsInWorkspace": "该工作区暂无会话",
-    "untitledWorkspace": "其他"
+    "untitledWorkspace": "其他",
+    "collapse": "收起会话列表",
+    "expand": "展开会话列表"
   },
   "inputArea.removeAttachment": "移除 {{name}}",
   "update.checkFailedWithError": "检查更新失败: {{error}}"

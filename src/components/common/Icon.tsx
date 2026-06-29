@@ -3,6 +3,7 @@ import type { SVGProps } from "react";
 export type IconName =
   | "user" | "thinking" | "tool" | "error"
   | "chevron-down" | "chevron-up" | "chevron-left" | "chevron-right"
+  | "chevron-diagonal-out" | "chevron-diagonal-in"
   | "history" | "plus" | "minus" | "settings" | "send" | "attach" | "template"
   | "file" | "doc" | "xlsx" | "ppt" | "pdf" | "folder"
   | "search" | "close" | "warning" | "check" | "check-circle" | "dot"
@@ -63,6 +64,26 @@ const paths: Record<IconName, React.JSX.Element> = {
   "chevron-right": (
     <g key="chevron-right">
       <path d="M9 18l6-6-6-6" />
+    </g>
+  ),
+  // 斜对角双向直角(朝外): 右上角直角顶点在右上 + 左下角直角顶点在左下, 表示可收缩
+  // 两个 L 形分别紧贴右上角和左下角, 中间留出对角空白带, 避免构成矩形视觉
+  "chevron-diagonal-out": (
+    <g key="chevron-diagonal-out">
+      {/* 右上角 L: 拐角在右上 (19,4), 仅占据右上角 6x6 区域 */}
+      <path d="M13 4 L19 4 L19 10" />
+      {/* 左下角 L: 拐角在左下 (5,20), 仅占据左下角 6x6 区域 */}
+      <path d="M11 20 L5 20 L5 14" />
+    </g>
+  ),
+  // 斜对角双向直角(朝内): 右上角直角顶点在左下 + 左下角直角顶点在右上, 表示可展开
+  // 两个 L 形分别紧贴右上角和左下角, 中间留出对角空白带, 避免重叠
+  "chevron-diagonal-in": (
+    <g key="chevron-diagonal-in">
+      {/* 右上角 L: 拐角在右上 (19,4), 水平向左再垂直向上, 仅占据右上角 6x6 区域 */}
+      <path d="M19 10 L13 10 L13 4" />
+      {/* 左下角 L: 拐角在左下 (5,20), 水平向右再垂直向下, 仅占据左下角 6x6 区域 */}
+      <path d="M5 14 L11 14 L11 20" />
     </g>
   ),
   // 历史
