@@ -98,7 +98,7 @@ impl<R: Runtime> FsWatcherService<R> {
                             continue;
                         }
 
-                        log::debug!(
+                        log::trace!(
                             "FsWatcher: 检测到文件变更 type={}, path={}",
                             change_type,
                             path_str
