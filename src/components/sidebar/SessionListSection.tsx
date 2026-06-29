@@ -93,20 +93,9 @@ export function SessionListSection({
     });
 
     const result: GroupedSessions[] = [];
-    const current = workspaces.find((w) => w.id === currentWorkspaceId);
-
-    // 当前工作区排在最前（即使没有会话也显示，便于用户新建会话）
-    if (current) {
-      result.push({ workspace: current, sessions: map.get(current.id) || [] });
-    }
-
-    // 其余工作区按名称排序展示（即使没有会话也显示）
-    workspaces
-      .filter((w) => w.id !== currentWorkspaceId)
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .forEach((w) => {
-        result.push({ workspace: w, sessions: map.get(w.id) || [] });
-      });
+    workspaces.forEach((w) => {
+      result.push({ workspace: w, sessions: map.get(w.id) || [] });
+    });
 
     return result;
   }, [sessions, workspaces, currentWorkspaceId]);
@@ -179,14 +168,6 @@ export function SessionListSection({
 
     setDeleteConfirmId(null);
     setDeleteConfirmTitle("");
-  };
-
-  const formatDate = (dateStr: string) => {
-    try {
-      return new Date(dateStr).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" });
-    } catch {
-      return "";
-    }
   };
 
   return (
@@ -292,17 +273,8 @@ export function SessionListSection({
                           />
                         ) : (
                           <>
-                            <div className="session-item-left">
-                              <Icon name="file" size={13} className="session-item-icon" />
-                              <div className="session-item-content">
-                                <div className="session-item-title" title={s.title}>
-                                  {s.title}
-                                </div>
-                                <div className="session-item-meta">
-                                  <span>{formatDate(s.updatedAt)}</span>
-                                  <span className="session-message-count">{s.messageCount} 条</span>
-                                </div>
-                              </div>
+                            <div className="session-item-title" title={s.title}>
+                              {s.title}
                             </div>
                             <div className="session-item-actions">
                               <button
@@ -378,7 +350,7 @@ export function SessionListSection({
           display: flex;
           align-items: center;
           justify-content: space-between;
-          padding: 7px 8px;
+          padding: 4px 8px;
           border-radius: var(--radius-sm);
           cursor: pointer;
           user-select: none;
@@ -445,14 +417,13 @@ export function SessionListSection({
         .workspace-sessions {
           overflow: hidden;
           transition: max-height 0.25s ease, opacity 0.2s ease;
-          padding-left: 12px;
         }
         .session-item {
           display: flex;
           align-items: center;
           justify-content: space-between;
           gap: 6px;
-          padding: 7px 8px;
+          padding: 4px 8px;
           border-radius: var(--radius-sm);
           cursor: pointer;
           margin-bottom: 1px;
@@ -467,21 +438,6 @@ export function SessionListSection({
           background: var(--color-accent-light);
           border-color: var(--color-accent-light);
         }
-        .session-item-left {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          min-width: 0;
-          flex: 1;
-        }
-        .session-item-icon {
-          color: var(--color-text-tertiary);
-          flex-shrink: 0;
-        }
-        .session-item-content {
-          min-width: 0;
-          flex: 1;
-        }
         .session-item-title {
           font-size: 12px;
           font-weight: 500;
@@ -489,26 +445,11 @@ export function SessionListSection({
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          margin-bottom: 2px;
+          flex: 1;
+          min-width: 0;
+          padding-left: 20px;
         }
         .session-item.active .session-item-title {
-          color: var(--color-accent);
-        }
-        .session-item-meta {
-          font-size: 10px;
-          color: var(--color-text-quaternary);
-          display: flex;
-          gap: 6px;
-          align-items: center;
-        }
-        .session-message-count {
-          padding: 0 4px;
-          border-radius: 3px;
-          background: var(--color-bg);
-          font-size: 9px;
-        }
-        .session-item.active .session-message-count {
-          background: var(--color-accent-light);
           color: var(--color-accent);
         }
         .session-item-actions {
