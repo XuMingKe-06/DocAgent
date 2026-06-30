@@ -40,8 +40,6 @@ export function MainLayout({ mainArea, sidebar, sidebarVisible = true }: MainLay
           flex: 1;
           overflow-y: auto;
           overflow-x: hidden;
-          mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
-          -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
         }
         @media (max-width: 900px) {
           .sb-container {

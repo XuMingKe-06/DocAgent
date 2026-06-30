@@ -1,10 +1,14 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 import { AgentInfoSection } from "../sidebar/AgentInfoSection";
 import { FileTreeSection } from "../sidebar/FileTreeSection";
 import { SessionListSection } from "../sidebar/SessionListSection";
 import { Icon } from "../common/Icon";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
+import { useSettingsStore } from "../../stores/useSettingsStore";
+import type { ThemeMode } from "../../types";
 
 interface LeftSidebarProps {
   /** 文件预览回调 */
@@ -38,9 +42,44 @@ export function LeftSidebar({
   const { t } = useTranslation();
   const [view, setView] = useState<LeftSidebarView>("sessions");
   const { workspaces, currentWorkspaceId } = useWorkspaceStore();
+  const { openSettings, settings, updateSettings } = useSettingsStore();
   // 新建会话下拉菜单开关状态
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const newSessionRef = useRef<HTMLDivElement>(null);
+  // 更多按钮下拉菜单
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
+  // 语言子菜单
+  const [langOpen, setLangOpen] = useState(false);
+  const [langMenuStyle, setLangMenuStyle] = useState<React.CSSProperties>({});
+  const langRef = useRef<HTMLDivElement>(null);
+  // 语言子菜单 portal 容器 ref（用于点击外部关闭判定，子菜单通过 createPortal 渲染到 body，
+  // 脱离了 langRef/moreRef 的 DOM 树，需要单独跟踪）
+  const langDropdownRef = useRef<HTMLDivElement>(null);
+
+  // 判断当前是否处于深色模式
+  const isDarkMode = (() => {
+    const { themeMode } = settings.appearance;
+    if (themeMode === "dark") return true;
+    if (themeMode === "system") return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return false;
+  })();
+
+  // 切换主题：深色 ↔ 浅色
+  const toggleTheme = useCallback(() => {
+    const nextMode: ThemeMode = isDarkMode ? "light" : "dark";
+    updateSettings({ appearance: { themeMode: nextMode } });
+    setLangOpen(false);
+  }, [isDarkMode, updateSettings]);
+
+  // 切换语言
+  const switchLanguage = useCallback((lang: string) => {
+    i18n.changeLanguage(lang);
+    localStorage.setItem('i18n-language', lang);
+    updateSettings({ appearance: { language: lang, languageFollowSystem: false } });
+    setLangOpen(false);
+    setMoreOpen(false);
+  }, [updateSettings]);
 
   const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId);
 
@@ -76,6 +115,38 @@ export function LeftSidebar({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [newSessionOpen]);
+
+  // 点击外部或 Escape 关闭更多下拉菜单
+  useEffect(() => {
+    if (!moreOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      // 点击在语言子菜单内（通过 createPortal 渲染到 body，脱离 moreRef DOM 树），
+      // 不关闭更多菜单，否则会在 mousedown 阶段卸载子菜单，导致后续 click 无法触发 switchLanguage
+      if (langDropdownRef.current && langDropdownRef.current.contains(target)) {
+        return;
+      }
+      if (moreRef.current && !moreRef.current.contains(target)) {
+        setMoreOpen(false);
+        setLangOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setLangOpen(false);
+        setMoreOpen(false);
+      }
+    };
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleClickOutside);
+      document.addEventListener("keydown", handleKeyDown);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [moreOpen]);
 
   // 选择工作区后创建新会话
   const handlePickWorkspace = (workspaceId: string) => {
@@ -160,6 +231,55 @@ export function LeftSidebar({
             onShowFiles={handleShowFiles}
             onDeleteCurrentSession={onDeleteCurrentSession}
           />
+
+          {/* 更多按钮 + 下拉菜单 */}
+          <div ref={moreRef} className="more-section">
+            <button
+              type="button"
+              className={`new-session-trigger ${moreOpen ? "new-session-trigger-active" : ""}`}
+              aria-haspopup="true"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((prev) => !prev)}
+            >
+              <span>{t('sidebar.more')}</span>
+            </button>
+
+            {moreOpen && (
+              <div className="more-dropdown">
+                <div ref={langRef} className="more-dropdown-item more-dropdown-item-with-sub" onClick={() => {
+                  if (!langOpen && langRef.current) {
+                    const rect = langRef.current.getBoundingClientRect();
+                    setLangMenuStyle({ position: 'fixed', left: rect.right + 4, top: rect.top });
+                  }
+                  setLangOpen((prev) => !prev);
+                }}>
+                  <span className="more-dropdown-item-text">{t('sidebar.language')}</span>
+                  <Icon name="chevron-right" size={12} className="more-dropdown-sub-chevron" />
+                  {langOpen && createPortal(
+                    <div ref={langDropdownRef} className="more-lang-dropdown" style={langMenuStyle}>
+                      <div className="more-dropdown-item" onClick={(e) => { e.stopPropagation(); switchLanguage('zh-CN'); }}>
+                        <span className="more-dropdown-item-text">{t('settings.appearance.zhCN')}</span>
+                        {settings.appearance.language === 'zh-CN' && <Icon name="check" size={14} className="more-dropdown-check" />}
+                      </div>
+                      <div className="more-dropdown-item" onClick={(e) => { e.stopPropagation(); switchLanguage('en-US'); }}>
+                        <span className="more-dropdown-item-text">{t('settings.appearance.enUS')}</span>
+                        {settings.appearance.language === 'en-US' && <Icon name="check" size={14} className="more-dropdown-check" />}
+                      </div>
+                    </div>,
+                    document.body
+                  )}
+                </div>
+                <div className="more-dropdown-item" onClick={toggleTheme}>
+                  <Icon name={isDarkMode ? "theme" : "moon"} size={14} />
+                  <span>{isDarkMode ? t('topBar.switchToLight') : t('topBar.switchToDark')}</span>
+                </div>
+                <div className="more-dropdown-item" onClick={() => { openSettings("appearance"); setMoreOpen(false); setLangOpen(false); }}>
+                  <Icon name="settings" size={14} />
+                  <span>{t('topBar.settings')}</span>
+                </div>
+              </div>
+            )}
+          </div>
         </>
       )}
 
@@ -328,6 +448,95 @@ export function LeftSidebar({
           from {
             opacity: 0;
             transform: translateX(-100%);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+        /* 更多按钮区 */
+        .more-section {
+          position: relative;
+          flex-shrink: 0;
+          margin: 0 8px 4px;
+        }
+        /* 更多下拉菜单：显示在上方 */
+        .more-dropdown {
+          position: absolute;
+          bottom: calc(100% + 4px);
+          left: 0;
+          right: 0;
+          min-width: 200px;
+          background: var(--color-bg-elevated);
+          border: 1px solid var(--color-border-light);
+          border-radius: var(--radius-md);
+          box-shadow: var(--shadow-lg);
+          z-index: 200;
+          animation: more-dropdown-in 0.15s ease-out;
+          padding: 4px;
+        }
+        @keyframes more-dropdown-in {
+          from {
+            opacity: 0;
+            transform: scale(0.96) translateY(4px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+        .more-dropdown-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 8px 10px;
+          border-radius: var(--radius-sm);
+          cursor: pointer;
+          user-select: none;
+          transition: background 0.12s;
+          font-size: 13px;
+          color: var(--color-text-primary);
+        }
+        .more-dropdown-item:hover {
+          background: var(--color-bg-hover);
+        }
+        .more-dropdown-item-text {
+          flex: 1;
+        }
+        .more-dropdown-check {
+          color: var(--color-accent);
+        }
+        .more-dropdown-divider {
+          height: 1px;
+          background: var(--color-border-light);
+          margin: 4px 8px;
+        }
+        .more-dropdown-item-with-sub {
+          position: relative;
+        }
+        .more-dropdown-sub-chevron {
+          color: var(--color-text-quaternary);
+        }
+        /* 语言子菜单：显示在主菜单右侧 */
+        .more-lang-dropdown {
+          position: absolute;
+          left: 100%;
+          top: 0;
+          min-width: 160px;
+          background: var(--color-bg-elevated);
+          border: 1px solid var(--color-border-light);
+          border-radius: var(--radius-md);
+          box-shadow: var(--shadow-lg);
+          z-index: 210;
+          animation: more-lang-in 0.12s ease-out;
+          overflow: hidden;
+          padding: 4px;
+          margin-left: 4px;
+        }
+        @keyframes more-lang-in {
+          from {
+            opacity: 0;
+            transform: translateX(-4px);
           }
           to {
             opacity: 1;

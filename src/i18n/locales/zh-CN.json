@@ -693,6 +693,12 @@
   "session": {
     "newSession": "新会话"
   },
+  "sidebar": {
+    "more": "更多",
+    "darkMode": "深色模式",
+    "lightMode": "浅色模式",
+    "language": "语言"
+  },
   "sessionList": {
     "title": "会话列表",
     "newSessionForWorkspace": "为 {{workspace}} 新建会话",

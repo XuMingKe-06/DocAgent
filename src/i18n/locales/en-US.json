@@ -693,6 +693,12 @@
   "session": {
     "newSession": "New Session"
   },
+  "sidebar": {
+    "more": "More",
+    "darkMode": "Dark Mode",
+    "lightMode": "Light Mode",
+    "language": "Language"
+  },
   "sessionList": {
     "title": "Session List",
     "newSessionForWorkspace": "New session for {{workspace}}",
