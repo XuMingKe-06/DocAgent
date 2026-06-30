@@ -6,7 +6,7 @@ import { AddWorkspaceDialog } from "../settings/AddWorkspaceDialog";
 
 export function WorkspaceSelector() {
   const { t } = useTranslation();
-  const { currentWorkspaceId, workspaces, removeWorkspace } = useWorkspaceStore();
+  const { currentWorkspaceId, workspaces, removeWorkspace, switchWorkspace } = useWorkspaceStore();
   const [open, setOpen] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -47,6 +47,22 @@ export function WorkspaceSelector() {
     }
   }, [open, handleClickOutside, handleKeyDown]);
 
+  /* 切换工作区：仅在目标工作区不同于当前工作区且目录存在时切换，切换后关闭下拉框 */
+  const handleSwitch = async (id: string) => {
+    if (id === currentWorkspaceId) {
+      setOpen(false);
+      return;
+    }
+    try {
+      await switchWorkspace(id);
+    } catch (err) {
+      console.error("[WorkspaceSelector] 切换工作区失败:", err);
+    }
+    setOpen(false);
+    setRemovingId(null);
+    setRemoveError(null);
+  };
+
   /* 移除工作区 */
   const handleRemove = async (id: string) => {
     setRemoveError(null);
@@ -74,7 +90,6 @@ export function WorkspaceSelector() {
         onClick={() => { setOpen((prev) => !prev); setRemovingId(null); setRemoveError(null); }}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOpen((prev) => !prev); } }}
       >
-        <span className="w-2 h-2 rounded-full bg-accent" />
         <span className="ws-selector-label">{currentWs?.name ?? t('workspace.selectWorkspace')}</span>
         <Icon name={open ? "chevron-up" : "chevron-down"} size={14} />
       </div>
@@ -90,9 +105,24 @@ export function WorkspaceSelector() {
             {workspaces.map((ws) => (
               <div key={ws.id} className="ws-selector-item-wrapper">
                 <div
-                  className={`ws-selector-item ${!ws.pathExists ? "ws-selector-item-deleted" : ""}`}
+                  className={`ws-selector-item ${!ws.pathExists ? "ws-selector-item-deleted" : ""} ${ws.id === currentWorkspaceId ? "ws-selector-item-current" : ""}`}
+                  role={ws.pathExists ? "button" : undefined}
+                  tabIndex={ws.pathExists ? 0 : -1}
+                  aria-current={ws.id === currentWorkspaceId ? "true" : undefined}
+                  aria-label={t('workspace.selectWorkspace')}
+                  onClick={() => { if (ws.pathExists) void handleSwitch(ws.id); }}
+                  onKeyDown={(e) => {
+                    if (ws.pathExists && (e.key === "Enter" || e.key === " ")) {
+                      e.preventDefault();
+                      void handleSwitch(ws.id);
+                    }
+                  }}
                 >
                   <div className="ws-selector-item-left">
+                    {/* 当前激活工作区标识 */}
+                    <span className="ws-selector-current-mark" aria-hidden="true">
+                      {ws.id === currentWorkspaceId && <Icon name="check" size={14} />}
+                    </span>
                     <div className="ws-selector-item-info">
                       <span className="ws-selector-item-name">{ws.name}{!ws.pathExists ? ` (${t('workspace.directoryDeleted')})` : ""}</span>
                       <span className="ws-selector-item-path">{ws.path}</span>
@@ -234,9 +264,16 @@ export function WorkspaceSelector() {
           gap: 8px;
           padding: 8px 10px;
           border-radius: var(--radius-sm);
+          cursor: pointer;
         }
         .ws-selector-item:hover {
           background: var(--color-bg-hover);
+        }
+        .ws-selector-item-current {
+          background: var(--color-accent-bg);
+        }
+        .ws-selector-item-current:hover {
+          background: var(--color-accent-bg);
         }
         .ws-selector-item-deleted {
           opacity: 0.5;
@@ -245,6 +282,15 @@ export function WorkspaceSelector() {
         .ws-selector-item-deleted .ws-selector-item-name {
           color: var(--color-error);
           text-decoration: line-through;
+        }
+        .ws-selector-current-mark {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 16px;
+          height: 16px;
+          flex-shrink: 0;
+          color: var(--color-accent);
         }
         .ws-selector-item-left {
           display: flex;

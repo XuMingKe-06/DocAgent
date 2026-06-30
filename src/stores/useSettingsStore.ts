@@ -81,6 +81,8 @@ interface SettingsState {
   settings: AppSettings;
   llmProviders: ProviderInfo[];
   activeProviderId: string | null;
+  /** 用户为当前会话临时选择的首选 Provider ID，优先级高于默认 Provider */
+  preferredProviderId: string | null;
   handlers: HandlerInfo[];
   tools: ToolInfo[];
   templates: PromptTemplate[];
@@ -101,6 +103,8 @@ interface SettingsState {
   refreshHandlers: () => Promise<void>;
   /** 刷新 Tool 列表（loadTools 的别名，语义更清晰） */
   refreshTools: () => Promise<void>;
+  /** 设置当前会话首选 Provider ID（不持久化，仅内存状态） */
+  setPreferredProviderId: (id: string | null) => void;
   /** 初始化 Provider 切换事件监听 */
   initProviderSwitchListener: () => Promise<() => void>;
   /** 从后端加载模板列表 */
@@ -121,6 +125,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: defaultSettings,
   llmProviders: [],
   activeProviderId: null,
+  preferredProviderId: null,
   handlers: [],
   tools: [],
   templates: [],
@@ -233,6 +238,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   // 刷新 Tool 列表
   refreshTools: async () => {
     await get().loadTools();
+  },
+
+  // 设置当前会话首选 Provider ID（仅内存状态，切换会话或新建会话后重置为默认）
+  setPreferredProviderId: (id) => {
+    set({ preferredProviderId: id });
   },
 
   // 初始化 Provider 切换事件监听，返回取消监听函数

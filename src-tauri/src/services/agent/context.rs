@@ -111,6 +111,9 @@ pub struct AgentContext {
     /// 为 None 表示无笔记，get_messages_for_iteration 跳过注入
     /// 为 Some(String) 表示有笔记，作为独立 user 消息追加到消息列表末尾
     scratchpad_summary: Option<String>,
+    /// 用户首选的 Provider ID，优先于默认 Provider 使用
+    /// 为空字符串时表示未指定，由 LlmRouter 自行选择默认 Provider
+    pub preferred_provider_id: String,
 }
 
 impl AgentContext {
@@ -134,6 +137,7 @@ impl AgentContext {
             last_code: None,
             scratchpad_states: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             scratchpad_summary: None,
+            preferred_provider_id: String::new(),
         }
     }
 

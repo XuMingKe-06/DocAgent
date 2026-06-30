@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { WindowControls } from "./WindowControls";
-import { WorkspaceSelector } from "./WorkspaceSelector";
 
 export function TopBar() {
   const { t } = useTranslation();
@@ -14,9 +13,7 @@ export function TopBar() {
 
   return (
     <div role="banner" data-tauri-drag-region className="flex items-center h-[52px] pr-4 bg-bg-sub flex-shrink-0 gap-3 z-[100]" style={{ paddingLeft: '24px' }}>
-      {/* 工作区选择器 */}
-      <WorkspaceSelector />
-
+      {/* 左侧留白，工作区选择器已移至输入框左下角 */}
       <div className="flex-1" />
 
       {/* 状态指示器 - 对接实际 LLM Provider 状态 */}

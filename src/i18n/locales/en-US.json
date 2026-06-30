@@ -67,10 +67,13 @@
     "configureProviderTitle": "Configure Provider",
     "configureProviderDesc": "Please configure an LLM provider first. Agent needs an LLM to understand and process your instructions.",
     "addProvider": "Add Provider",
-    "startNewSession": "Start New Session",
-    "startSessionDesc": "Enter instructions below, Agent will help you process documents.",
+    "startNewSession": "Work with DocAgent",
+    "startSessionDesc": "Enter instructions, Agent will help you process documents.",
     "timeline": "Workflow Timeline",
     "emptySession": "Empty Session"
+  },
+  "provider": {
+    "selectModel": "Select Model"
   },
   "confirmNode": {
     "userConfirmed": "✓ User confirmed execution",

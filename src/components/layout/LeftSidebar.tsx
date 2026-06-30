@@ -17,8 +17,10 @@ interface LeftSidebarProps {
   onOpenVersionHistory: (filePath: string, fileName: string) => void;
   /** 切换会话（父组件需同步切换工作区） */
   onSwitchSession: (sessionId: string, workspaceId?: string) => void;
-  /** 为指定工作区新建会话 */
+  /** 为指定工作区新建会话（用于会话列表中按工作区新建） */
   onCreateSession: (workspaceId: string) => void;
+  /** 直接新建会话：清空当前工作流进入待机状态，工作区由输入框内选择器切换 */
+  onNewSession: () => void;
   /** 切换工作区并准备展示文件树 */
   onShowFiles: (workspaceId: string) => void;
   /** 删除当前会话后清理工作流 */
@@ -36,6 +38,7 @@ export function LeftSidebar({
   onOpenVersionHistory,
   onSwitchSession,
   onCreateSession,
+  onNewSession,
   onShowFiles,
   onDeleteCurrentSession,
 }: LeftSidebarProps) {
@@ -43,9 +46,6 @@ export function LeftSidebar({
   const [view, setView] = useState<LeftSidebarView>("sessions");
   const { workspaces, currentWorkspaceId } = useWorkspaceStore();
   const { openSettings, settings, updateSettings } = useSettingsStore();
-  // 新建会话下拉菜单开关状态
-  const [newSessionOpen, setNewSessionOpen] = useState(false);
-  const newSessionRef = useRef<HTMLDivElement>(null);
   // 更多按钮下拉菜单
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -93,29 +93,6 @@ export function LeftSidebar({
     setView("sessions");
   };
 
-  // 点击外部或 Escape 关闭新建会话下拉菜单
-  useEffect(() => {
-    if (!newSessionOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (newSessionRef.current && !newSessionRef.current.contains(e.target as Node)) {
-        setNewSessionOpen(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setNewSessionOpen(false);
-    };
-    // 延迟添加监听，避免当前点击事件立即触发关闭
-    const timer = setTimeout(() => {
-      document.addEventListener("mousedown", handleClickOutside);
-      document.addEventListener("keydown", handleKeyDown);
-    }, 0);
-    return () => {
-      clearTimeout(timer);
-      document.removeEventListener("mousedown", handleClickOutside);
-      document.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [newSessionOpen]);
-
   // 点击外部或 Escape 关闭更多下拉菜单
   useEffect(() => {
     if (!moreOpen) return;
@@ -148,12 +125,6 @@ export function LeftSidebar({
     };
   }, [moreOpen]);
 
-  // 选择工作区后创建新会话
-  const handlePickWorkspace = (workspaceId: string) => {
-    onCreateSession(workspaceId);
-    setNewSessionOpen(false);
-  };
-
   return (
     <div className="left-sidebar">
       {view === "files" ? (
@@ -181,15 +152,13 @@ export function LeftSidebar({
         </div>
       ) : (
         <>
-          {/* 新建会话按钮 + 工作区选择下拉菜单 */}
-          <div ref={newSessionRef} className="new-session-section">
+          {/* 新建会话按钮：直接进入待机的新建会话页面，工作区由输入框内选择器切换 */}
+          <div className="new-session-section">
             <button
               type="button"
-              className={`new-session-trigger ${newSessionOpen ? "new-session-trigger-active" : ""}`}
-              aria-haspopup="listbox"
-              aria-expanded={newSessionOpen}
+              className="new-session-trigger"
               aria-label={t('topBar.newSession')}
-              onClick={() => setNewSessionOpen((prev) => !prev)}
+              onClick={onNewSession}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="new-session-icon">
                 <line x1="12" y1="5" x2="12" y2="19"/>
@@ -197,30 +166,6 @@ export function LeftSidebar({
               </svg>
               <span>{t('topBar.newSession')}</span>
             </button>
-
-            {newSessionOpen && (
-              <div className="new-session-dropdown" role="listbox">
-                {workspaces.length === 0 ? (
-                  <div className="new-session-empty">{t('workspace.noWorkspace')}</div>
-                ) : (
-                  workspaces.map((ws) => (
-                    <div
-                      key={ws.id}
-                      className="new-session-item"
-                      role="option"
-                      aria-label={t('sessionList.newSessionForWorkspace', { workspace: ws.name })}
-                      onClick={() => handlePickWorkspace(ws.id)}
-                    >
-                      <Icon name="folder" size={14} className="new-session-item-icon" />
-                      <div className="new-session-item-info">
-                        <span className="new-session-item-name">{ws.name}</span>
-                        <span className="new-session-item-path">{ws.path}</span>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
           </div>
 
           {/* Agent 信息区置于会话列表上方，默认收缩，可点击展开 */}
@@ -236,7 +181,7 @@ export function LeftSidebar({
           <div ref={moreRef} className="more-section">
             <button
               type="button"
-              className={`new-session-trigger ${moreOpen ? "new-session-trigger-active" : ""}`}
+              className="new-session-trigger"
               aria-haspopup="true"
               aria-expanded={moreOpen}
               onClick={() => setMoreOpen((prev) => !prev)}
@@ -321,85 +266,12 @@ export function LeftSidebar({
           flex-shrink: 0;
           color: var(--color-text-primary);
         }
-        .new-session-trigger:hover,
-        .new-session-trigger-active {
+        .new-session-trigger:hover {
           background: var(--color-bg-hover);
         }
         /* 删除全局 button:active 的 scale 缩小动画反馈 */
         .new-session-trigger:active {
           transform: none;
-        }
-        /* 下拉菜单: 复用 WorkspaceSelector 的视觉语言 */
-        .new-session-dropdown {
-          position: absolute;
-          top: calc(100% + 4px);
-          left: 0;
-          right: 0;
-          min-width: 200px;
-          background: var(--color-bg-elevated);
-          border: 1px solid var(--color-border-light);
-          border-radius: var(--radius-md);
-          box-shadow: var(--shadow-lg);
-          z-index: 200;
-          animation: new-session-dropdown-in 0.15s ease-out;
-          overflow: hidden;
-          padding: 4px;
-        }
-        @keyframes new-session-dropdown-in {
-          from {
-            opacity: 0;
-            transform: scale(0.96) translateY(-4px);
-          }
-          to {
-            opacity: 1;
-            transform: scale(1) translateY(0);
-          }
-        }
-        .new-session-empty {
-          padding: 14px 12px;
-          text-align: center;
-          font-size: 13px;
-          color: var(--color-text-quaternary);
-        }
-        .new-session-item {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          padding: 8px 10px;
-          border-radius: var(--radius-sm);
-          cursor: pointer;
-          transition: background 0.12s;
-          min-width: 0;
-        }
-        .new-session-item:hover {
-          background: var(--color-bg-hover);
-        }
-        .new-session-item-icon {
-          color: var(--color-text-tertiary);
-          flex-shrink: 0;
-        }
-        .new-session-item-info {
-          display: flex;
-          flex-direction: column;
-          gap: 1px;
-          min-width: 0;
-          flex: 1;
-        }
-        .new-session-item-name {
-          font-size: 14px;
-          font-weight: 500;
-          color: var(--color-text-primary);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .new-session-item-path {
-          font-size: 12px;
-          color: var(--color-text-quaternary);
-          font-family: var(--font-mono);
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
         }
         .file-tree-header {
           display: flex;
@@ -510,11 +382,6 @@ export function LeftSidebar({
         }
         .more-dropdown-check {
           color: var(--color-accent);
-        }
-        .more-dropdown-divider {
-          height: 1px;
-          background: var(--color-border-light);
-          margin: 4px 8px;
         }
         .more-dropdown-item-with-sub {
           position: relative;

@@ -65,7 +65,7 @@ export default function App() {
   const [versionHistoryFilePath, setVersionHistoryFilePath] = useState("");
   const [versionHistoryFileName, setVersionHistoryFileName] = useState("");
 
-  const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler, loadFromMessages, executionStatus, initContextUsageListener, loadContextUsage, clearContextUsage, saveSessionToCache, restoreSessionFromCache, clearSessionCache, getCachedStreamingRefs } = useWorkflowStore();
+  const { addNode, updateNode, setExecutionStatus, clearNodes, setConfirmHandler, loadFromMessages, executionStatus, initContextUsageListener, loadContextUsage, clearContextUsage, saveSessionToCache, restoreSessionFromCache, clearSessionCache, getCachedStreamingRefs, nodes } = useWorkflowStore();
   const { switchSession, loadSessions, clearCurrentSession, currentSessionId, sessions } = useSessionStore();
   const updateSessionTitleLocal = useSessionStore((s) => s.updateSessionTitleLocal);
   const { loadSettings, initThemeListener } = useSettingsStore();
@@ -220,6 +220,11 @@ export default function App() {
     const stillExists = sessions.some((s) => s.id === currentSessionId);
     if (stillExists) return;
 
+    // 跳过刚创建的新会话：agentSessionId 由 useAgent 管理，
+    // 新会话创建后 sessions 可能因 loadSessions 失败或时序问题短暂不包含该会话，
+    // 此时不应误判为失效。仅当 currentSessionId 与 agentSessionId 不同时才视为真正失效。
+    if (currentSessionId === agentSessionId) return;
+
     // 当前会话已不在列表中，说明已被外部删除（如工作区删除）
     console.warn("[App] 当前会话已失效，清空状态:", currentSessionId);
     clearNodes();
@@ -227,7 +232,7 @@ export default function App() {
     clearContextUsage();
     clearCurrentSession();
     resetRefs();
-  }, [currentSessionId, sessions, clearNodes, resetAgent, clearContextUsage, clearCurrentSession]);
+  }, [currentSessionId, sessions, agentSessionId, clearNodes, resetAgent, clearContextUsage, clearCurrentSession]);
 
   // 监听会话标题自动更新事件（后端生成标题后通知前端）
   useEffect(() => {
@@ -287,10 +292,16 @@ export default function App() {
   }, [settings.update.autoCheck]);
 
   // 当 Agent 创建新会话时，同步刷新 session store 并选中新会话
+  // 必须先 await loadSessions() 确保 sessions 列表已包含新会话，
+  // 再调用 switchSession() 更新 currentSessionId。
+  // 否则会触发"当前会话失效" useEffect（line ~216）的竞态：
+  // currentSessionId 已更新但 sessions 还未包含新会话，导致误判会话失效并 clearNodes()。
   useEffect(() => {
     if (agentSessionId && !prevAgentSessionIdRef.current) {
-      loadSessions();
-      switchSession(agentSessionId);
+      (async () => {
+        await loadSessions();
+        switchSession(agentSessionId);
+      })();
     }
     prevAgentSessionIdRef.current = agentSessionId;
   }, [agentSessionId, loadSessions, switchSession]);
@@ -640,7 +651,13 @@ export default function App() {
     const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId);
     const workingDirectory = currentWorkspace?.path;
     const workspaceId = currentWorkspaceId;
-    const options = workingDirectory ? { workingDirectory, workspaceId } : undefined;
+    // 获取用户为当前会话选择的 Provider ID，传递给 Agent 优先使用
+    const providerId = useSettingsStore.getState().preferredProviderId;
+    const options = {
+      ...(workingDirectory ? { workingDirectory } : {}),
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(providerId ? { providerId } : {}),
+    };
 
     // 保存发送选项，用于错误重试
     lastSentOptionsRef.current = options;
@@ -964,12 +981,14 @@ export default function App() {
       <MainLayout
         mainArea={
           <MainArea
+            isEmpty={nodes.length === 0}
             workflow={<WorkflowTimeline onRetryError={handleRetryError} />}
             inputArea={
               <InputArea
                 onSend={handleSend}
                 executionStatus={executionStatus}
                 onStop={handleStop}
+                centered={nodes.length === 0}
               />
             }
           />
@@ -981,6 +1000,7 @@ export default function App() {
             onOpenVersionHistory={handleOpenVersionHistory}
             onSwitchSession={handleSwitchSession}
             onCreateSession={handleCreateSessionForWorkspace}
+            onNewSession={handleNewSession}
             onShowFiles={handleShowFilesForWorkspace}
             onDeleteCurrentSession={handleDeleteCurrentSession}
           />

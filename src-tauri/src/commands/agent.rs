@@ -111,6 +111,14 @@ pub async fn start_agent(
         .unwrap_or("")
         .to_string();
 
+    // 从 options 中提取用户首选 Provider ID（空字符串表示未指定）
+    let provider_id = options
+        .as_ref()
+        .and_then(|o| o.get("providerId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
     // 校验工作区目录是否存在（仅当指定了非默认工作区路径时检查）
     if !workspace_path.is_empty() && workspace_path != "." {
         let ws_path = std::path::Path::new(&workspace_path);
@@ -168,6 +176,7 @@ pub async fn start_agent(
             max_iterations,
             &workspace_path,
             &workspace_id,
+            &provider_id,
             should_stop,
             &db,
             &confirm_channels,
@@ -720,6 +729,7 @@ async fn run_agent(
     max_iterations: u32,
     workspace_path: &str,
     workspace_id: &str,
+    provider_id: &str,
     should_stop: Arc<dyn Fn(&str) -> bool + Send + Sync>,
     db: &Arc<crate::db::Database>,
     confirm_channels: &Arc<tokio::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<crate::ConfirmDecision>>>>,
@@ -797,6 +807,7 @@ async fn run_agent(
     ctx.max_iterations = max_iterations;
     ctx.workspace_path = workspace_path.to_string();
     ctx.workspace_id = workspace_id.to_string();
+    ctx.preferred_provider_id = provider_id.to_string();
     // 注入 Scratchpad 共享状态（与 ScratchpadTool 持有同一 Arc）
     // executor 每轮迭代开始时会调用 refresh_scratchpad_summary 读取笔记摘要
     ctx.set_scratchpad_states(scratchpad_states.clone());

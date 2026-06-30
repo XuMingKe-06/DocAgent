@@ -67,10 +67,13 @@
     "configureProviderTitle": "配置服务商",
     "configureProviderDesc": "请先配置大模型服务商，Agent 需要通过大模型来理解和处理你的指令",
     "addProvider": "添加服务商",
-    "startNewSession": "开始新会话",
-    "startSessionDesc": "在下方输入指令，Agent 将协助你处理文档",
+    "startNewSession": "Work with DocAgent",
+    "startSessionDesc": "输入指令，Agent 将协助你处理文档",
     "timeline": "工作流时间线",
     "emptySession": "空会话"
+  },
+  "provider": {
+    "selectModel": "选择模型"
   },
   "confirmNode": {
     "userConfirmed": "✓ 用户已确认执行",

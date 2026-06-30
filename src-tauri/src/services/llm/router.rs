@@ -472,85 +472,103 @@ impl LlmRouter {
     }
 
     /// 流式对话，自动选择 Provider，支持健康检查和 Fallback 通知
+    /// preferred_provider_id 为 Some 时优先使用指定 Provider（不存在时回退到默认）
     pub async fn chat_stream(
         &self,
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
+        preferred_provider_id: Option<&str>,
     ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, CommandError>>, CommandError> {
-        let default_id = self.default_id.clone()
-            .ok_or_else(|| CommandError::llm(1002, "未配置 LLM Provider".to_string()))?;
+        let provider_id = self.resolve_stream_provider_id(preferred_provider_id).await?;
 
-        log::info!("流式对话, 使用默认 Provider: {}", default_id);
+        log::info!("流式对话, 使用 Provider: {}", provider_id);
 
-        if self.is_provider_available(&default_id) {
+        if self.is_provider_available(&provider_id) {
             let providers = self.providers.read().await;
-            if let Some(provider) = providers.get(&default_id) {
+            if let Some(provider) = providers.get(&provider_id) {
                 let start = std::time::Instant::now();
                 match provider.chat_stream(messages, tools).await {
                     Ok(rx) => {
                         let latency = start.elapsed().as_millis() as u64;
-                        self.mark_success(&default_id, latency);
+                        self.mark_success(&provider_id, latency);
                         return Ok(rx);
                     }
                     Err(e) => {
-                        self.mark_failure(&default_id, &e.message);
-                        log::warn!("默认 Provider 流式请求失败, 尝试 Fallback, 错误: {}", e.message);
+                        self.mark_failure(&provider_id, &e.message);
+                        log::warn!("Provider {} 流式请求失败, 尝试 Fallback, 错误: {}", provider_id, e.message);
                         drop(providers);
-                        return self.fallback_chat_stream(messages, tools, &default_id, e).await;
+                        return self.fallback_chat_stream(messages, tools, &provider_id, e).await;
                     }
                 }
             }
         } else {
-            log::warn!("默认 Provider {} 不可用（健康检查未通过），跳过", default_id);
+            log::warn!("Provider {} 不可用（健康检查未通过），跳过", provider_id);
         }
 
         let error = CommandError::llm(
             crate::errors::LLM_PROVIDER_UNAVAILABLE,
-            format!("默认 Provider {} 不可用", default_id),
+            format!("Provider {} 不可用", provider_id),
         );
-        self.fallback_chat_stream(messages, tools, &default_id, error).await
+        self.fallback_chat_stream(messages, tools, &provider_id, error).await
     }
 
     /// 流式对话，支持覆盖 max_tokens 参数
     /// 用于响应截断时以更大的 max_tokens 重试，避免因输出限制导致 tool_call 参数不完整
+    /// preferred_provider_id 为 Some 时优先使用指定 Provider（不存在时回退到默认）
     pub async fn chat_stream_with_max_tokens(
         &self,
         messages: &[ChatMessage],
         tools: &[ToolDefinition],
         max_tokens_override: u32,
+        preferred_provider_id: Option<&str>,
     ) -> Result<tokio::sync::mpsc::Receiver<Result<StreamChunk, CommandError>>, CommandError> {
-        let default_id = self.default_id.clone()
-            .ok_or_else(|| CommandError::llm(1002, "未配置 LLM Provider".to_string()))?;
+        let provider_id = self.resolve_stream_provider_id(preferred_provider_id).await?;
 
-        log::info!("流式对话 (max_tokens={}), 使用默认 Provider: {}", max_tokens_override, default_id);
+        log::info!("流式对话 (max_tokens={}), 使用 Provider: {}", max_tokens_override, provider_id);
 
-        if self.is_provider_available(&default_id) {
+        if self.is_provider_available(&provider_id) {
             let providers = self.providers.read().await;
-            if let Some(provider) = providers.get(&default_id) {
+            if let Some(provider) = providers.get(&provider_id) {
                 let start = std::time::Instant::now();
                 match provider.chat_stream_with_max_tokens(messages, tools, max_tokens_override).await {
                     Ok(rx) => {
                         let latency = start.elapsed().as_millis() as u64;
-                        self.mark_success(&default_id, latency);
+                        self.mark_success(&provider_id, latency);
                         return Ok(rx);
                     }
                     Err(e) => {
-                        self.mark_failure(&default_id, &e.message);
-                        log::warn!("默认 Provider 流式请求 (max_tokens={}) 失败, 尝试 Fallback, 错误: {}", max_tokens_override, e.message);
+                        self.mark_failure(&provider_id, &e.message);
+                        log::warn!("Provider {} 流式请求 (max_tokens={}) 失败, 尝试 Fallback, 错误: {}", provider_id, max_tokens_override, e.message);
                         drop(providers);
-                        return self.fallback_chat_stream(messages, tools, &default_id, e).await;
+                        return self.fallback_chat_stream(messages, tools, &provider_id, e).await;
                     }
                 }
             }
         } else {
-            log::warn!("默认 Provider {} 不可用（健康检查未通过），跳过", default_id);
+            log::warn!("Provider {} 不可用（健康检查未通过），跳过", provider_id);
         }
 
         let error = CommandError::llm(
             crate::errors::LLM_PROVIDER_UNAVAILABLE,
-            format!("默认 Provider {} 不可用", default_id),
+            format!("Provider {} 不可用", provider_id),
         );
-        self.fallback_chat_stream(messages, tools, &default_id, error).await
+        self.fallback_chat_stream(messages, tools, &provider_id, error).await
+    }
+
+    /// 解析流式对话应使用的 Provider ID：优先使用用户指定的 Provider，不存在时回退默认 Provider
+    async fn resolve_stream_provider_id(
+        &self,
+        preferred_provider_id: Option<&str>,
+    ) -> Result<String, CommandError> {
+        let providers = self.providers.read().await;
+        if let Some(id) = preferred_provider_id {
+            if providers.contains_key(id) {
+                return Ok(id.to_string());
+            }
+            log::warn!("指定的首选 Provider {} 不存在，回退到默认 Provider", id);
+        }
+        self.default_id.clone()
+            .ok_or_else(|| CommandError::llm(1002, "未配置 LLM Provider".to_string()))
     }
 
     /// 流式 Fallback 逻辑

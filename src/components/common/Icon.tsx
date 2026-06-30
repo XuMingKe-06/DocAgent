@@ -11,7 +11,7 @@ export type IconName =
   | "refresh" | "edit" | "trash" | "stop" | "back"
   | "copy" | "eye" | "folder-plus" | "file-plus" | "external-link"
   | "chart" | "clock" | "git-compare" | "undo"
-  | "theme" | "moon" | "keyboard" | "info" | "image";
+  | "theme" | "moon" | "keyboard" | "info" | "image" | "book";
 
 interface IconProps extends SVGProps<SVGSVGElement> {
   name: IconName;
@@ -404,6 +404,13 @@ const paths: Record<IconName, React.JSX.Element> = {
       <rect x="3" y="3" width="18" height="18" rx="2" />
       <circle cx="8.5" cy="8.5" r="1.5" />
       <polyline points="21 15 16 10 5 21" />
+    </g>
+  ),
+  // 书本（展开的书）
+  book: (
+    <g key="book">
+      <path d="M3 19C5 18 7 17.5 9 17.5C11 17.5 12 18 12 19V6C12 5 11 4.5 9 4.5C7 4.5 5 5 3 6V19Z" />
+      <path d="M21 19C19 18 17 17.5 15 17.5C13 17.5 12 18 12 19V6C12 5 13 4.5 15 4.5C17 4.5 19 5 21 6V19Z" />
     </g>
   ),
 };

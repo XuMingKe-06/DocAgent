@@ -2,12 +2,13 @@ import { useTranslation } from 'react-i18next';
 import { useState, useRef, useCallback, type KeyboardEvent, type DragEvent, type ClipboardEvent } from "react";
 import { Icon } from "../common/Icon";
 import { TemplatePicker } from "../common/TemplatePicker";
+import { ProviderSelector } from "../common/ProviderSelector";
+import { WorkspaceSelector } from "./WorkspaceSelector";
 import type { ExecutionStatus } from "../../types/workflow";
 import type { AttachmentMeta } from "../../types/session";
 import { useAttachmentStore, inferAttachmentType, SUPPORTED_ATTACHMENT_MIME_TYPES, MAX_IMAGE_SIZE, MAX_TEXT_SIZE, MAX_DOCUMENT_SIZE, MAX_ATTACHMENT_COUNT, hasImageAttachments } from "../../stores/useAttachmentStore";
 import { useSettingsStore } from "../../stores/useSettingsStore";
-import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
-import { formatSize, matchesShortcut, deriveNewLineShortcut } from "../../utils/format";
+import { formatSize, matchesShortcut } from "../../utils/format";
 
 interface InputAreaProps {
   onSend: (text: string) => void;
@@ -15,9 +16,11 @@ interface InputAreaProps {
   // Agent 执行状态
   executionStatus?: ExecutionStatus;
   onStop?: () => void;
+  /** 是否为居中布局（空会话状态）：居中时限制最大宽度 */
+  centered?: boolean;
 }
 
-export function InputArea({ onSend, disabled = false, executionStatus = "idle", onStop }: InputAreaProps) {
+export function InputArea({ onSend, disabled = false, executionStatus = "idle", onStop, centered = false }: InputAreaProps) {
   const { t } = useTranslation();
   const [text, setText] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -30,21 +33,17 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
   const removeAttachment = useAttachmentStore((s) => s.removeAttachment);
   const clearAttachments = useAttachmentStore((s) => s.clearAttachments);
 
-  // 检查当前 Provider 是否支持视觉
-  const providers = useSettingsStore((s) => s.llmProviders);
-  const currentProvider = providers.find((p) => p.isDefault) || providers[0];
+  // 检查当前生效的 Provider 是否支持视觉：优先使用用户为当前会话选择的 Provider
+  const { llmProviders, preferredProviderId } = useSettingsStore();
+  const currentProvider = llmProviders.find((p) => p.id === preferredProviderId)
+    || llmProviders.find((p) => p.isDefault)
+    || llmProviders[0];
   const supportsVision = currentProvider?.supportsVision ?? false;
   const showVisionWarning = hasImageAttachments(attachments) && !supportsVision;
 
   // 从设置中读取快捷键配置
   const sendMessageShortcut = useSettingsStore((s) => s.settings.shortcuts.sendMessage);
   const quickPromptShortcut = useSettingsStore((s) => s.settings.shortcuts.quickPrompt);
-  const toggleSidebarShortcut = useSettingsStore((s) => s.settings.shortcuts.toggleSidebar);
-  const newLineShortcut = deriveNewLineShortcut(sendMessageShortcut);
-
-  // 当前工作区：用于在输入区右下角展示状态，让用户在新建会话（未提问）时也能感知当前工作区
-  const { workspaces, currentWorkspaceId } = useWorkspaceStore();
-  const currentWorkspace = workspaces.find((w) => w.id === currentWorkspaceId);
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim();
@@ -82,7 +81,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
     const el = textareaRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = Math.min(el.scrollHeight, 120) + "px";
+    el.style.height = Math.min(el.scrollHeight, 240) + "px";
   }, []);
 
   // 模板插入回调
@@ -95,7 +94,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
     setTimeout(() => {
       if (textareaRef.current) {
         textareaRef.current.style.height = "auto";
-        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + "px";
+        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 240) + "px";
       }
     }, 60);
   }, []);
@@ -213,7 +212,7 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
   const hasContent = text.trim().length > 0 || attachments.length > 0;
 
   return (
-    <div className="input-area-wrapper" role="form" aria-label={t('inputArea.messageInput')}>
+    <div className={`input-area-wrapper ${centered ? "input-area-wrapper-centered" : ""}`} role="form" aria-label={t('inputArea.messageInput')}>
       <div className="input-container-wrapper" style={{ position: "relative" }}>
         {/* 附件预览条 */}
         {attachments.length > 0 && (
@@ -249,9 +248,6 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
-          <button className="input-btn" title={t('inputArea.attachFile')} aria-label={t('inputArea.attachFile')} onClick={handleFileSelect}>
-            <Icon name="attach" />
-          </button>
           <input
             ref={fileInputRef}
             type="file"
@@ -274,45 +270,58 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
             disabled={disabled}
           />
 
-          <div className="input-actions-right">
-            <button
-              className={`input-btn ${pickerOpen ? "input-btn-active" : ""}`}
-              title={`${t('inputArea.promptTemplate')} (${quickPromptShortcut})`}
-              aria-label={t('inputArea.promptTemplate')}
-              aria-expanded={pickerOpen}
-              onClick={() => setPickerOpen(!pickerOpen)}
-            >
-              <Icon name="template" />
-            </button>
-            {executionStatus === "running" && onStop ? (
-              <button
-                className="stop-btn"
-                title={t('inputArea.stopExecution')}
-                aria-label={t('inputArea.stopExecution')}
-                onClick={onStop}
-              >
-                <Icon name="stop" />
-              </button>
-            ) : executionStatus === "stopping" ? (
-              <button
-                className="stop-btn stop-btn-loading"
-                title={t('inputArea.stopping')}
-                disabled
-              >
-                <span className="loading-spinner"></span>
-              </button>
-            ) : (
-              <button
-                className={`send-btn ${hasContent && !disabled ? "send-btn-active" : ""}`}
-                title={t('inputArea.send')}
-                aria-label={t('inputArea.sendMessage')}
-                aria-disabled={disabled || !hasContent}
-                onClick={handleSend}
-                disabled={disabled || !hasContent}
-              >
-                <Icon name="send" />
-              </button>
-            )}
+          <div className="input-inner-bottom">
+            <div className="input-inner-left">
+              {centered && <WorkspaceSelector />}
+            </div>
+            <div className="input-inner-right">
+              <ProviderSelector />
+              <div className="input-actions-right">
+                <button className="input-btn" title={t('inputArea.attachFile')} aria-label={t('inputArea.attachFile')} onClick={handleFileSelect}>
+                  <Icon name="attach" />
+                </button>
+                {centered && (
+                  <button
+                    className={`input-btn ${pickerOpen ? "input-btn-active" : ""}`}
+                    title={`${t('inputArea.promptTemplate')} (${quickPromptShortcut})`}
+                    aria-label={t('inputArea.promptTemplate')}
+                    aria-expanded={pickerOpen}
+                    onClick={() => setPickerOpen(!pickerOpen)}
+                  >
+                    <Icon name="template" />
+                  </button>
+                )}
+                {executionStatus === "running" && onStop ? (
+                  <button
+                    className="stop-btn"
+                    title={t('inputArea.stopExecution')}
+                    aria-label={t('inputArea.stopExecution')}
+                    onClick={onStop}
+                  >
+                    <Icon name="stop" />
+                  </button>
+                ) : executionStatus === "stopping" ? (
+                  <button
+                    className="stop-btn stop-btn-loading"
+                    title={t('inputArea.stopping')}
+                    disabled
+                  >
+                    <span className="loading-spinner"></span>
+                  </button>
+                ) : (
+                  <button
+                    className={`send-btn ${hasContent && !disabled ? "send-btn-active" : ""}`}
+                    title={t('inputArea.send')}
+                    aria-label={t('inputArea.sendMessage')}
+                    aria-disabled={disabled || !hasContent}
+                    onClick={handleSend}
+                    disabled={disabled || !hasContent}
+                  >
+                    <Icon name="send" />
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -332,44 +341,26 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
         />
       </div>
 
-      <div className="shortcut-hints" aria-hidden="true">
-        <div className="shortcut-hints-left">
-          <span>
-            <kbd className="kbd">{sendMessageShortcut}</kbd> {t('inputArea.sendShortcut')}
-          </span>
-          <span>
-            <kbd className="kbd">{newLineShortcut}</kbd> {t('inputArea.newLineShortcut')}
-          </span>
-          <span>
-            <kbd className="kbd">{quickPromptShortcut}</kbd> {t('inputArea.templateShortcut')}
-          </span>
-          <span>
-            <kbd className="kbd">Ctrl + V</kbd> {t('inputArea.pasteImage')}
-          </span>
-          <span>
-            <kbd className="kbd">{toggleSidebarShortcut}</kbd> {t('inputArea.sidebarShortcut')}
-          </span>
-        </div>
-        {currentWorkspace && (
-          <div
-            className="workspace-indicator"
-            title={t('inputArea.currentWorkspace') + ': ' + currentWorkspace.path}
-          >
-            <Icon name="folder" size={11} />
-            <span className="workspace-indicator-name">{currentWorkspace.name}</span>
-          </div>
-        )}
-      </div>
-
       <style>{`
         .input-area-wrapper {
           padding: 10px 24px 14px;
           background: var(--color-bg);
           flex-shrink: 0;
+          width: 100%;
+        }
+        .input-area-wrapper-centered {
+          max-width: 760px;
+          margin: 0 auto;
+        }
+        .input-area-wrapper-centered .input-textarea {
+          min-height: 60px;
         }
         @media (max-width: 768px) {
           .input-area-wrapper {
             padding: 8px 16px 12px;
+          }
+          .input-area-wrapper-centered {
+            max-width: 100%;
           }
         }
         .attachment-preview-bar {
@@ -435,11 +426,10 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
         }
         .input-container {
           display: flex;
-          align-items: center;
-          gap: 6px;
-          border: 1px solid var(--color-border-light);
-          border-radius: 9px;
-          padding: 6px 10px 6px 12px;
+          flex-direction: column;
+          border: 1px solid var(--color-border-strong);
+          border-radius: 12px;
+          padding: 10px 14px 8px 14px;
           transition: all 0.2s;
           background: var(--color-bg);
           box-shadow: var(--shadow-xs);
@@ -481,12 +471,13 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
         .input-textarea {
           flex: 1;
           resize: none;
-          min-height: 20px;
-          max-height: 100px;
+          min-height: 30px;
+          max-height: 240px;
           line-height: 1.5;
-          font-size: 13px;
-          padding: 2px 4px;
+          font-size: 14px;
+          padding: 2px 0 2px 4px;
           outline: none;
+          align-self: stretch;
         }
         .input-textarea:focus-visible {
           outline: none;
@@ -575,45 +566,24 @@ export function InputArea({ onSend, disabled = false, executionStatus = "idle", 
           z-index: 10;
           pointer-events: none;
         }
-        .shortcut-hints {
-          font-size: 10px;
-          color: var(--color-text-quaternary);
-          margin-top: 6px;
-          padding-left: 4px;
+        .input-inner-bottom {
           display: flex;
           align-items: center;
           justify-content: space-between;
-          gap: 12px;
+          margin-top: 4px;
+          min-height: 28px;
         }
-        .shortcut-hints-left {
+        .input-inner-left {
           display: flex;
           align-items: center;
-          gap: 12px;
-          min-width: 0;
-          flex: 1;
-        }
-        .workspace-indicator {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          color: var(--color-text-tertiary);
-          font-size: 10px;
           flex-shrink: 0;
-          max-width: 200px;
+          min-width: 0;
         }
-        .workspace-indicator-name {
-          overflow: hidden;
-          text-overflow: ellipsis;
-          white-space: nowrap;
-        }
-        .kbd {
-          font-family: var(--font-mono);
-          font-size: 9px;
-          padding: 1px 4px;
-          background: var(--color-bg-sub);
-          border: 1px solid var(--color-border-light);
-          border-radius: 2px;
-          color: var(--color-text-tertiary);
+        .input-inner-right {
+          display: flex;
+          align-items: center;
+          gap: 2px;
+          flex-shrink: 0;
         }
       `}</style>
     </div>

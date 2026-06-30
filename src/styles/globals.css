@@ -334,10 +334,26 @@
   font-weight: 600;
   color: var(--color-text-primary);
 }
+.wf-empty-main-title {
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  color: var(--color-text-primary);
+}
+.wf-empty-main-title-with-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+.wf-empty-book-icon {
+  color: var(--color-text-primary);
+  flex-shrink: 0;
+}
 .wf-empty-desc {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--color-text-tertiary);
-  max-width: 320px;
+  max-width: 360px;
   text-align: center;
   line-height: 1.6;
 }

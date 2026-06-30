@@ -165,12 +165,10 @@ export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
 
         {/* 工作区和服务商均已就绪，显示默认开始提示 */}
         {hasWorkspace && hasProvider && (
-          <>
-            <h3 className="wf-empty-title">{t('workflow.startNewSession')}</h3>
-            <p className="wf-empty-desc">
-              {t('workflow.startSessionDesc')}
-            </p>
-          </>
+          <h3 className="wf-empty-title wf-empty-main-title wf-empty-main-title-with-icon">
+            <Icon name="book" size={42} className="wf-empty-book-icon" />
+            {t('workflow.startNewSession')}
+          </h3>
         )}
 
         {/* 添加工作区弹窗 */}

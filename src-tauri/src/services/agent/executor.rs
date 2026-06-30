@@ -559,7 +559,7 @@ impl<R: Runtime> AgentExecutor<R> {
                     ctx.session_id, current_iteration, msg_summary, messages.len(), estimated_prompt_tokens,
                 );
                 log::debug!("调用 LLM 流式接口, session_id={}, 消息数={}, 重试次数={}", ctx.session_id, messages.len(), llm_retry_count);
-                match self.router.chat_stream(&messages, &tools).await {
+                match self.router.chat_stream(&messages, &tools, if ctx.preferred_provider_id.is_empty() { None } else { Some(ctx.preferred_provider_id.as_str()) }).await {
                     Ok(rx) => break rx,
                     Err(e) => {
                         _last_error = Some(e.clone());
@@ -762,7 +762,7 @@ impl<R: Runtime> AgentExecutor<R> {
                             
                             let recovered_messages = Self::build_recovery_messages(&messages, &assistant_content, &reasoning_content, &collected_tool_calls);
                             
-                            match self.router.chat_stream(&recovered_messages, &tools).await {
+                            match self.router.chat_stream(&recovered_messages, &tools, if ctx.preferred_provider_id.is_empty() { None } else { Some(ctx.preferred_provider_id.as_str()) }).await {
                                 Ok(new_rx) => {
                                     log::info!("流式恢复成功，继续接收, session_id={}", ctx.session_id);
                                     stream_rx = new_rx;
@@ -790,7 +790,7 @@ impl<R: Runtime> AgentExecutor<R> {
                                 reason: "流式响应中断，尝试重新请求".to_string(),
                             }).ok();
 
-                            match self.router.chat_stream(&messages, &tools).await {
+                            match self.router.chat_stream(&messages, &tools, if ctx.preferred_provider_id.is_empty() { None } else { Some(ctx.preferred_provider_id.as_str()) }).await {
                                 Ok(new_rx) => {
                                     log::info!("流式重新请求成功，继续接收, session_id={}", ctx.session_id);
                                     stream_rx = new_rx;
@@ -984,7 +984,7 @@ impl<R: Runtime> AgentExecutor<R> {
                             // 重试前刷新 Scratchpad 摘要（笔记可能在重试间隔被更新）
                             ctx.refresh_scratchpad_summary();
                             let retry_messages = ctx.get_messages_for_iteration(current_iteration);
-                            match self.router.chat_stream_with_max_tokens(&retry_messages, &tools, new_max_tokens).await {
+                            match self.router.chat_stream_with_max_tokens(&retry_messages, &tools, new_max_tokens, if ctx.preferred_provider_id.is_empty() { None } else { Some(ctx.preferred_provider_id.as_str()) }).await {
                                 Ok(mut retry_rx) => {
                                     // 收集重试响应
                                     let mut retry_content = String::new();
