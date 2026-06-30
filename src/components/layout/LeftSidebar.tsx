@@ -290,6 +290,10 @@ export function LeftSidebar({
           height: 100%;
           width: 100%;
           overflow: hidden;
+          --color-bg-hover: #e8eaef;
+        }
+        .dark .left-sidebar {
+          --color-bg-hover: #242627;
         }
         /* 新建会话按钮区: 悬停背景与智能体信息标题栏一致 */
         .new-session-section {
@@ -454,13 +458,14 @@ export function LeftSidebar({
             transform: translateX(0);
           }
         }
-        /* 更多按钮区 */
+        /* 更多按钮区：固定在底部，不与会话列表重叠 */
         .more-section {
           position: relative;
           flex-shrink: 0;
           margin: 0 8px 4px;
+          margin-top: auto;
         }
-        /* 更多下拉菜单：显示在上方 */
+        /* 更多下拉菜单：显示在上方（有足够的空间） */
         .more-dropdown {
           position: absolute;
           bottom: calc(100% + 4px);

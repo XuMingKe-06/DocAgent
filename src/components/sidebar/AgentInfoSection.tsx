@@ -147,6 +147,7 @@ export function AgentInfoSection() {
       {/* 标题栏：样式与会话列表标题一致，可点击折叠 */}
       <div
         className="agent-info-header"
+        style={{ borderRadius: "var(--radius-sm)" }}
         role="button"
         aria-expanded={open}
         aria-label={t('agentInfo.sectionTitle')}

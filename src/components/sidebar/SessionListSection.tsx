@@ -445,7 +445,7 @@ export function SessionListSection({
         .session-list-body {
           flex: 1;
           overflow-y: auto;
-          padding: 0 8px 8px;
+          padding: 0 8px 12px;
           transition: max-height 0.25s ease, opacity 0.2s ease, padding 0.25s ease;
         }
         /* 收缩状态: 工作区和会话历史全部隐藏 */
