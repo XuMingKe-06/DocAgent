@@ -6,7 +6,7 @@ import { AddWorkspaceDialog } from "../settings/AddWorkspaceDialog";
 
 export function WorkspaceSelector() {
   const { t } = useTranslation();
-  const { currentWorkspaceId, workspaces, switchWorkspace, removeWorkspace } = useWorkspaceStore();
+  const { currentWorkspaceId, workspaces, removeWorkspace } = useWorkspaceStore();
   const [open, setOpen] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [removingId, setRemovingId] = useState<string | null>(null);
@@ -46,13 +46,6 @@ export function WorkspaceSelector() {
       };
     }
   }, [open, handleClickOutside, handleKeyDown]);
-
-  /* 切换工作区 */
-  const handleSwitch = async (id: string) => {
-    if (id === currentWorkspaceId) return;
-    await switchWorkspace(id);
-    setOpen(false);
-  };
 
   /* 移除工作区 */
   const handleRemove = async (id: string) => {
@@ -97,13 +90,9 @@ export function WorkspaceSelector() {
             {workspaces.map((ws) => (
               <div key={ws.id} className="ws-selector-item-wrapper">
                 <div
-                  className={`ws-selector-item ${ws.id === currentWorkspaceId ? "ws-selector-item-active" : ""} ${!ws.pathExists ? "ws-selector-item-deleted" : ""}`}
-                  onClick={() => ws.pathExists && handleSwitch(ws.id)}
+                  className={`ws-selector-item ${!ws.pathExists ? "ws-selector-item-deleted" : ""}`}
                 >
                   <div className="ws-selector-item-left">
-                    <span className="ws-selector-item-dot">
-                      {ws.id === currentWorkspaceId && <span className="ws-selector-item-dot-inner" />}
-                    </span>
                     <div className="ws-selector-item-info">
                       <span className="ws-selector-item-name">{ws.name}{!ws.pathExists ? ` (${t('workspace.directoryDeleted')})` : ""}</span>
                       <span className="ws-selector-item-path">{ws.path}</span>
@@ -245,17 +234,9 @@ export function WorkspaceSelector() {
           gap: 8px;
           padding: 8px 10px;
           border-radius: var(--radius-sm);
-          cursor: pointer;
-          transition: background 0.12s;
         }
         .ws-selector-item:hover {
           background: var(--color-bg-hover);
-        }
-        .ws-selector-item-active {
-          background: var(--color-accent-bg);
-        }
-        .ws-selector-item-active:hover {
-          background: var(--color-accent-bg);
         }
         .ws-selector-item-deleted {
           opacity: 0.5;
@@ -272,26 +253,6 @@ export function WorkspaceSelector() {
           min-width: 0;
           flex: 1;
         }
-        .ws-selector-item-dot {
-          width: 14px;
-          height: 14px;
-          border-radius: 50%;
-          border: 1.5px solid var(--color-border);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          transition: border-color 0.15s;
-        }
-        .ws-selector-item-active .ws-selector-item-dot {
-          border-color: var(--color-accent);
-        }
-        .ws-selector-item-dot-inner {
-          width: 7px;
-          height: 7px;
-          border-radius: 50%;
-          background: var(--color-accent);
-        }
         .ws-selector-item-info {
           display: flex;
           flex-direction: column;
@@ -306,9 +267,6 @@ export function WorkspaceSelector() {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-        }
-        .ws-selector-item-active .ws-selector-item-name {
-          color: var(--color-accent);
         }
         .ws-selector-item-path {
           font-size: 11px;
