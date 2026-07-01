@@ -39,7 +39,7 @@ export function ThinkingNode({ node }: ThinkingNodeProps) {
           <div className="wf-thinking-content">
             {data.content.split("\n\n").filter((p) => p.trim()).map((paragraph, index) => (
               <p key={index} className="wf-thinking-paragraph">
-                {paragraph}
+                {paragraph.trim()}
               </p>
             ))}
 
