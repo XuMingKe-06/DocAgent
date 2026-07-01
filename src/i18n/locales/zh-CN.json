@@ -23,10 +23,6 @@
     "maximize": "最大化",
     "close": "关闭"
   },
-  "markdown": {
-    "copied": "已复制",
-    "copy": "复制"
-  },
   "inputArea": {
     "visionWarning": "当前模型不支持图片理解，图片内容将无法被识别。建议用文字描述图片内容。",
     "placeholder": "输入指令，让Agent帮你处理文档...",
@@ -427,6 +423,8 @@
       "handlerXlsx": "Excel 文档操作（生成/读取/修改/转换/分析）",
       "handlerPptx": "PPT 文档操作（生成/读取/修改/转换/分析）",
       "handlerPdf": "PDF 文档操作（生成/读取/修改/转换/分析）",
+      "handlerCodeInterpreter": "代码解释器（执行 Python 代码生成/修改文档）",
+      "handlerValidator": "文档质量验证器（检测文档常见质量问题）",
       "faqQ0": "如何配置 LLM 服务商?",
       "faqA0": "在设置 > 模型配置中，点击\"添加服务商\"按钮，选择服务商类型（OpenAI/Anthropic/Gemini/Ollama/自定义），填写 API 地址、API Key 和模型名称即可。",
       "faqQ1": "支持哪些文档格式?",
@@ -549,7 +547,9 @@
     "loading": "加载中...",
     "retry": "重试",
     "yes": "是",
-    "no": "否"
+    "no": "否",
+    "copy": "复制",
+    "copied": "已复制"
   },
   "errors": {
     "unknown": "未知错误",

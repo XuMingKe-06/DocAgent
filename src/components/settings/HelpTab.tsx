@@ -30,6 +30,8 @@ export function HelpTab() {
     { name: "xlsx_handler", desc: t('settings.help.handlerXlsx') },
     { name: "pptx_handler", desc: t('settings.help.handlerPptx') },
     { name: "pdf_handler", desc: t('settings.help.handlerPdf') },
+    { name: "code_interpreter_handler", desc: t('settings.help.handlerCodeInterpreter') },
+    { name: "validator_handler", desc: t('settings.help.handlerValidator') },
   ];
 
   // 从设置中动态生成可配置快捷键列表

@@ -54,7 +54,7 @@ function CodeBlock({
       <div className="md-code-header">
         <span className="md-code-lang">{language || "text"}</span>
         <button className="md-code-copy" onClick={handleCopy}>
-          {copied ? t('markdown.copied') : t('markdown.copy')}
+          {copied ? t('common.copied') : t('common.copy')}
         </button>
       </div>
       <pre ref={ref} className="md-code-content" {...rest}>

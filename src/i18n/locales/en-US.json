@@ -23,10 +23,6 @@
     "maximize": "Maximize",
     "close": "Close"
   },
-  "markdown": {
-    "copied": "Copied",
-    "copy": "Copy"
-  },
   "inputArea": {
     "visionWarning": "The current model does not support image understanding. Image content cannot be recognized. It is recommended to describe the image content in text.",
     "placeholder": "Enter instructions, let Agent help you process documents...",
@@ -321,13 +317,37 @@
       "noHandlers": "No Handlers",
       "toolBadge": "Tool",
       "handlerBadge": "Handler",
-      "alwaysEnabled": "Always Enabled"
+      "alwaysEnabled": "Always Enabled",
+      "descriptions": {
+        "docx_handler": "Word document (.docx) handler, supports three operations: read, format conversion, and analysis. Conversion supports md/txt/pdf formats (consistent with sidecar word_handler.convert actual support).",
+        "xlsx_handler": "Excel document (.xlsx) handler, supports three operations: read, format conversion, and analysis. Conversion supports csv/pdf/html/txt formats (consistent with sidecar excel_handler.convert actual support).",
+        "pptx_handler": "PowerPoint presentation (.pptx) handler, supports two operations: read and analysis. PPT to PDF is no longer supported; for PPT to PDF, use code_interpreter_handler to write Python code to implement it.",
+        "pdf_handler": "PDF document (.pdf) handler, supports three operations: read, format conversion, and analysis. Conversion supports txt/md/html formats (consistent with sidecar pdf_handler.convert actual support).",
+        "code_interpreter_handler": "Code interpreter, generates and modifies documents by writing and executing Python code. All document generation and modification operations are done through this handler. Available libraries: python-docx, openpyxl, python-pptx, reportlab, matplotlib, pandas, numpy, Pillow. Available helpers: create_word_doc(), save_word_doc(), etc.",
+        "validator_handler": "Document quality validator, detects common document quality issues and returns a list of warnings. Supports six types: docx/xlsx/pptx/pdf/md/txt. Markdown detects unclosed code blocks / heading level jumps / trailing whitespace / consecutive blank lines; plain text detects mixed line endings / mixed indentation / overlong lines / consecutive blank lines. Returns {valid, warnings, stats}."
+      }
     },
     "tools": {
       "sectionTitle": "Tools Management",
       "builtinTools": "Built-in Tools",
       "alwaysEnabled": "Always Enabled",
-      "noTools": "No Tools"
+      "noTools": "No Tools",
+      "descriptions": {
+        "list_directory": "List files and subdirectories in a specified directory. Use cases: browse workspace contents, locate files, understand directory hierarchy. Supports depth control and extension filtering.",
+        "search_files": "Search files in a specified directory, supporting search by filename or content. Use cases: find files by name, search by content keywords, filter by extension. Set include_content=true to search file contents.",
+        "read_file": "Read plain text file contents (.txt/.md/.csv/.json/.xml, etc.), does not depend on Sidecar, faster. Note: only for plain text files; for reading structured documents like Word/Excel/PPT/PDF, use the read operation of docx_handler/xlsx_handler/pptx_handler/pdf_handler. File size limit 1MB.",
+        "file_info": "Get file metadata (size, modification time, type, etc.). Use cases: understand file information before reading, check file type, confirm file exists and is accessible. Prefer this tool when file contents are not needed.",
+        "file_exists": "Check whether a file or directory exists. Use cases: verify paths before reading or modifying files, avoid operating on non-existent files. Lighter than list_directory.",
+        "delete_file": "Delete a specified file, optionally creating a backup before deletion. Note: this operation is irreversible and will automatically trigger user confirmation. Recommend creating a version snapshot before deletion.",
+        "create_directory": "Create a directory (supports recursive creation). Use cases: ensure target directory exists before writing files, organize file structure. Creates parent directories recursively by default.",
+        "write_text_file": "Write plain text file contents (.txt/.md/.csv/.json, etc.), does not depend on Sidecar. Use cases: create plain text files, modify Markdown files, save JSON configurations. Supports append mode. Note: only for plain text; for generating structured documents, use the generate operation of docx_handler/xlsx_handler/pptx_handler/pdf_handler. Content size limit 4KB (about 4000 characters); exceeding this may trigger LLM response truncation. For large files (e.g., 6000+ character test files, long documents), use code_interpreter_handler to generate via Python code (e.g., loop writing, string concatenation) to avoid passing large content as tool parameters.",
+        "rename_file": "Rename or move a file. Use cases: organize file structure, modify filenames. Note: cross-filesystem moves may fail; this operation is irreversible.",
+        "copy_file": "Copy a file to a new path. Use cases: create file copies, backup files, copy templates. Supports binary file copying.",
+        "delete_directory": "Recursively delete a directory and all its contents. Note: this operation is irreversible and will automatically trigger user confirmation. Recommend confirming directory contents before deletion.",
+        "get_file_hash": "Compute the SHA-256 hash value of a file. Use cases: file deduplication, integrity verification, change detection. Returns a hexadecimal hash string.",
+        "read_file_lines": "Read a plain text file line by line, supporting offset and line count limits. Use cases: read specific portions of large files, paginate reads, view the tail of log files. Recommended for paginated reading of large files.",
+        "update_notes": "Agent scratchpad: record or read task notes to maintain context across iteration rounds. Use cases: record key decisions, to-do items, file paths, and intermediate results in complex multi-step tasks. Recommend calling action=add to record key points after completing critical steps; when task context grows long, action=read can review existing notes; after task completion, action=clear cleans up. Note contents are automatically injected into your context in subsequent iterations, no need to read repeatedly."
+      }
     },
     "templates": {
       "builtin": "Built-in",
@@ -343,7 +363,39 @@
       "categoryDocument": "Document Generation",
       "categoryAnalysis": "Document Analysis",
       "categoryConversion": "Format Conversion",
-      "categoryCustom": "Custom"
+      "categoryCustom": "Custom",
+      "builtinItems": {
+        "builtin-weekly-report": {
+          "name": "Weekly Report",
+          "description": "Automatically generate a structured weekly report document from this week's work",
+          "content": "Based on the following work content, please help me generate a structured weekly report document, saved in Word format. Requirements: this week's work summary, key progress, issues encountered, next week's plan. Work content is as follows: {{content}}"
+        },
+        "builtin-meeting-minutes": {
+          "name": "Meeting Minutes",
+          "description": "Generate a standardized meeting minutes document from meeting information",
+          "content": "Based on the following meeting information, please help me generate a standardized meeting minutes document, saved in Word format. Requirements: meeting topic, participants, meeting time, discussion content, resolution items, follow-up action items. Meeting information is as follows: {{content}}"
+        },
+        "builtin-data-analysis": {
+          "name": "Data Analysis",
+          "description": "Perform statistical analysis on Excel data and generate an analysis report",
+          "content": "Please read the data from the following Excel file, perform statistical analysis, and generate a data analysis report. Requirements: data overview, key metrics, trend analysis, anomaly findings, recommendations. File path: {{filePath}}, analysis focus: {{focus}}"
+        },
+        "builtin-format-convert": {
+          "name": "Format Conversion",
+          "description": "Convert a document from one format to another",
+          "content": "Please convert the file {{inputPath}} from {{sourceFormat}} format to {{targetFormat}} format, and save to {{outputPath}}"
+        },
+        "builtin-doc-review": {
+          "name": "Document Review",
+          "description": "Review document content and suggest modifications",
+          "content": "Please review the following document, check the accuracy, logic, and completeness of the content, and provide specific modification suggestions. File path: {{filePath}}, review focus: {{focus}}"
+        },
+        "builtin-ppt-outline": {
+          "name": "PPT Outline Generation",
+          "description": "Generate a PPT outline and content based on a topic",
+          "content": "Based on the following topic, please help me generate a PowerPoint presentation, saved in PPTX format. Requirements: cover, table of contents, content pages (each page has a title and bullet points), summary page. Topic: {{topic}}, page count: about {{pageCount}} pages"
+        }
+      }
     },
     "templateEdit": {
       "createTitle": "Create Template",
@@ -427,6 +479,8 @@
       "handlerXlsx": "Excel document operations (generate/read/modify/convert/analyze)",
       "handlerPptx": "PPT document operations (generate/read/modify/convert/analyze)",
       "handlerPdf": "PDF document operations (generate/read/modify/convert/analyze)",
+      "handlerCodeInterpreter": "Code interpreter (execute Python code to generate/modify documents)",
+      "handlerValidator": "Document quality validator (detects common document quality issues)",
       "faqQ0": "How to configure LLM provider?",
       "faqA0": "In Settings > LLM Configuration, click the \"Add Provider\" button, select the provider type (OpenAI/Anthropic/Gemini/Ollama/Custom), and fill in the API URL, API Key, and model name.",
       "faqQ1": "What document formats are supported?",
@@ -549,7 +603,9 @@
     "loading": "Loading...",
     "retry": "Retry",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "errors": {
     "unknown": "Unknown error",

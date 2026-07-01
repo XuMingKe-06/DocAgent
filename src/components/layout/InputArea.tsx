@@ -679,8 +679,12 @@ function TemplateCards({ templates, onInsert, onOpenSettings }: {
     <div className="template-cards-section">
       <div className="template-cards-grid">
         {templates.filter((tpl) => tpl.isBuiltin).slice(0, 3).map((tpl) => (
-          <button key={tpl.id} className="template-card" onClick={() => onInsert(tpl.content)}>
-            <span className="template-card-name">{tpl.name}</span>
+          <button
+            key={tpl.id}
+            className="template-card"
+            onClick={() => onInsert(t(`settings.templates.builtinItems.${tpl.id}.content`, { defaultValue: tpl.content }))}
+          >
+            <span className="template-card-name">{t(`settings.templates.builtinItems.${tpl.id}.name`, { defaultValue: tpl.name })}</span>
           </button>
         ))}
         <button className="template-card-more" onClick={onOpenSettings}>

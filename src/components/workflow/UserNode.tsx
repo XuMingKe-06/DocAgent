@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { WorkflowNode, UserNodeData } from "../../types";
 import { Icon } from "../common/Icon";
 import { formatSize } from "../../utils/format";
@@ -8,6 +9,7 @@ interface UserNodeProps {
 }
 
 export function UserNode({ node }: UserNodeProps) {
+  const { t } = useTranslation();
   const data = node.data as UserNodeData;
   const hasAttachments = data.attachments && data.attachments.length > 0;
   const [copied, setCopied] = useState(false);
@@ -51,7 +53,7 @@ export function UserNode({ node }: UserNodeProps) {
           <button
             className="wf-copy-button"
             onClick={handleCopy}
-            title={copied ? "已复制" : "复制"}
+            title={copied ? t('common.copied') : t('common.copy')}
           >
             {copied ? (
               <Icon name="check" size={12} />

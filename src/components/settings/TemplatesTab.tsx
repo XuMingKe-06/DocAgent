@@ -23,7 +23,13 @@ export function TemplatesTab() {
     custom: t('settings.templates.categoryCustom'),
   };
 
-  // 按分类和搜索过滤模板
+  // 获取模板字段的显示值（内置模板使用 i18n 翻译，自定义模板使用原始值）
+  const getTemplateField = (tpl: PromptTemplate, field: 'name' | 'description' | 'content'): string =>
+    tpl.isBuiltin
+      ? t(`settings.templates.builtinItems.${tpl.id}.${field}`, { defaultValue: tpl[field] })
+      : tpl[field];
+
+  // 按分类和搜索过滤模板（搜索基于当前语言显示的文本）
   const filteredTemplates = useMemo(() => {
     let result = templates;
     if (activeCategory !== "all") {
@@ -33,13 +39,14 @@ export function TemplatesTab() {
       const q = searchQuery.toLowerCase();
       result = result.filter(
         (tpl) =>
-          tpl.name.toLowerCase().includes(q) ||
-          tpl.description.toLowerCase().includes(q) ||
-          tpl.content.toLowerCase().includes(q)
+          getTemplateField(tpl, 'name').toLowerCase().includes(q) ||
+          getTemplateField(tpl, 'description').toLowerCase().includes(q) ||
+          getTemplateField(tpl, 'content').toLowerCase().includes(q)
       );
     }
     return result;
-  }, [templates, activeCategory, searchQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, activeCategory, searchQuery, t]);
 
   // 内置模板和自定义模板分组
   const builtinTemplates = filteredTemplates.filter((tpl) => tpl.isBuiltin);
@@ -66,7 +73,7 @@ export function TemplatesTab() {
 
   // 使用模板：插入到输入框并关闭设置
   const handleUse = (tpl: PromptTemplate) => {
-    setPendingInsertTemplate(tpl.content);
+    setPendingInsertTemplate(getTemplateField(tpl, 'content'));
     closeSettings();
   };
 
@@ -176,10 +183,10 @@ export function TemplatesTab() {
               <div key={tpl.id} className="template-card template-card-builtin">
                 <div className="template-card-main">
                   <div className="template-name">
-                    {tpl.name}
+                    {getTemplateField(tpl, 'name')}
                     <span className="builtin-tag">{t('settings.templates.builtin')}</span>
                   </div>
-                  <div className="template-desc">{tpl.description}</div>
+                  <div className="template-desc">{getTemplateField(tpl, 'description')}</div>
                   <div className="template-meta">
                     <span className="template-category-badge">
                       {CATEGORY_LABELS[tpl.category] ?? tpl.category}
@@ -213,7 +220,7 @@ export function TemplatesTab() {
       {/* 删除确认对话框 */}
       {deleteTarget && (
         <DeleteConfirmDialog
-          name={deleteTarget.name}
+          name={getTemplateField(deleteTarget, 'name')}
           isDir={false}
           onConfirm={handleDelete}
           onCancel={() => setDeleteTarget(null)}

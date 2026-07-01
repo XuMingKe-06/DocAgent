@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { WorkflowNode, ContentNodeData } from "../../types";
 import { MarkdownPreview } from "../preview/MarkdownPreview";
 import { Icon } from "../common/Icon";
@@ -9,6 +10,7 @@ interface ContentNodeProps {
 }
 
 export function ContentNode({ node }: ContentNodeProps) {
+  const { t } = useTranslation();
   const data = node.data as ContentNodeData;
   const isCompleted = node.status === "completed" && !data.isStreaming;
   const [copied, setCopied] = useState(false);
@@ -55,7 +57,7 @@ export function ContentNode({ node }: ContentNodeProps) {
             <button
               className="wf-copy-button"
               onClick={handleCopy}
-              title={copied ? "已复制" : "复制"}
+              title={copied ? t('common.copied') : t('common.copy')}
             >
               {copied ? (
                 <Icon name="check" size={12} />
