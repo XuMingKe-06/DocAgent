@@ -50,11 +50,9 @@ export function PreviewOverlay({
   return (
     <div
       className="fixed inset-0 bg-black/30 z-[200] flex items-center justify-center animate-fade-in"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         className="w-4/5 max-w-[960px] h-[85vh] bg-bg rounded-[var(--radius-lg)] shadow-lg flex flex-col overflow-hidden animate-slide-up"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* 顶部栏 */}
         <div className="flex items-center px-5 py-3 border-b border-border gap-3 flex-shrink-0">

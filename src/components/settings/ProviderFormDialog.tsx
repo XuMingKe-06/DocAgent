@@ -187,11 +187,9 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
   return (
     <div
       className="fixed inset-0 bg-overlay z-[400] flex items-center justify-center animate-fade-in"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         className="dialog-modal"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="dialog-header">
           <h3 className="dialog-title">

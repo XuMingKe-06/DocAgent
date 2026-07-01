@@ -50,8 +50,8 @@ export function AddWorkspaceDialog({ onClose, onSaved }: AddWorkspaceDialogProps
   };
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
-      <div className="dialog-content" onClick={(e) => e.stopPropagation()}>
+    <div className="dialog-overlay">
+      <div className="dialog-content">
         <div className="dialog-header">
           <h3>{t('settings.addWorkspace.title')}</h3>
           <button className="dialog-close" onClick={onClose}>x</button>

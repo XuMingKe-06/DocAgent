@@ -228,7 +228,7 @@ function NewItemInput({
   );
 
   return (
-    <div className="ni-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="ni-overlay">
       <div className="ni-dialog">
         <div className="ni-header">
           <span className="ni-icon">

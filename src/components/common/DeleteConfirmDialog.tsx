@@ -19,7 +19,7 @@ export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: Delete
   }, []);
 
   return (
-    <div className="del-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="del-overlay">
       <div className="del-dialog">
         <div className="del-header">
           <span className="del-icon">
