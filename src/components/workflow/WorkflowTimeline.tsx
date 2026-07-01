@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useWorkflowStore } from "../../stores/useWorkflowStore";
@@ -8,6 +8,36 @@ import { WorkflowNodeRenderer } from "./WorkflowNode";
 interface WorkflowTimelineProps {
   /** 错误节点重试回调 */
   onRetryError?: () => void;
+  /** 是否显示打字机效果 */
+  typewriterVisible?: boolean;
+}
+
+function TypewriterText({ text }: { text: string }) {
+  const [displayedText, setDisplayedText] = useState("");
+  const [isComplete, setIsComplete] = useState(false);
+
+  useEffect(() => {
+    setDisplayedText("");
+    setIsComplete(false);
+    let index = 0;
+    const interval = setInterval(() => {
+      if (index < text.length) {
+        setDisplayedText(text.slice(0, index + 1));
+        index++;
+      } else {
+        clearInterval(interval);
+        setIsComplete(true);
+      }
+    }, 15);
+    return () => clearInterval(interval);
+  }, [text]);
+
+  return (
+    <span>
+      <span>{displayedText}</span>
+      <span className={`typewriter-cursor ${isComplete ? "hidden" : ""}`}>|</span>
+    </span>
+  );
 }
 
 /**
@@ -15,7 +45,7 @@ interface WorkflowTimelineProps {
  * 使用 @tanstack/react-virtual 实现虚拟滚动，仅渲染可视区域内的节点
  * 支持动态高度测量和自动滚动
  */
-export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
+export function WorkflowTimeline({ onRetryError, typewriterVisible = false }: WorkflowTimelineProps) {
   const { t } = useTranslation();
   const { nodes } = useWorkflowStore();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -109,7 +139,11 @@ export function WorkflowTimeline({ onRetryError }: WorkflowTimelineProps) {
       <div className="wf-empty" role="status" aria-label={t('workflow.emptySession')}>
         <h3 className="wf-empty-title wf-empty-main-title wf-empty-main-title-with-icon">
           <Icon name="book" size={42} className="wf-empty-book-icon" />
-          {t('workflow.startNewSession')}
+          {typewriterVisible ? (
+            <TypewriterText text={t('workflow.startNewSession')} />
+          ) : (
+            t('workflow.startNewSession')
+          )}
         </h3>
       </div>
     );

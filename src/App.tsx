@@ -49,6 +49,7 @@ export default function App() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [updateNotificationOpen, setUpdateNotificationOpen] = useState(false);
   const [sidebarVisible, setSidebarVisible] = useState(true);
+  const [typewriterVisible, setTypewriterVisible] = useState(false);
 
   // 文档预览状态
   const [previewTitle, setPreviewTitle] = useState("");
@@ -695,6 +696,9 @@ export default function App() {
         confirmNodeId: confirmNodeIdRef.current,
         currentIteration: currentIterationRef.current,
       });
+      setTypewriterVisible(true);
+    } else {
+      setTypewriterVisible(false);
     }
     clearNodes();
     resetAgent();
@@ -985,7 +989,7 @@ export default function App() {
         mainArea={
           <MainArea
             isEmpty={nodes.length === 0}
-            workflow={<WorkflowTimeline onRetryError={handleRetryError} />}
+            workflow={<WorkflowTimeline onRetryError={handleRetryError} typewriterVisible={typewriterVisible} />}
             inputArea={
               <InputArea
                 onSend={handleSend}
