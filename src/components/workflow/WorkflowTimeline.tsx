@@ -181,9 +181,7 @@ export function WorkflowTimeline({ onRetryError, typewriterVisible = false }: Wo
                 left: 0,
                 width: "100%",
                 zIndex: 3,
-                // 绝对定位元素不尊重父元素的 padding，需要手动补偿
-                // 使 .wf-node 从 timeline 的内容区域开始
-                paddingLeft: "28px",
+
                 // 使用 transform 定位，比 top 性能更好（避免 reflow）
                 transform: `translateY(${virtualItem.start}px)`,
               }}
