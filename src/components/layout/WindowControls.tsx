@@ -61,10 +61,8 @@ export function WindowControls() {
     try {
       const win = getCurrentWindow();
       if (isMaximized) {
-        // 从最大化还原时，调整为最小尺寸并居中显示
         await win.unmaximize();
         await win.setSize(new LogicalSize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT));
-        // 使用内置的 center() 方法让窗口居中
         await win.center();
         setIsMaximized(false);
       } else {

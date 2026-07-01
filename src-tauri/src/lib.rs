@@ -83,6 +83,22 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir)
                 .map_err(|e| format!("无法创建应用数据目录: {}", e))?;
 
+            // 在 Windows 11 上为无边框窗口启用 DWM 圆角
+            // decorations: false 默认使用 WS_POPUP 风格，DWM 对纯 POPUP 窗口不渲染圆角。
+            // 需添加 WS_THICKFRAME 风格后 DWM 才会应用圆角，再通过 DWMNCRP_DISABLED 隐藏非客户区。
+            #[cfg(target_os = "windows")]
+            {
+                apply_window_rounded_corners(app.handle());
+
+                // setup 阶段窗口可能尚未完全初始化，延迟再应用一次确保生效
+                let app_clone = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    // 等待窗口首次渲染完成后刷新 DWM 样式
+                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                    apply_window_rounded_corners(&app_clone);
+                });
+            }
+
             // 初始化日志系统（必须在数据库和配置初始化之前，确保关键操作的错误能被记录）
             // 开发模式：使用项目根目录的 log/ 子目录，与 Python Sidecar 保持一致
             // 生产模式：使用 Tauri 推荐的系统日志目录
@@ -455,4 +471,99 @@ pub fn run() {
         .unwrap_or_else(|e| {
             log::error!("Tauri 应用运行失败: {}", e);
         });
+}
+
+/// 为无边框窗口设置 DWM 圆角（Windows 11）
+///
+/// 添加 WS_THICKFRAME 风格使 DWM 启用圆角渲染，
+/// 再通过 DWMNCRP_DISABLED 隐藏非客户区边框，
+/// 最后设置 DWMWCP_ROUND 应用标准圆角。
+#[cfg(target_os = "windows")]
+fn apply_window_rounded_corners(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(hwnd) = window.hwnd() {
+            type DWORD = u32;
+            type LongPtr = isize;
+
+            const GWL_STYLE: i32 = -16;
+            const WS_THICKFRAME: LongPtr = 0x00040000;
+            const WS_POPUP: LongPtr = 0x80000000;
+
+            const SWP_FRAMECHANGED: DWORD = 0x0020;
+            const SWP_NOMOVE: DWORD = 0x0002;
+            const SWP_NOSIZE: DWORD = 0x0001;
+            const SWP_NOZORDER: DWORD = 0x0004;
+
+            const DWMWA_NCRENDERING_POLICY: DWORD = 2;
+            const DWMNCRP_DISABLED: DWORD = 2;
+            const DWMWA_WINDOW_CORNER_PREFERENCE: DWORD = 33;
+            const DWMWCP_ROUND: DWORD = 2;
+
+            #[link(name = "user32")]
+            extern "system" {
+                fn GetWindowLongPtrW(
+                    hwnd: *const std::ffi::c_void,
+                    n_index: i32,
+                ) -> LongPtr;
+                fn SetWindowLongPtrW(
+                    hwnd: *const std::ffi::c_void,
+                    n_index: i32,
+                    dw_new_long: LongPtr,
+                ) -> LongPtr;
+                fn SetWindowPos(
+                    hwnd: *const std::ffi::c_void,
+                    hwnd_insert_after: *const std::ffi::c_void,
+                    x: i32,
+                    y: i32,
+                    cx: i32,
+                    cy: i32,
+                    u_flags: DWORD,
+                ) -> i32;
+            }
+
+            #[link(name = "dwmapi")]
+            extern "system" {
+                fn DwmSetWindowAttribute(
+                    hwnd: *const std::ffi::c_void,
+                    dw_attribute: DWORD,
+                    pv_attribute: *const std::ffi::c_void,
+                    cb_attribute: DWORD,
+                ) -> i32;
+            }
+
+            unsafe {
+                let style = GetWindowLongPtrW(hwnd.0 as *const _, GWL_STYLE);
+                SetWindowLongPtrW(
+                    hwnd.0 as *mut _,
+                    GWL_STYLE,
+                    style | WS_THICKFRAME | WS_POPUP,
+                );
+                SetWindowPos(
+                    hwnd.0 as *mut _,
+                    std::ptr::null(),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
+                );
+
+                let render_policy = DWMNCRP_DISABLED;
+                DwmSetWindowAttribute(
+                    hwnd.0 as *const _,
+                    DWMWA_NCRENDERING_POLICY,
+                    &render_policy as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<DWORD>() as DWORD,
+                );
+
+                let preference = DWMWCP_ROUND;
+                DwmSetWindowAttribute(
+                    hwnd.0 as *const _,
+                    DWMWA_WINDOW_CORNER_PREFERENCE,
+                    &preference as *const _ as *const std::ffi::c_void,
+                    std::mem::size_of::<DWORD>() as DWORD,
+                );
+            }
+        }
+    }
 }
