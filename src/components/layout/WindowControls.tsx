@@ -109,7 +109,7 @@ export function WindowControls() {
 
       {/* 关闭按钮 */}
       <button
-        className="w-12 h-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors group"
+        className="w-12 h-full flex items-center justify-center hover:bg-error hover:text-white transition-colors group"
         title={t('windowControls.close')}
         onPointerDown={handleClose}
       >

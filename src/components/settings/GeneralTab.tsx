@@ -420,7 +420,7 @@ export function GeneralTab() {
           height: 16px;
           left: 2px;
           top: 2px;
-          background: #fff;
+          background: var(--color-bg-elevated);
           border-radius: 50%;
           transition: all 0.2s;
         }

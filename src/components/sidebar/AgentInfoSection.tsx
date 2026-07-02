@@ -337,7 +337,7 @@ export function AgentInfoSection() {
         }
         .ai-model-badge.online .ai-status-dot {
           background: var(--color-success);
-          box-shadow: 0 0 4px rgba(52, 199, 36, 0.4);
+          box-shadow: 0 0 4px var(--color-success-bg);
         }
         .ai-model-name {
           font-weight: 500;

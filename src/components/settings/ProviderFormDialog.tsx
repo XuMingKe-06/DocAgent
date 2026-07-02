@@ -436,12 +436,12 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
         .test-success {
           background: var(--color-success-light);
           color: var(--color-success);
-          border: 1px solid rgba(52, 199, 36, 0.3);
+          border: 1px solid var(--color-success-bg);
         }
         .test-error {
           background: var(--color-error-light);
           color: var(--color-error);
-          border: 1px solid rgba(245, 74, 69, 0.3);
+          border: 1px solid var(--color-error-bg);
         }
         .dialog-footer {
           padding: 16px 24px;
