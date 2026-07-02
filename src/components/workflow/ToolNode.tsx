@@ -18,7 +18,7 @@ export function ToolNode({ node }: ToolNodeProps) {
 
   // 代码预览展开/收缩状态
   // 初始展开：代码正在流式输出时展开，完成后收缩
-  const [codeExpanded, setCodeExpanded] = useState(true);
+  const [codeExpanded, setCodeExpanded] = useState(data.isCodeStreaming ?? false);
   const prevIsCodeStreamingRef = useRef<boolean | undefined>(undefined);
 
   // 代码内容：优先使用流式代码，回退到 input.code
@@ -26,6 +26,24 @@ export function ToolNode({ node }: ToolNodeProps) {
     || (data.input?.code as string | undefined)
     || "";
   const isCodeStreaming = data.isCodeStreaming ?? false;
+
+  const [copied, setCopied] = useState(false);
+
+  // 复制代码到剪贴板
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(codeContent);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = codeContent;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // 代码预览自动滚动：流式输出时跟随最新代码，用户手动上滚时暂停
   const codePreviewRef = useRef<HTMLPreElement>(null);
@@ -126,15 +144,26 @@ export function ToolNode({ node }: ToolNodeProps) {
                 {isCodeStreaming ? t('toolNode.writingCode') : t('toolNode.codePreview')}
               </span>
               {!isCodeStreaming && (
-                <button
-                  className="wf-code-preview-toggle"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCodeExpanded(!codeExpanded);
-                  }}
-                >
-                  {codeExpanded ? t('toolNode.collapseCode') : t('toolNode.expandCode')}
-                </button>
+                <div className="wf-code-preview-header-actions">
+                  <button
+                    className="wf-code-preview-toggle"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCodeExpanded(!codeExpanded);
+                    }}
+                  >
+                    {codeExpanded ? t('toolNode.collapseCode') : t('toolNode.expandCode')}
+                  </button>
+                  <button
+                    className="wf-code-preview-copy-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopyCode();
+                    }}
+                  >
+                    {copied ? t('common.copied') : t('common.copy')}
+                  </button>
+                </div>
               )}
             </div>
             {codeExpanded ? (

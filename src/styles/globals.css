@@ -756,6 +756,25 @@
   text-decoration: underline;
 }
 
+.wf-code-preview-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.wf-code-preview-copy-btn {
+  font-size: 10px;
+  color: var(--color-accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.wf-code-preview-copy-btn:hover {
+  text-decoration: underline;
+}
+
 /* 展开状态 - 代码内容区域 */
 .wf-code-preview-content {
   margin: 0;
