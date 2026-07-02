@@ -84,12 +84,12 @@ export function WindowControls() {
   };
 
   return (
-    <div className="absolute right-0 top-0 h-full flex items-stretch">
-      {/* 最小化按钮 */}
+    <div className="h-full flex items-stretch flex-shrink-0">
+      {/* 使用 onPointerDown：最大化时 Windows 11 会拦截 mouseup 导致 click 失效 */}
       <button
         className="w-12 h-full flex items-center justify-center hover:bg-border transition-colors"
         title={t('windowControls.minimize')}
-        onClick={handleMinimize}
+        onPointerDown={handleMinimize}
       >
         <Icon name="minimize" size={16} className="text-text-secondary" />
       </button>
@@ -98,7 +98,7 @@ export function WindowControls() {
       <button
         className="w-12 h-full flex items-center justify-center hover:bg-border transition-colors"
         title={isMaximized ? t('windowControls.restore') : t('windowControls.maximize')}
-        onClick={handleToggleMaximize}
+        onPointerDown={handleToggleMaximize}
       >
         <Icon
           name={isMaximized ? "unmaximize" : "maximize"}
@@ -111,7 +111,7 @@ export function WindowControls() {
       <button
         className="w-12 h-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors group"
         title={t('windowControls.close')}
-        onClick={handleClose}
+        onPointerDown={handleClose}
       >
         <Icon name="close" size={16} className="text-text-secondary group-hover:text-white" />
       </button>

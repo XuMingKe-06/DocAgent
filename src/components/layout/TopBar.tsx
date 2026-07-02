@@ -18,8 +18,9 @@ export function TopBar({ sidebarVisible, onToggleSidebar }: TopBarProps) {
   const statusColor = hasProvider ? "bg-success" : "bg-text-tertiary";
 
   return (
-    <div role="banner" className="flex items-center h-[52px] bg-bg-sub flex-shrink-0 z-[100]" style={{ position: 'relative' }}>
-      <div data-tauri-drag-region className="flex items-center flex-1 self-stretch gap-3" style={{ paddingLeft: '24px', paddingRight: '144px' }}>
+    // drag region 与 WindowControls 各占自己的空间，不重叠，避免 drag.js 误拦截按钮事件
+    <div role="banner" className="flex items-center h-[52px] bg-bg-sub flex-shrink-0 z-[100]">
+      <div data-tauri-drag-region className="flex items-center flex-1 self-stretch gap-3 min-w-0 mr-3" style={{ paddingLeft: '24px' }}>
         {/* 侧边栏收缩/展开按钮 */}
         <button
           type="button"
@@ -53,7 +54,7 @@ export function TopBar({ sidebarVisible, onToggleSidebar }: TopBarProps) {
         </div>
       </div>
 
-      {/* 窗口控制按钮 */}
+      {/* 窗口控制按钮：参与流式布局，不与 drag region 重叠 */}
       <WindowControls />
     </div>
   );

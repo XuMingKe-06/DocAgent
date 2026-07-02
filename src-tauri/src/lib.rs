@@ -84,19 +84,9 @@ pub fn run() {
                 .map_err(|e| format!("无法创建应用数据目录: {}", e))?;
 
             // 在 Windows 11 上为无边框窗口启用 DWM 圆角
-            // decorations: false 默认使用 WS_POPUP 风格，DWM 对纯 POPUP 窗口不渲染圆角。
-            // 需添加 WS_THICKFRAME 风格后 DWM 才会应用圆角，再通过 DWMNCRP_DISABLED 隐藏非客户区。
             #[cfg(target_os = "windows")]
             {
                 apply_window_rounded_corners(app.handle());
-
-                // setup 阶段窗口可能尚未完全初始化，延迟再应用一次确保生效
-                let app_clone = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    // 等待窗口首次渲染完成后刷新 DWM 样式
-                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                    apply_window_rounded_corners(&app_clone);
-                });
             }
 
             // 初始化日志系统（必须在数据库和配置初始化之前，确保关键操作的错误能被记录）
@@ -111,6 +101,13 @@ pub fn run() {
             );
             crate::utils::logger::init(&log_dir)
                 .map_err(|e| format!("日志系统初始化失败: {}", e))?;
+
+            // 修复 Tauri drag resize 子窗口在 maximized 启动时未正确重置尺寸的问题
+            // 必须在日志系统初始化之后（确保日志可记录）和窗口创建后（subclass_parent 已安装）调用
+            #[cfg(target_os = "windows")]
+            {
+                fix_drag_resize_child_window_size(app.handle());
+            }
 
             // 初始化数据库（含损坏检测和自动恢复）
             let db_path = app_data_dir.join("docagent.db");
@@ -472,54 +469,372 @@ pub fn run() {
         });
 }
 
+/// 修复无边框最大化窗口的鼠标点击问题
+///
+/// 问题根因（多层叠加）：
+/// 1. tao 在 decorations:false 时保留 WS_SIZEBOX(=WS_THICKFRAME) 样式以支持 resize
+/// 2. 最大化时，tao 的 WM_NCHITTEST 走 DefSubclassProc → 最终到 DefWindowProcW
+/// 3. DefWindowProcW 对 WS_THICKFRAME 窗口在边缘返回 HTTOP/HTRIGHT 等非 HTCLIENT 值
+/// 4. 这些 hit test 值导致 Windows 拦截鼠标事件，WebView2 收不到 click
+/// 5. Tauri 的 TAURI_DRAG_RESIZE_WINDOW 子窗口在 maximized 启动时未正确重置尺寸
+///    （WM_SIZE 在 subclass_parent 安装前触发），子窗口 region 覆盖按钮区域
+///
+/// 修复方案：
+/// 1. 最大化时移除 WS_SIZEBOX + WS_MAXIMIZEBOX + WS_SYSMENU 样式
+///    - WS_SIZEBOX: 防止 DefWindowProcW 返回 resize hit test 值
+///    - WS_MAXIMIZEBOX + WS_SYSMENU: 防止 Windows 11 Snap Layouts 拦截 mouseup
+/// 2. 还原时恢复这三个样式，确保 resize 功能正常
+/// 3. 隐藏 TAURI_DRAG_RESIZE_WINDOW 子窗口并设为 0x0
+/// 4. 安装 WM_NCHITTEST subclass，最大化时强制返回 HTCLIENT
+/// 5. 监听 WM_SIZE 事件，在最大化/还原切换时自动调整样式和子窗口
+#[cfg(target_os = "windows")]
+#[allow(non_camel_case_types)]
+fn fix_drag_resize_child_window_size(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(hwnd) = window.hwnd() {
+            // Windows API 类型定义
+            type HWND_PTR = *mut std::ffi::c_void;
+            type BOOL_T = i32;
+            type LONG_PTR = isize;
+
+            const GWL_STYLE: i32 = -16;
+            const WS_SIZEBOX: u32 = 0x00040000;
+            // WS_MAXIMIZEBOX: 系统菜单中的"最大化"按钮样式
+            // WS_SYSMENU: 系统菜单样式（包含最小化/最大化/关闭系统按钮区域）
+            // Windows 11 的 Snap Layouts 功能会基于这两个样式在鼠标悬停于窗口右上角时
+            // 触发 snap layout 预览，拦截 mouseup 事件导致自定义按钮 click 失效
+            const WS_MAXIMIZEBOX: u32 = 0x00010000;
+            const WS_SYSMENU: u32 = 0x00080000;
+            // SetWindowPos 标志位
+            const SWP_NOMOVE: u32 = 0x0002;
+            const SWP_NOACTIVATE: u32 = 0x0010;
+            const SWP_NOOWNERZORDER: u32 = 0x0200;
+            const SWP_ASYNCWINDOWPOS: u32 = 0x4000;
+            const SWP_NOSIZE: u32 = 0x0001;
+            const SWP_NOZORDER: u32 = 0x0004;
+            const SWP_FRAMECHANGED: u32 = 0x0020;
+            // ShowWindow 命令
+            const SW_HIDE: i32 = 0;
+
+            #[link(name = "user32")]
+            extern "system" {
+                fn IsZoomed(hwnd: HWND_PTR) -> BOOL_T;
+                fn FindWindowExW(
+                    parent: HWND_PTR,
+                    child_after: HWND_PTR,
+                    class: *const u16,
+                    window: *const u16,
+                ) -> HWND_PTR;
+                fn SetWindowPos(
+                    hwnd: HWND_PTR,
+                    insert_after: HWND_PTR,
+                    x: i32,
+                    y: i32,
+                    w: i32,
+                    h: i32,
+                    flags: u32,
+                ) -> BOOL_T;
+                fn ShowWindow(hwnd: HWND_PTR, cmd: i32) -> BOOL_T;
+                fn GetWindowLongPtrW(hwnd: HWND_PTR, index: i32) -> LONG_PTR;
+                fn SetWindowLongPtrW(hwnd: HWND_PTR, index: i32, new_long: LONG_PTR) -> LONG_PTR;
+                fn SetWindowSubclass(
+                    hwnd: HWND_PTR,
+                    subclass_proc: unsafe extern "system" fn(*mut std::ffi::c_void, u32, usize, isize, usize, usize) -> isize,
+                    uid: usize,
+                    dw_ref_data: usize,
+                ) -> BOOL_T;
+            }
+
+            // TAURI_DRAG_RESIZE_WINDOW 子窗口的类名和窗口名
+            let class_name: Vec<u16> = "TAURI_DRAG_RESIZE_BORDERS\0".encode_utf16().collect();
+            let window_name: Vec<u16> = "TAURI_DRAG_RESIZE_WINDOW\0".encode_utf16().collect();
+
+            unsafe {
+                let parent_hwnd = hwnd.0 as HWND_PTR;
+                let is_maximized = IsZoomed(parent_hwnd) != 0;
+
+                let style = GetWindowLongPtrW(parent_hwnd, GWL_STYLE) as u32;
+
+                // 隐藏 TAURI_DRAG_RESIZE_WINDOW 子窗口并重置尺寸（仅最大化时）
+                let child = FindWindowExW(
+                    parent_hwnd,
+                    std::ptr::null_mut(),
+                    class_name.as_ptr(),
+                    window_name.as_ptr(),
+                );
+
+                if !child.is_null() {
+                    if is_maximized {
+                        let _ = ShowWindow(child, SW_HIDE);
+                        let _ = SetWindowPos(
+                            child,
+                            0 as HWND_PTR,
+                            0, 0, 0, 0,
+                            SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOMOVE,
+                        );
+                    }
+                }
+
+                // 最大化时移除 WS_SIZEBOX + WS_MAXIMIZEBOX + WS_SYSMENU 样式
+                if is_maximized {
+                    let mut remove_mask: u32 = 0;
+                    if (style & WS_SIZEBOX) != 0 { remove_mask |= WS_SIZEBOX; }
+                    if (style & WS_MAXIMIZEBOX) != 0 { remove_mask |= WS_MAXIMIZEBOX; }
+                    if (style & WS_SYSMENU) != 0 { remove_mask |= WS_SYSMENU; }
+
+                    if remove_mask != 0 {
+                        let new_style = (style & !remove_mask) as LONG_PTR;
+                        SetWindowLongPtrW(parent_hwnd, GWL_STYLE, new_style);
+                        // SWP_FRAMECHANGED 通知 Windows 重新计算窗口框架
+                        let _ = SetWindowPos(
+                            parent_hwnd,
+                            0 as HWND_PTR,
+                            0, 0, 0, 0,
+                            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_ASYNCWINDOWPOS,
+                        );
+                    }
+                }
+
+                // 安装 WM_SIZE subclass，在窗口状态切换时自动调整样式和子窗口
+                let subclass_uid: usize = 0xD0CA6E77;
+                let _ = SetWindowSubclass(
+                    parent_hwnd,
+                    fix_hit_test_subclass_proc,
+                    subclass_uid,
+                    0,
+                );
+            }
+        }
+    }
+}
+
+/// 自定义 subclass 过程，修复最大化窗口边缘的 hit test 问题
+///
+/// 核心逻辑：
+/// - WM_NCHITTEST: 最大化时强制返回 HTCLIENT，防止 DefWindowProcW 在窗口边缘
+///   返回 HTTOP/HTRIGHT 等 resize 值（WS_THICKFRAME 导致）
+/// - WM_SIZE: 最大化时移除 WS_SIZEBOX + WS_MAXIMIZEBOX + WS_SYSMENU + 隐藏子窗口；
+///   还原时恢复这三个样式（防止 Windows 11 Snap Layouts 拦截 mouseup）
+#[cfg(target_os = "windows")]
+#[allow(non_camel_case_types)]
+unsafe extern "system" fn fix_hit_test_subclass_proc(
+    hwnd: *mut std::ffi::c_void,
+    msg: u32,
+    wparam: usize,
+    lparam: isize,
+    _uid: usize,
+    _dw_ref_data: usize,
+) -> isize {
+    type HWND_PTR = *mut std::ffi::c_void;
+    type WPARAM_T = usize;
+    type LPARAM_T = isize;
+    type LONG_PTR = isize;
+
+    const WM_SIZE: u32 = 0x0005;
+    const GWL_STYLE: i32 = -16;
+    const WS_SIZEBOX: u32 = 0x00040000;
+    // WS_MAXIMIZEBOX + WS_SYSMENU: 最大化时移除以防止 Windows 11 Snap Layouts 干扰
+    const WS_MAXIMIZEBOX: u32 = 0x00010000;
+    const WS_SYSMENU: u32 = 0x00080000;
+    const SIZE_RESTORED: usize = 0;
+    const SIZE_MINIMIZED: usize = 1;
+    // SetWindowPos 标志位
+    const SWP_NOMOVE: u32 = 0x0002;
+    const SWP_NOSIZE: u32 = 0x0001;
+    const SWP_NOZORDER: u32 = 0x0004;
+    const SWP_NOACTIVATE: u32 = 0x0010;
+    const SWP_FRAMECHANGED: u32 = 0x0020;
+    const SWP_NOOWNERZORDER: u32 = 0x0200;
+    const SWP_ASYNCWINDOWPOS: u32 = 0x4000;
+    const SW_HIDE: i32 = 0;
+
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    struct RECT {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+
+    // 显示器信息结构体，用于 GetMonitorInfoW 获取多显示器工作区
+    #[repr(C)]
+    #[derive(Default, Clone, Copy)]
+    struct MONITORINFO {
+        cb_size: u32,
+        rc_monitor: RECT,
+        rc_work: RECT,
+        dw_flags: u32,
+    }
+
+    // MonitorFromWindow 标志：返回最近显示器
+    const MONITOR_DEFAULTTONEAREST: u32 = 0x00000002;
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn IsZoomed(hwnd: HWND_PTR) -> i32;
+        fn GetWindowLongPtrW(hwnd: HWND_PTR, index: i32) -> LONG_PTR;
+        fn SetWindowLongPtrW(hwnd: HWND_PTR, index: i32, new_long: LONG_PTR) -> LONG_PTR;
+        fn SetWindowPos(
+            hwnd: HWND_PTR,
+            insert_after: HWND_PTR,
+            x: i32,
+            y: i32,
+            w: i32,
+            h: i32,
+            flags: u32,
+        ) -> i32;
+        fn FindWindowExW(
+            parent: HWND_PTR,
+            child_after: HWND_PTR,
+            class: *const u16,
+            window: *const u16,
+        ) -> HWND_PTR;
+        fn ShowWindow(hwnd: HWND_PTR, cmd: i32) -> i32;
+        fn DefSubclassProc(
+            hwnd: HWND_PTR,
+            msg: u32,
+            wparam: WPARAM_T,
+            lparam: LPARAM_T,
+        ) -> LPARAM_T;
+        // 获取窗口当前矩形
+        fn GetWindowRect(hwnd: HWND_PTR, rect: *mut RECT) -> i32;
+        // 获取窗口所在显示器句柄（多显示器支持）
+        fn MonitorFromWindow(hwnd: HWND_PTR, flags: u32) -> HWND_PTR;
+        // 获取显示器信息（含工作区 rc_work，已扣除任务栏）
+        fn GetMonitorInfoW(monitor: HWND_PTR, info: *mut MONITORINFO) -> i32;
+    }
+
+    match msg {
+        WM_SIZE => {
+            let size_type = wparam;
+            // 关键：从最小化恢复到最大化时，Windows 会发送 SIZE_RESTORED 而非 SIZE_MAXIMIZED
+            // 此时 IsZoomed 返回 true，必须移除样式（而非恢复），否则最大化窗口带 WS_THICKFRAME
+            // 会扩展到工作区外，覆盖任务栏
+            if size_type == SIZE_MINIMIZED {
+                // 最小化时不处理样式
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            } else if IsZoomed(hwnd) != 0 {
+                // 窗口实际为最大化状态（含 SIZE_MAXIMIZED 和从最小化恢复的 SIZE_RESTORED）
+                // 移除 WS_SIZEBOX + WS_MAXIMIZEBOX + WS_SYSMENU + 隐藏子窗口
+                // - WS_SIZEBOX: 防止 DefWindowProcW 在窗口边缘返回 resize hit test 值
+                // - WS_MAXIMIZEBOX + WS_SYSMENU: 防止 Windows 11 Snap Layouts 拦截 mouseup
+                let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+                let mut remove_mask: u32 = 0;
+                if (style & WS_SIZEBOX) != 0 { remove_mask |= WS_SIZEBOX; }
+                if (style & WS_MAXIMIZEBOX) != 0 { remove_mask |= WS_MAXIMIZEBOX; }
+                if (style & WS_SYSMENU) != 0 { remove_mask |= WS_SYSMENU; }
+
+                if remove_mask != 0 {
+                    let new_style = (style & !remove_mask) as LONG_PTR;
+                    SetWindowLongPtrW(hwnd, GWL_STYLE, new_style);
+                    let _ = SetWindowPos(
+                        hwnd,
+                        0 as HWND_PTR,
+                        0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_ASYNCWINDOWPOS,
+                    );
+                }
+                // 关键修复：从最小化恢复到最大化时，Windows 在恢复样式后已设置了包含边框的
+                // 窗口尺寸（扩展到屏幕外，覆盖任务栏）。移除样式后需要重新设置窗口尺寸为
+                // 工作区尺寸（屏幕减去任务栏），否则任务栏会被覆盖且不可点击。
+                // 使用 MonitorFromWindow + GetMonitorInfoW 获取窗口所在显示器的工作区，
+                // 支持多显示器场景（SystemParametersInfoW 只返回主显示器，会导致副显示器窗口跳屏）
+                let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+                let mut monitor_info: MONITORINFO = MONITORINFO {
+                    cb_size: std::mem::size_of::<MONITORINFO>() as u32,
+                    ..Default::default()
+                };
+                let work_area = if GetMonitorInfoW(monitor, &mut monitor_info) != 0 {
+                    monitor_info.rc_work
+                } else {
+                    // GetMonitorInfoW 失败时回退：使用窗口当前矩形作为工作区（不调整）
+                    let mut win_rect_fallback: RECT = RECT::default();
+                    let _ = GetWindowRect(hwnd, &mut win_rect_fallback);
+                    win_rect_fallback
+                };
+                let mut win_rect: RECT = RECT::default();
+                let _ = GetWindowRect(hwnd, &mut win_rect);
+                let wa_w = work_area.right - work_area.left;
+                let wa_h = work_area.bottom - work_area.top;
+                let win_w = win_rect.right - win_rect.left;
+                let win_h = win_rect.bottom - win_rect.top;
+                if win_w != wa_w || win_h != wa_h || win_rect.left != work_area.left || win_rect.top != work_area.top {
+                    let _ = SetWindowPos(
+                        hwnd,
+                        0 as HWND_PTR,
+                        work_area.left,
+                        work_area.top,
+                        wa_w,
+                        wa_h,
+                        SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_ASYNCWINDOWPOS,
+                    );
+                }
+                // 隐藏 TAURI_DRAG_RESIZE_WINDOW 子窗口
+                let class_name: Vec<u16> = "TAURI_DRAG_RESIZE_BORDERS\0".encode_utf16().collect();
+                let window_name: Vec<u16> = "TAURI_DRAG_RESIZE_WINDOW\0".encode_utf16().collect();
+                let child = FindWindowExW(hwnd, std::ptr::null_mut(), class_name.as_ptr(), window_name.as_ptr());
+                if !child.is_null() {
+                    let _ = ShowWindow(child, SW_HIDE);
+                    let _ = SetWindowPos(
+                        child,
+                        0 as HWND_PTR,
+                        0, 0, 0, 0,
+                        SWP_ASYNCWINDOWPOS | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOMOVE,
+                    );
+                }
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            } else if size_type == SIZE_RESTORED {
+                // 窗口非最大化（真正还原）：恢复 WS_SIZEBOX + WS_MAXIMIZEBOX + WS_SYSMENU
+                let style = GetWindowLongPtrW(hwnd, GWL_STYLE) as u32;
+                let mut add_mask: u32 = 0;
+                if (style & WS_SIZEBOX) == 0 { add_mask |= WS_SIZEBOX; }
+                if (style & WS_MAXIMIZEBOX) == 0 { add_mask |= WS_MAXIMIZEBOX; }
+                if (style & WS_SYSMENU) == 0 { add_mask |= WS_SYSMENU; }
+
+                if add_mask != 0 {
+                    let new_style = (style | add_mask) as LONG_PTR;
+                    SetWindowLongPtrW(hwnd, GWL_STYLE, new_style);
+                    let _ = SetWindowPos(
+                        hwnd,
+                        0 as HWND_PTR,
+                        0, 0, 0, 0,
+                        SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED | SWP_ASYNCWINDOWPOS,
+                    );
+                }
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            } else {
+                DefSubclassProc(hwnd, msg, wparam, lparam)
+            }
+        }
+        _ => DefSubclassProc(hwnd, msg, wparam, lparam),
+    }
+}
+
 /// 为无边框窗口设置 DWM 圆角（Windows 11）
 ///
-/// 添加 WS_THICKFRAME 风格使 DWM 启用圆角渲染，
-/// 再通过 DWMNCRP_DISABLED 隐藏非客户区边框，
-/// 最后设置 DWMWCP_ROUND 应用标准圆角。
+/// 仅通过 DWMWA_WINDOW_CORNER_PREFERENCE 设置圆角偏好，
+/// 并通过 DWMNCRP_DISABLED 禁用 DWM 非客户区渲染。
+///
+/// 重要：不应向窗口添加 WS_THICKFRAME 风格。该风格会让 Windows 在窗口边缘
+/// 创建不可见的非客户区用于 resize 命中测试（WM_NCHITTEST 返回 HTTOP/HTRIGHT
+/// 等），导致贴合屏幕边缘的窗口控制按钮（关闭/还原/最小化）点击事件被系统
+/// 拦截而无法传递到 webview 客户区，同时鼠标光标会变成双箭头 resize cursor。
+/// tao 在 decorations:false 时本就会移除 WS_THICKFRAME，强行加回会与 tao
+/// 的窗口管理逻辑冲突。DWMWA_WINDOW_CORNER_PREFERENCE 是独立的 DWM 属性，
+/// 不依赖 WS_THICKFRAME 即可生效。
 #[cfg(target_os = "windows")]
 fn apply_window_rounded_corners(app: &tauri::AppHandle) {
     use tauri::Manager;
     if let Some(window) = app.get_webview_window("main") {
         if let Ok(hwnd) = window.hwnd() {
             type DWORD = u32;
-            type LongPtr = isize;
-
-            const GWL_STYLE: i32 = -16;
-            const WS_THICKFRAME: LongPtr = 0x00040000;
-            const WS_POPUP: LongPtr = 0x80000000;
-
-            const SWP_FRAMECHANGED: DWORD = 0x0020;
-            const SWP_NOMOVE: DWORD = 0x0002;
-            const SWP_NOSIZE: DWORD = 0x0001;
-            const SWP_NOZORDER: DWORD = 0x0004;
 
             const DWMWA_NCRENDERING_POLICY: DWORD = 2;
             const DWMNCRP_DISABLED: DWORD = 2;
             const DWMWA_WINDOW_CORNER_PREFERENCE: DWORD = 33;
             const DWMWCP_ROUND: DWORD = 2;
-
-            #[link(name = "user32")]
-            extern "system" {
-                fn GetWindowLongPtrW(
-                    hwnd: *const std::ffi::c_void,
-                    n_index: i32,
-                ) -> LongPtr;
-                fn SetWindowLongPtrW(
-                    hwnd: *const std::ffi::c_void,
-                    n_index: i32,
-                    dw_new_long: LongPtr,
-                ) -> LongPtr;
-                fn SetWindowPos(
-                    hwnd: *const std::ffi::c_void,
-                    hwnd_insert_after: *const std::ffi::c_void,
-                    x: i32,
-                    y: i32,
-                    cx: i32,
-                    cy: i32,
-                    u_flags: DWORD,
-                ) -> i32;
-            }
 
             #[link(name = "dwmapi")]
             extern "system" {
@@ -532,22 +847,7 @@ fn apply_window_rounded_corners(app: &tauri::AppHandle) {
             }
 
             unsafe {
-                let style = GetWindowLongPtrW(hwnd.0 as *const _, GWL_STYLE);
-                SetWindowLongPtrW(
-                    hwnd.0 as *mut _,
-                    GWL_STYLE,
-                    style | WS_THICKFRAME | WS_POPUP,
-                );
-                SetWindowPos(
-                    hwnd.0 as *mut _,
-                    std::ptr::null(),
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER,
-                );
-
+                // 禁用 DWM 非客户区渲染，避免系统绘制额外的窗口边框
                 let render_policy = DWMNCRP_DISABLED;
                 DwmSetWindowAttribute(
                     hwnd.0 as *const _,
@@ -556,6 +856,7 @@ fn apply_window_rounded_corners(app: &tauri::AppHandle) {
                     std::mem::size_of::<DWORD>() as DWORD,
                 );
 
+                // 设置圆角偏好为标准圆角（Windows 11 Build 22000+）
                 let preference = DWMWCP_ROUND;
                 DwmSetWindowAttribute(
                     hwnd.0 as *const _,
