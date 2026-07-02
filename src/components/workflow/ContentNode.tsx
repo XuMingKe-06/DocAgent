@@ -18,7 +18,6 @@ export function ContentNode({ node }: ContentNodeProps) {
   // 判断当前 content 节点是否为其所在助手回复片段的最后一个 content 节点
   // 仅在最后一个 content 节点显示复制按钮，避免在工具调用前的中间内容后错误出现按钮
   const nodes = useWorkflowStore((state) => state.nodes);
-  const executionStatus = useWorkflowStore((state) => state.executionStatus);
   const isLastContentInTurn = (() => {
     const idx = nodes.findIndex((n) => n.id === node.id);
     if (idx === -1) return false;
@@ -29,9 +28,17 @@ export function ContentNode({ node }: ContentNodeProps) {
     }
     return true;
   })();
-  // 仅在整体执行流程结束后才允许显示复制按钮，避免流式过程中中间 content 节点被
-  // closeStreamingNode 标记为 completed 后错误出现复制按钮（此时 tool_call 等后续节点还未到达）
-  const isExecutionSettled = executionStatus !== "running" && executionStatus !== "stopping";
+  // 检查当前节点所在轮次是否已全部完成（从当前节点到下一个 user 节点之间的所有节点均非 running 状态）
+  // 替代旧的全局 executionStatus 判断，避免新对话执行时隐藏上一轮对话的复制按钮
+  const isTurnCompleted = (() => {
+    const idx = nodes.findIndex((n) => n.id === node.id);
+    if (idx === -1) return false;
+    for (let i = idx; i < nodes.length; i++) {
+      if (nodes[i].type === "user") break;
+      if (nodes[i].status === "running") return false;
+    }
+    return true;
+  })();
 
   // 复制内容到剪贴板：优先使用现代 Clipboard API，失败时降级为 execCommand
   const handleCopy = async () => {
@@ -56,7 +63,7 @@ export function ContentNode({ node }: ContentNodeProps) {
           content={data.content}
           className="wf-content-markdown"
         />
-        {isCompleted && isLastContentInTurn && isExecutionSettled && (
+        {isCompleted && isLastContentInTurn && isTurnCompleted && (
           <div className="wf-content-copy-btn">
             <button
               className="wf-copy-button"
