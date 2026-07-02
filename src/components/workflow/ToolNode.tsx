@@ -22,9 +22,10 @@ export function ToolNode({ node }: ToolNodeProps) {
   const prevIsCodeStreamingRef = useRef<boolean | undefined>(undefined);
 
   // 代码内容：优先使用流式代码，回退到 input.code
-  const codeContent = data.streamingCode
+  // 去掉开头多余的换行符（LLM 生成的 JSON 字符串值常以 \n 开头）
+  const codeContent = (data.streamingCode
     || (data.input?.code as string | undefined)
-    || "";
+    || "").replace(/^[\n\r]+/, '');
   const isCodeStreaming = data.isCodeStreaming ?? false;
 
   const [copied, setCopied] = useState(false);
