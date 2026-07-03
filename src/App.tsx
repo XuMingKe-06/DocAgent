@@ -753,9 +753,9 @@ export default function App() {
       });
     }
 
-    clearNodes();
+    // 跳过 clearNodes()/clearContextUsage()，restoreSessionFromCache/loadFromMessages
+    // 会直接覆盖 nodes/contextUsage，避免中间 nodes=[] 导致空页面闪烁。
     resetAgent();
-    clearContextUsage();
     resetRefs();
 
     // 更新 session store 中的当前会话 ID
@@ -786,6 +786,11 @@ export default function App() {
       }
     } catch (err) {
       console.error("[App] 加载历史会话失败:", err);
+      // 缓存未命中且后端也失败时，确保节点为空，避免残留旧会话数据
+      if (!cacheHit) {
+        clearNodes();
+        clearContextUsage();
+      }
     }
 
     // 检查该会话的 Agent 是否仍在运行，恢复正确的执行状态
@@ -832,12 +837,11 @@ export default function App() {
       clearSessionCache(currentSessionId);
     }
 
-    clearNodes();
     resetAgent();
     resetRefs();
 
     if (nextSessionId) {
-      // 切换到下一个可用会话
+      // 切换到下一个可用会话（不下 clearNodes，restoreSessionFromCache 会直接覆盖）
       switchSession(nextSessionId);
       setAgentSessionId(nextSessionId);
 
@@ -860,6 +864,8 @@ export default function App() {
           loadFromMessages(detail.messages);
         } catch (err) {
           console.error("[App] 加载切换后的会话失败:", err);
+          clearNodes();
+          clearContextUsage();
         }
       }
 
@@ -876,7 +882,8 @@ export default function App() {
       // 加载该会话的上下文窗口使用信息
       loadContextUsage(nextSessionId);
     } else {
-      // 没有其他会话，清除上下文窗口使用信息
+      // 没有其他会话，清空工作流和上下文
+      clearNodes();
       clearContextUsage();
     }
   }, [clearNodes, resetAgent, switchSession, setAgentSessionId, loadFromMessages, loadContextUsage, clearContextUsage, clearSessionCache, restoreSessionFromCache, getCachedStreamingRefs, setExecutionStatus, currentSessionId]);
