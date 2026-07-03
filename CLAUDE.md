@@ -88,15 +88,14 @@ cargo clean
 │  │  ├─ layout/         布局组件: TopBar, MainArea, Sidebar, InputArea, WindowControls,
 │  │  │                      NetworkStatusBanner, WorkspaceSelector, MainLayout
 │  │  ├─ workflow/       工作流时间线: WorkflowTimeline, WorkflowNode (User/Thinking/Content/Tool/Confirm/Error)
-│  │  ├─ sidebar/        右侧栏: FileTreeSection, AgentInfoSection, TodoSection, ContextWindowSection
+│  │  ├─ sidebar/        侧边栏: FileTreeSection, AgentInfoSection, SessionListSection
 │  │  ├─ preview/        文档预览浮层: PreviewOverlay, MarkdownPreview, PdfCanvasViewer,
 │  │  │                      VersionHistoryPanel (版本快照历史)
 │  │  ├─ settings/       设置弹窗: SettingsDialog + 8 个标签页 (LLMConfig, WorkspaceTab, HandlersTab,
 │  │  │                      TemplatesTab, AppearanceTab, ShortcutsTab, GeneralTab, HelpTab)
 │  │  │                      + 子弹窗 (ProviderFormDialog, AddWorkspaceDialog, TemplateEditDialog)
-│  │  ├─ session/        历史会话面板: HistoryPanel
 │  │  └─ common/         通用组件: Button, Icon, ContextMenu, DeleteConfirmDialog, ErrorBoundary,
-│  │                        ToastContainer, TemplatePicker, UpdateNotification
+│  │                        ToastContainer, UpdateNotification
 │  ├─ stores/            Zustand stores: workflow, session, settings, workspace, fileTree, toast,
 │  │                        attachment, network
 │  ├─ i18n/              国际化: index.ts (i18n初始化), locales/zh-CN.json, locales/en-US.json
@@ -157,7 +156,7 @@ cargo clean
 ### 前后端通信
 - **`invoke()`**: 请求-响应式调用（查询数据、操作触发），命令名 `snake_case`
 - **`emit()/listen()`**: 事件推送（Agent流式输出、进度更新、需确认操作等），事件名 `namespace:action`
-- Agent 事件: `agent:thinking`, `agent:deep_thinking` (深度思考链/Extended Thinking), `agent:content`, `agent:tool_call`, `agent:tool_result`, `agent:confirm`, `agent:todo_update`, `agent:context_update` (上下文窗口用量), `agent:network_retry` (网络重试), `agent:done`, `agent:error`, `agent:stopped`
+- Agent 事件: `agent:thinking`, `agent:deep_thinking` (深度思考链/Extended Thinking), `agent:content`, `agent:tool_call`, `agent:tool_result`, `agent:confirm`, `agent:context_update` (上下文窗口用量), `agent:network_retry` (网络重试), `agent:done`, `agent:error`, `agent:stopped`
 - 系统事件: `session:updated`, `workspace:change`, `file:change`, `llm:provider_switch`, `system:network_change`（各事件均有对应 Payload 结构体）
 
 ### Agent 执行流程
@@ -222,7 +221,7 @@ AppState {
 - 锁获取原则：Handler 执行时短暂持锁获取 `Arc` 引用后立即释放，避免阻塞注册表
 
 ### 前端组件要点
-- **懒加载**: PreviewOverlay、SettingsDialog、HistoryPanel 通过 `React.lazy` 延迟加载，减少首屏体积
+- **懒加载**: PreviewOverlay、SettingsDialog 通过 `React.lazy` 延迟加载，减少首屏体积
 - **PDF 预览**: `PdfCanvasViewer` 使用 `pdfjs-dist` 在 Canvas 上渲染，支持缩放(0.5x-3x)、翻页、自适应宽度/页面模式
 - **Toast 通知**: 全局 `ToastContainer` 渲染在固定右上角，3 秒自动消失，支持 error/success/warning 三种类型，最大 5 条同时显示
 - **错误边界**: `ErrorBoundary` 包裹应用根组件，捕获渲染异常，提供"恢复页面"和"重启应用"操作

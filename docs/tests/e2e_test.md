@@ -46,7 +46,7 @@
 - 应用窗口正常显示，无白屏或崩溃
 - 顶部栏显示工作区选择器、各操作按钮和窗口控件
 - 主区域显示"开始新会话"引导提示
-- 右侧栏显示文件树、Agent 信息、Token 统计、Todo 四个分区
+- 右侧栏显示文件树、Agent 信息、Token 统计三个分区
 - 底部输入框可正常聚焦
 - SQLite 数据库文件 `<app_data_dir>/docagent.db` 已创建
 - 配置目录 `<app_data_dir>/config/` 已创建
@@ -87,8 +87,7 @@
 2. 确保已添加并激活一个工作区
 3. 输入: `帮我生成一份测试文档，标题为"项目周报"`
 4. 观察工作流时间线节点顺序：User → Thinking → Content → Tool → Result → Content
-5. 验证右侧栏 Todo 区域显示任务进度
-6. 验证 Token 统计更新
+5. 验证 Token 统计更新
 
 **预期结果**:
 - 工作流时间线按顺序显示所有节点
@@ -263,12 +262,12 @@
 ### 前端 UI (100%)
 - TopBar + WindowControls + WorkspaceSelector
 - WorkflowTimeline + 7 种节点类型（虚拟滚动）
-- InputArea + TemplatePicker
-- Sidebar 四个分区
+- InputArea（内置 TemplateCards）
+- Sidebar 三个分区（FileTree + AgentInfo + SessionList）
 - PreviewOverlay（Markdown/PDF/Word/Excel/PPT/Text/Diff）
 - VersionHistoryPanel（版本列表/对比/回滚）
 - SettingsDialog（8 个标签页）
-- HistoryPanel + DeleteConfirmDialog
+- SessionListSection + DeleteConfirmDialog
 - ErrorBoundary + ToastContainer + NetworkStatusBanner
 - UpdateNotification
 

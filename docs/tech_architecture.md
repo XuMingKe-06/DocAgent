@@ -145,8 +145,6 @@ docagent/
 │   │   ├── sidebar/                 # 右侧栏组件
 │   │   │   ├── FileTreeSection.tsx   # 文件树区域
 │   │   │   ├── AgentInfoSection.tsx  # Agent信息 (LLM名称/作者名)
-│   │   │   ├── ContextWindowSection.tsx # 上下文窗口用量
-│   │   │   └── TodoSection.tsx       # Todo列表
 │   │   ├── preview/                 # 预览组件
 │   │   │   ├── PreviewOverlay.tsx    # 预览浮层 (懒加载)
 │   │   │   ├── MarkdownPreview.tsx   # Markdown渲染 (react-markdown+rehype)
@@ -166,7 +164,6 @@ docagent/
 │   │   │   ├── ShortcutsTab.tsx     # 快捷键自定义
 │   │   │   └── HelpTab.tsx          # 帮助信息
 │   │   ├── session/                 # 会话组件
-│   │   │   └── HistoryPanel.tsx     # 历史会话面板 (懒加载)
 │   │   └── common/                  # 通用组件
 │   │       ├── Button.tsx
 │   │       ├── Icon.tsx             # SVG图标组件
@@ -174,7 +171,6 @@ docagent/
 │   │       ├── DeleteConfirmDialog.tsx # 删除确认弹窗
 │   │       ├── ErrorBoundary.tsx    # 错误边界 (包裹App根组件)
 │   │       ├── Toast.tsx            # Toast通知 (3秒自动消失)
-│   │       ├── TemplatePicker.tsx   # 模板选择器
 │   │       └── UpdateNotification.tsx # 更新通知 (懒加载)
 │   ├── stores/                      # Zustand 状态管理
 │   │   ├── useWorkflowStore.ts      # 工作流节点/执行状态/迭代分组
@@ -378,7 +374,7 @@ LLM Adapter → HTTP请求 → LLM API (流式)
 | `agent:tool_call` | `ToolCallPayload` | Tool调用开始（含iteration分组） |
 | `agent:tool_result` | `ToolResultPayload` | Tool执行结果 |
 | `agent:confirm` | `ConfirmPayload` | 需要用户确认（含risk_level） |
-| `agent:todo_update` | `TodoUpdatePayload` | Todo列表更新 |
+
 | `agent:context_update` | `ContextUsagePayload` | Token用量更新 |
 | `agent:code_streaming` | `CodeStreamingPayload` | 代码解释器流式代码 |
 | `agent:network_retry` | `NetworkRetryPayload` | LLM网络重试通知 |

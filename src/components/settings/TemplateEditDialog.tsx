@@ -140,11 +140,9 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
   return (
     <div
       className="fixed inset-0 bg-overlay z-[310] flex items-center justify-center animate-fade-in"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         className="template-edit-dialog"
-        onClick={(e) => e.stopPropagation()}
       >
         {/* 标题栏 */}
         <div className="dialog-header">
@@ -265,7 +263,6 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
 
         {/* 底部按钮 */}
         <div className="dialog-footer">
-          <button className="btn-cancel" onClick={onClose}>{t('settings.templateEdit.cancel')}</button>
           <button
             className="btn-save"
             onClick={handleSave}
@@ -273,6 +270,7 @@ export function TemplateEditDialog({ open, onClose, template }: TemplateEditDial
           >
             {saving ? t('settings.templateEdit.saving') : isEdit ? t('settings.templateEdit.saveChanges') : t('settings.templateEdit.createTemplate')}
           </button>
+          <button className="btn-cancel" onClick={onClose}>{t('settings.templateEdit.cancel')}</button>
         </div>
 
         <style>{`

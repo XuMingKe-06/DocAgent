@@ -21,7 +21,7 @@ export function HandlersTab() {
                 <span className="handler-name">{tool.name}</span>
                 <span className="handler-tool-badge">{t('settings.handlers.toolBadge')}</span>
               </div>
-              <div className="handler-desc">{tool.description}</div>
+              <div className="handler-desc">{t(`settings.tools.descriptions.${tool.id}`, { defaultValue: tool.description })}</div>
             </div>
             <div className="handler-always-on">
               {t('settings.handlers.alwaysEnabled')}
@@ -44,7 +44,7 @@ export function HandlersTab() {
                 <span className="handler-name">{s.name}</span>
                 <span className="handler-handler-badge">{t('settings.handlers.handlerBadge')}</span>
               </div>
-              <div className="handler-desc">{s.description}</div>
+              <div className="handler-desc">{t(`settings.handlers.descriptions.${s.id}`, { defaultValue: s.description })}</div>
             </div>
             <div className="handler-always-on">
               {t('settings.handlers.alwaysEnabled')}

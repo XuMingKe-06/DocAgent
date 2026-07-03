@@ -81,6 +81,8 @@ interface SettingsState {
   settings: AppSettings;
   llmProviders: ProviderInfo[];
   activeProviderId: string | null;
+  /** 用户为当前会话临时选择的首选 Provider ID，优先级高于默认 Provider */
+  preferredProviderId: string | null;
   handlers: HandlerInfo[];
   tools: ToolInfo[];
   templates: PromptTemplate[];
@@ -88,6 +90,8 @@ interface SettingsState {
   activeSettingsTab: SettingsTab;
   /** 最近一次 Provider 切换事件 */
   lastProviderSwitch: ProviderSwitchPayload | null;
+  /** 待插入的模板文本（由设置页"使用"按钮设置，InputArea 检测并消费） */
+  pendingInsertTemplate: string | null;
 
   updateSettings: (updates: DeepPartial<AppSettings>) => void;
   openSettings: (tab?: SettingsTab) => void;
@@ -101,6 +105,8 @@ interface SettingsState {
   refreshHandlers: () => Promise<void>;
   /** 刷新 Tool 列表（loadTools 的别名，语义更清晰） */
   refreshTools: () => Promise<void>;
+  /** 设置当前会话首选 Provider ID（不持久化，仅内存状态） */
+  setPreferredProviderId: (id: string | null) => void;
   /** 初始化 Provider 切换事件监听 */
   initProviderSwitchListener: () => Promise<() => void>;
   /** 从后端加载模板列表 */
@@ -115,18 +121,22 @@ interface SettingsState {
   applyAppearance: () => void;
   /** 初始化系统主题偏好监听（跟随系统模式时自动响应变化） */
   initThemeListener: () => () => void;
+  /** 设置待插入的模板文本（供 InputArea 消费） */
+  setPendingInsertTemplate: (text: string | null) => void;
 }
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: defaultSettings,
   llmProviders: [],
   activeProviderId: null,
+  preferredProviderId: null,
   handlers: [],
   tools: [],
   templates: [],
   isSettingsOpen: false,
   activeSettingsTab: "llm",
   lastProviderSwitch: null,
+  pendingInsertTemplate: null,
 
   // 更新设置（深层合并，支持部分更新嵌套对象），并持久化到后端
   updateSettings: (updates) => {
@@ -174,11 +184,17 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         tauriCmd.listHandlers(),
         tauriCmd.listTools(),
       ]);
-      const defaultProvider = providers.find((p) => p.isDefault);
+      const mainProvider = providers[0];
+      // 从持久化设置中恢复首选 Provider ID，校验是否仍存在于 Provider 列表中
+      const savedPreferredId = settings.preferredProviderId ?? null;
+      const validPreferredId = savedPreferredId && providers.some((p) => p.id === savedPreferredId)
+        ? savedPreferredId
+        : null;
       set({
         settings,
         llmProviders: providers,
-        activeProviderId: defaultProvider?.id ?? null,
+        activeProviderId: mainProvider?.id ?? null,
+        preferredProviderId: validPreferredId,
         handlers,
         tools,
       });
@@ -195,10 +211,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   loadProviders: async () => {
     try {
       const providers = await tauriCmd.listProviders();
-      const defaultProvider = providers.find((p) => p.isDefault);
+      const mainProvider = providers[0];
+      // 校验当前 preferredProviderId 是否仍有效（删除 Provider 后可能失效）
+      const currentPreferred = get().preferredProviderId;
+      const validPreferred = currentPreferred && providers.some((p) => p.id === currentPreferred)
+        ? currentPreferred
+        : null;
       set({
         llmProviders: providers,
-        activeProviderId: defaultProvider?.id ?? null,
+        activeProviderId: mainProvider?.id ?? null,
+        preferredProviderId: validPreferred,
       });
     } catch (error) {
       console.error("[SettingsStore] 加载 Provider 列表失败:", error);
@@ -233,6 +255,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   // 刷新 Tool 列表
   refreshTools: async () => {
     await get().loadTools();
+  },
+
+  // 设置首选 Provider ID（持久化到后端，跨会话保持）
+  setPreferredProviderId: (id) => {
+    set({ preferredProviderId: id });
+    // 异步持久化到后端，不阻塞 UI（updateSettings 内部已处理错误）
+    get().updateSettings({ preferredProviderId: id });
   },
 
   // 初始化 Provider 切换事件监听，返回取消监听函数
@@ -365,5 +394,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     };
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
+  },
+
+  // 设置待插入的模板文本
+  setPendingInsertTemplate: (text) => {
+    set({ pendingInsertTemplate: text });
   },
 }));

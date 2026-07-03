@@ -66,19 +66,6 @@ export interface ConfirmPayload {
   riskLevel: string;
 }
 
-/** Todo 列表条目 */
-export interface TodoItem {
-  id: string;
-  content: string;
-  status: string;
-}
-
-/** Todo 列表更新 */
-export interface TodoUpdatePayload {
-  sessionId: string;
-  todos: TodoItem[];
-}
-
 /** Agent 执行完成 */
 export interface DonePayload {
   sessionId: string;
@@ -130,13 +117,6 @@ export interface SessionUpdatePayload {
   sessionId: string;
   changeType: string;
   data?: unknown;
-}
-
-/** 工作区变更事件 */
-export interface WorkspaceChangePayload {
-  workspaceId: string;
-  workspaceName: string;
-  workspacePath: string;
 }
 
 /** 工作区目录被外部删除事件 */
@@ -243,15 +223,6 @@ export function onAgentConfirm(
   });
 }
 
-/** 监听 Todo 列表更新事件 */
-export function onAgentTodoUpdate(
-  handler: (payload: TodoUpdatePayload) => void,
-): Promise<UnlistenFn> {
-  return listen<TodoUpdatePayload>("agent:todo_update", (event) => {
-    handler(event.payload);
-  });
-}
-
 /** 监听 Agent 执行完成事件 */
 export function onAgentDone(
   handler: (payload: DonePayload) => void,
@@ -306,15 +277,6 @@ export function onSessionUpdated(
   handler: (payload: SessionUpdatePayload) => void,
 ): Promise<UnlistenFn> {
   return listen<SessionUpdatePayload>("session:updated", (event) => {
-    handler(event.payload);
-  });
-}
-
-/** 监听工作区变更事件 */
-export function onWorkspaceChange(
-  handler: (payload: WorkspaceChangePayload) => void,
-): Promise<UnlistenFn> {
-  return listen<WorkspaceChangePayload>("workspace:change", (event) => {
     handler(event.payload);
   });
 }

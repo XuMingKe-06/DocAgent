@@ -194,7 +194,6 @@ export function VersionHistoryPanel({
   return (
     <div
       className="vh-overlay"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="vh-dialog">
         {/* 顶部栏 */}

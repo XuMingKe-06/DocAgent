@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { WorkflowNode, ToolNodeData } from "../../types";
 import { useTranslation } from 'react-i18next';
-import { Icon } from "../common/Icon";
 
 interface ToolNodeProps {
   node: WorkflowNode<"tool">;
@@ -17,16 +16,38 @@ export function ToolNode({ node }: ToolNodeProps) {
   const isCodeInterpreter = data.toolName === "code_interpreter_handler";
   const [errorExpanded, setErrorExpanded] = useState(false);
 
+  // 代码内容：优先使用流式代码，回退到 input.code
+  // 去掉开头多余的换行符（LLM 生成的 JSON 字符串值常以 \n 开头）
+  const codeContent = (data.streamingCode
+    || (data.input?.code as string | undefined)
+    || "").replace(/^[\n\r]+/, '');
+  const isCodeStreaming = data.isCodeStreaming ?? false;
+
   // 代码预览展开/收缩状态
   // 初始展开：代码正在流式输出时展开，完成后收缩
-  const [codeExpanded, setCodeExpanded] = useState(true);
+  // 对于正在执行中的 code_interpreter_handler，即使无流式也默认展开（如重试场景）
+  const [codeExpanded, setCodeExpanded] = useState(
+    data.isCodeStreaming ?? (isRunning && isCodeInterpreter && codeContent.length > 0)
+  );
   const prevIsCodeStreamingRef = useRef<boolean | undefined>(undefined);
 
-  // 代码内容：优先使用流式代码，回退到 input.code
-  const codeContent = data.streamingCode
-    || (data.input?.code as string | undefined)
-    || "";
-  const isCodeStreaming = data.isCodeStreaming ?? false;
+  const [copied, setCopied] = useState(false);
+
+  // 复制代码到剪贴板
+  const handleCopyCode = async () => {
+    try {
+      await navigator.clipboard.writeText(codeContent);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = codeContent;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // 代码预览自动滚动：流式输出时跟随最新代码，用户手动上滚时暂停
   const codePreviewRef = useRef<HTMLPreElement>(null);
@@ -39,8 +60,9 @@ export function ToolNode({ node }: ToolNodeProps) {
     if (prevIsCodeStreamingRef.current === true && !data.isCodeStreaming) {
       setCodeExpanded(false);
     }
-    // 当代码流式输出开始时，重置自动滚动状态
+    // 当代码流式输出开始时，展开代码预览并重置自动滚动
     if (data.isCodeStreaming && prevIsCodeStreamingRef.current !== true) {
+      setCodeExpanded(true);
       codeAutoScrollRef.current = true;
     }
     prevIsCodeStreamingRef.current = data.isCodeStreaming;
@@ -74,12 +96,15 @@ export function ToolNode({ node }: ToolNodeProps) {
     }
   }, [codeContent, isCodeStreaming]);
 
-  // 代码解释器错误：截断显示，可展开
+  // 代码解释器错误：移除原始代码部分（已在代码预览区域展示），余下文本截断显示
   const errorText = data.error || "";
-  const shouldTruncateError = isCodeInterpreter && errorText.length > 150;
-  const displayError = shouldTruncateError && !errorExpanded
-    ? errorText.slice(0, 150) + "..."
+  const cleanError = isCodeInterpreter
+    ? errorText.split("\n\n原始代码:")[0].trim()
     : errorText;
+  const shouldTruncateError = cleanError.length > 150;
+  const displayError = shouldTruncateError && !errorExpanded
+    ? cleanError.slice(0, 150) + "..."
+    : cleanError;
 
   // 收缩状态下显示前几行代码（最多3行），而非仅用省略号
   const collapsedMaxLines = 3;
@@ -89,23 +114,7 @@ export function ToolNode({ node }: ToolNodeProps) {
     : codeLines.slice(0, collapsedMaxLines).join('\n');
 
   return (
-    <div className={`wf-node animate-node-in${isRunning ? " wf-tool-running" : ""}`}>
-      <div className={`wf-node-dot${isRunning ? " wf-tool-dot-running" : " bg-bg-sub text-text-secondary"}`}>
-        {isRunning ? (
-          // 执行中：显示旋转加载图标
-          <svg className="wf-tool-spinner" viewBox="0 0 24 24" fill="none">
-            <circle className="wf-tool-spinner-track" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
-            <path className="wf-tool-spinner-arc" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-          </svg>
-        ) : hasError ? (
-          // 执行失败：显示错误图标
-          <Icon name="error" size={12} />
-        ) : (
-          // 执行完成：显示工具图标
-          <Icon name="tool" size={12} />
-        )}
-      </div>
-
+    <div className={`wf-node${isRunning ? " wf-tool-running" : ""}`}>
       <div className="wf-tool-content">
         {/* 工具名称和简要描述 */}
         <div className="wf-tool-brief">
@@ -143,21 +152,32 @@ export function ToolNode({ node }: ToolNodeProps) {
                 {isCodeStreaming ? t('toolNode.writingCode') : t('toolNode.codePreview')}
               </span>
               {!isCodeStreaming && (
-                <button
-                  className="wf-code-preview-toggle"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCodeExpanded(!codeExpanded);
-                  }}
-                >
-                  {codeExpanded ? t('toolNode.collapseCode') : t('toolNode.expandCode')}
-                </button>
+                <div className="wf-code-preview-header-actions">
+                  <button
+                    className="wf-code-preview-toggle"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCodeExpanded(!codeExpanded);
+                    }}
+                  >
+                    {codeExpanded ? t('toolNode.collapseCode') : t('toolNode.expandCode')}
+                  </button>
+                  <button
+                    className="wf-code-preview-copy-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopyCode();
+                    }}
+                  >
+                    {copied ? t('common.copied') : t('common.copy')}
+                  </button>
+                </div>
               )}
             </div>
             {codeExpanded ? (
               <pre ref={codePreviewRef} className="wf-code-preview-content" onScroll={handleCodeScroll}>
                 {codeContent}
-                {isCodeStreaming && <span className="wf-code-cursor" />}
+
               </pre>
             ) : (
               <div className="wf-code-preview-collapsed-text">

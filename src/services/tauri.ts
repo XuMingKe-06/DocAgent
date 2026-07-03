@@ -74,12 +74,6 @@ export async function deleteProvider(providerId: string): Promise<void> {
   if (!result.ok) throw result.error.raw;
 }
 
-/** 设置默认 LLM Provider */
-export async function setDefaultProvider(providerId: string): Promise<void> {
-  const result = await safeInvoke(() => invoke("set_default_provider", { providerId }), { context: "setDefaultProvider" });
-  if (!result.ok) throw result.error.raw;
-}
-
 /** 对所有 LLM Provider 执行健康检查 */
 export async function healthCheckProviders(): Promise<Record<string, ConnectionResult>> {
   const result = await safeInvoke(() => invoke<Record<string, ConnectionResult>>("health_check_providers"), { context: "healthCheckProviders" });
@@ -142,6 +136,12 @@ export async function clearAllSessions(): Promise<number> {
   const result = await safeInvoke(() => invoke<number>("clear_all_sessions"), { context: "clearAllSessions" });
   if (!result.ok) throw result.error.raw;
   return result.data;
+}
+
+/** 更新会话的工作区 ID（用于修复旧数据中 workspace_id 为空的会话） */
+export async function updateSessionWorkspace(sessionId: string, workspaceId: string): Promise<void> {
+  const result = await safeInvoke(() => invoke("update_session_workspace", { sessionId, workspaceId }), { context: "updateSessionWorkspace" });
+  if (!result.ok) throw result.error.raw;
 }
 
 // ================================================================

@@ -19,7 +19,7 @@ export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: Delete
   }, []);
 
   return (
-    <div className="del-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="del-overlay">
       <div className="del-dialog">
         <div className="del-header">
           <span className="del-icon">
@@ -34,11 +34,11 @@ export function DeleteConfirmDialog({ name, isDir, onConfirm, onCancel }: Delete
           <p className="del-warning">{t("deleteConfirm.permanentWarning")}</p>
         </div>
         <div className="del-footer">
-          <button className="del-btn del-btn-cancel" onClick={onCancel}>
-            {t("deleteConfirm.cancel")}
-          </button>
           <button className="del-btn del-btn-danger" ref={confirmBtnRef} onClick={onConfirm}>
             {t("common.delete")}
+          </button>
+          <button className="del-btn del-btn-cancel" onClick={onCancel}>
+            {t("deleteConfirm.cancel")}
           </button>
         </div>
       </div>

@@ -8,7 +8,7 @@ import type { PromptTemplate } from "../../types";
 
 export function TemplatesTab() {
   const { t } = useTranslation();
-  const { templates, deleteTemplate } = useSettingsStore();
+  const { templates, deleteTemplate, closeSettings, setPendingInsertTemplate } = useSettingsStore();
   const [editOpen, setEditOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<PromptTemplate | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<PromptTemplate | null>(null);
@@ -23,7 +23,13 @@ export function TemplatesTab() {
     custom: t('settings.templates.categoryCustom'),
   };
 
-  // 按分类和搜索过滤模板
+  // 获取模板字段的显示值（内置模板使用 i18n 翻译，自定义模板使用原始值）
+  const getTemplateField = (tpl: PromptTemplate, field: 'name' | 'description' | 'content'): string =>
+    tpl.isBuiltin
+      ? t(`settings.templates.builtinItems.${tpl.id}.${field}`, { defaultValue: tpl[field] })
+      : tpl[field];
+
+  // 按分类和搜索过滤模板（搜索基于当前语言显示的文本）
   const filteredTemplates = useMemo(() => {
     let result = templates;
     if (activeCategory !== "all") {
@@ -33,13 +39,14 @@ export function TemplatesTab() {
       const q = searchQuery.toLowerCase();
       result = result.filter(
         (tpl) =>
-          tpl.name.toLowerCase().includes(q) ||
-          tpl.description.toLowerCase().includes(q) ||
-          tpl.content.toLowerCase().includes(q)
+          getTemplateField(tpl, 'name').toLowerCase().includes(q) ||
+          getTemplateField(tpl, 'description').toLowerCase().includes(q) ||
+          getTemplateField(tpl, 'content').toLowerCase().includes(q)
       );
     }
     return result;
-  }, [templates, activeCategory, searchQuery]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templates, activeCategory, searchQuery, t]);
 
   // 内置模板和自定义模板分组
   const builtinTemplates = filteredTemplates.filter((tpl) => tpl.isBuiltin);
@@ -62,6 +69,12 @@ export function TemplatesTab() {
     if (!deleteTarget) return;
     await deleteTemplate(deleteTarget.id);
     setDeleteTarget(null);
+  };
+
+  // 使用模板：插入到输入框并关闭设置
+  const handleUse = (tpl: PromptTemplate) => {
+    setPendingInsertTemplate(getTemplateField(tpl, 'content'));
+    closeSettings();
   };
 
   return (
@@ -127,6 +140,13 @@ export function TemplatesTab() {
                 </div>
                 <div className="template-card-actions">
                   <button
+                    className="action-btn action-btn-use"
+                    title={t('settings.templates.use')}
+                    onClick={() => handleUse(tpl)}
+                  >
+                    {t('settings.templates.use')}
+                  </button>
+                  <button
                     className="action-btn"
                     title={t('common.edit')}
                     onClick={() => handleEdit(tpl)}
@@ -163,15 +183,24 @@ export function TemplatesTab() {
               <div key={tpl.id} className="template-card template-card-builtin">
                 <div className="template-card-main">
                   <div className="template-name">
-                    {tpl.name}
+                    {getTemplateField(tpl, 'name')}
                     <span className="builtin-tag">{t('settings.templates.builtin')}</span>
                   </div>
-                  <div className="template-desc">{tpl.description}</div>
+                  <div className="template-desc">{getTemplateField(tpl, 'description')}</div>
                   <div className="template-meta">
                     <span className="template-category-badge">
                       {CATEGORY_LABELS[tpl.category] ?? tpl.category}
                     </span>
                   </div>
+                </div>
+                <div className="template-card-actions">
+                  <button
+                    className="action-btn action-btn-use"
+                    title={t('settings.templates.use')}
+                    onClick={() => handleUse(tpl)}
+                  >
+                    {t('settings.templates.use')}
+                  </button>
                 </div>
               </div>
             ))}
@@ -191,7 +220,7 @@ export function TemplatesTab() {
       {/* 删除确认对话框 */}
       {deleteTarget && (
         <DeleteConfirmDialog
-          name={deleteTarget.name}
+          name={getTemplateField(deleteTarget, 'name')}
           isDir={false}
           onConfirm={handleDelete}
           onCancel={() => setDeleteTarget(null)}
@@ -260,20 +289,18 @@ export function TemplatesTab() {
           margin-left: auto;
         }
         .template-list {
-          display: flex;
-          flex-direction: column;
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
           gap: 8px;
           margin-bottom: 12px;
         }
         .template-card {
-          padding: 12px 14px;
+          position: relative;
+          padding: 10px 80px 10px 12px;
           border: 1px solid var(--color-border-light);
           border-radius: var(--radius-md);
-          display: flex;
-          align-items: flex-start;
-          justify-content: space-between;
-          gap: 12px;
           transition: all 0.15s;
+          text-align: left;
         }
         .template-card:hover {
           border-color: var(--color-border-strong);
@@ -281,9 +308,9 @@ export function TemplatesTab() {
         }
         .template-card-builtin {
           background: var(--color-bg-sub);
+          padding-right: 58px;
         }
         .template-card-main {
-          flex: 1;
           min-width: 0;
         }
         .template-name {
@@ -294,6 +321,7 @@ export function TemplatesTab() {
           display: flex;
           align-items: center;
           gap: 6px;
+          text-align: left;
         }
         .builtin-tag {
           font-size: 10px;
@@ -328,6 +356,9 @@ export function TemplatesTab() {
           color: var(--color-text-tertiary);
         }
         .template-card-actions {
+          position: absolute;
+          top: 8px;
+          right: 10px;
           display: flex;
           gap: 4px;
           flex-shrink: 0;
@@ -349,6 +380,19 @@ export function TemplatesTab() {
         .action-btn-danger:hover {
           background: var(--color-error-light, rgba(239,68,68,0.1));
           color: var(--color-error, #ef4444);
+        }
+        .action-btn-use {
+          width: auto;
+          padding: 0 10px;
+          font-size: 11px;
+          font-weight: 500;
+          color: var(--color-accent);
+          background: var(--color-accent-light);
+          border-radius: var(--radius-xs);
+        }
+        .action-btn-use:hover {
+          background: var(--color-accent);
+          color: white;
         }
         .empty-state {
           font-size: 13px;

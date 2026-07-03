@@ -111,6 +111,9 @@ pub struct AgentContext {
     /// 为 None 表示无笔记，get_messages_for_iteration 跳过注入
     /// 为 Some(String) 表示有笔记，作为独立 user 消息追加到消息列表末尾
     scratchpad_summary: Option<String>,
+    /// 用户首选的 Provider ID，优先于默认 Provider 使用
+    /// 为空字符串时表示未指定，由 LlmRouter 自行选择默认 Provider
+    pub preferred_provider_id: String,
 }
 
 impl AgentContext {
@@ -134,6 +137,7 @@ impl AgentContext {
             last_code: None,
             scratchpad_states: std::sync::Arc::new(std::sync::RwLock::new(std::collections::HashMap::new())),
             scratchpad_summary: None,
+            preferred_provider_id: String::new(),
         }
     }
 
@@ -851,9 +855,21 @@ impl AgentContext {
 
     /// Layer 2: 上下文层
     fn layer_context(workspace_path: &str, tool_count: usize, handler_count: usize, author_info: Option<&AuthorInfo>) -> String {
+        let now = chrono::Utc::now();
+        let date_str = now.format("%Y-%m-%d").to_string();
+        let weekday = match now.format("%u").to_string().as_str() {
+            "1" => "星期一",
+            "2" => "星期二",
+            "3" => "星期三",
+            "4" => "星期四",
+            "5" => "星期五",
+            "6" => "星期六",
+            "7" => "星期日",
+            _ => "未知",
+        };
         let mut context = format!(
-            "<context>\n当前工作区路径: {}\n当前会话ID: 将在运行时注入\n可用工具数量: {}个基础工具 + {}个文档处理器",
-            workspace_path, tool_count, handler_count
+            "<context>\n当前日期: {} ({}) UTC\n当前工作区路径: {}\n当前会话ID: 将在运行时注入\n可用工具数量: {}个基础工具 + {}个文档处理器",
+            date_str, weekday, workspace_path, tool_count, handler_count
         );
 
         // 注入作者信息，指导 LLM 在生成文档时使用

@@ -35,8 +35,8 @@ export function NetworkStatusBanner() {
         px-4 py-2 text-sm font-medium text-center
         transition-all duration-300
         ${status === 'offline'
-          ? 'bg-amber-500 text-white'
-          : 'bg-green-500 text-white'
+          ? 'bg-warning text-white'
+          : 'bg-success text-white'
         }
       `}
     >

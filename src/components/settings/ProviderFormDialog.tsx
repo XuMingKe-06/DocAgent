@@ -187,11 +187,9 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
   return (
     <div
       className="fixed inset-0 bg-overlay z-[400] flex items-center justify-center animate-fade-in"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
         className="dialog-modal"
-        onClick={(e) => e.stopPropagation()}
       >
         <div className="dialog-header">
           <h3 className="dialog-title">
@@ -325,10 +323,10 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
               </span>
             ) : t('settings.providerForm.testConnection')}
           </button>
-          <button className="dialog-btn dialog-btn-ghost" onClick={onClose}>{t('settings.providerForm.cancel')}</button>
           <button className="dialog-btn dialog-btn-primary" onClick={handleSave} disabled={saving}>
             {saving ? t('settings.providerForm.saving') : t('settings.providerForm.save')}
           </button>
+          <button className="dialog-btn dialog-btn-ghost" onClick={onClose}>{t('settings.providerForm.cancel')}</button>
         </div>
       </div>
 
@@ -438,12 +436,12 @@ export function ProviderFormDialog({ mode, provider, onClose, onSaved }: Provide
         .test-success {
           background: var(--color-success-light);
           color: var(--color-success);
-          border: 1px solid rgba(52, 199, 36, 0.3);
+          border: 1px solid var(--color-success-bg);
         }
         .test-error {
           background: var(--color-error-light);
           color: var(--color-error);
-          border: 1px solid rgba(245, 74, 69, 0.3);
+          border: 1px solid var(--color-error-bg);
         }
         .dialog-footer {
           padding: 16px 24px;

@@ -431,43 +431,6 @@ impl<R: Runtime> AgentExecutor<R> {
         }
     }
 
-    fn emit_todo_progress(
-        &self,
-        session_id: &str,
-        current_step: u32,
-        total_possible: u32,
-        tool_name: &str,
-    ) {
-        let mut todos = Vec::new();
-
-        if current_step > 1 {
-            todos.push(TodoItem {
-                id: format!("step_{}", current_step - 1),
-                content: format!("步骤 {} 已完成", current_step - 1),
-                status: "completed".to_string(),
-            });
-        }
-
-        todos.push(TodoItem {
-            id: format!("step_{}", current_step),
-            content: format!("正在执行: {}", tool_name),
-            status: "in_progress".to_string(),
-        });
-
-        if current_step < total_possible {
-            todos.push(TodoItem {
-                id: format!("step_{}", current_step + 1),
-                content: format!("步骤 {} 待执行", current_step + 1),
-                status: "pending".to_string(),
-            });
-        }
-
-        self.emitter.emit_todo_update(TodoUpdatePayload {
-            session_id: session_id.to_string(),
-            todos,
-        }).ok();
-    }
-
     /// 发射上下文窗口使用情况事件
     async fn emit_context_usage(&self, ctx: &mut AgentContext, response_tokens: usize, usage: Option<&ChatUsage>) {
         let model_name = self.router.current_model_name();
@@ -554,15 +517,6 @@ impl<R: Runtime> AgentExecutor<R> {
             safe_prefix,
         );
 
-        self.emitter.emit_todo_update(TodoUpdatePayload {
-            session_id: ctx.session_id.clone(),
-            todos: vec![TodoItem {
-                id: "step_0".to_string(),
-                content: "正在分析用户请求...".to_string(),
-                status: "in_progress".to_string(),
-            }],
-        }).ok();
-
         for iteration in 0..self.max_iterations {
             // 检查是否被用户停止
             if let Some(result) = self.handle_stop_if_needed(
@@ -605,7 +559,7 @@ impl<R: Runtime> AgentExecutor<R> {
                     ctx.session_id, current_iteration, msg_summary, messages.len(), estimated_prompt_tokens,
                 );
                 log::debug!("调用 LLM 流式接口, session_id={}, 消息数={}, 重试次数={}", ctx.session_id, messages.len(), llm_retry_count);
-                match self.router.chat_stream(&messages, &tools).await {
+                match self.router.chat_stream(&messages, &tools, if ctx.preferred_provider_id.is_empty() { None } else { Some(ctx.preferred_provider_id.as_str()) }).await {
                     Ok(rx) => break rx,
                     Err(e) => {
                         _last_error = Some(e.clone());
@@ -808,7 +762,7 @@ impl<R: Runtime> AgentExecutor<R> {
                             
                             let recovered_messages = Self::build_recovery_messages(&messages, &assistant_content, &reasoning_content, &collected_tool_calls);
                             
-                            match self.router.chat_stream(&recovered_messages, &tools).await {
+                            match self.router.chat_stream(&recovered_messages, &tools, if ctx.preferred_provider_id.is_empty() { None } else { Some(ctx.preferred_provider_id.as_str()) }).await {
                                 Ok(new_rx) => {
                                     log::info!("流式恢复成功，继续接收, session_id={}", ctx.session_id);
                                     stream_rx = new_rx;
@@ -836,7 +790,7 @@ impl<R: Runtime> AgentExecutor<R> {
                                 reason: "流式响应中断，尝试重新请求".to_string(),
                             }).ok();
 
-                            match self.router.chat_stream(&messages, &tools).await {
+                            match self.router.chat_stream(&messages, &tools, if ctx.preferred_provider_id.is_empty() { None } else { Some(ctx.preferred_provider_id.as_str()) }).await {
                                 Ok(new_rx) => {
                                     log::info!("流式重新请求成功，继续接收, session_id={}", ctx.session_id);
                                     stream_rx = new_rx;
@@ -858,15 +812,37 @@ impl<R: Runtime> AgentExecutor<R> {
                 }
             }
 
-            // 为所有 code_interpreter_handler 的 tool_call 发射 is_final 事件
+            // 为所有 code_interpreter_handler 的 tool_call 发射流式结束事件
+            // 策略：如果真实 callId 在流式过程中已出现，额外用真实 callId 再发射一次完整代码，
+            // 确保前端 pendingCodeStreamingRef 能在真实 callId 下找到代码内容，从而在新创建的
+            // ToolNode 中显示代码预览。这解决了重试迭代中流式 callId 与真实 callId 不一致的问题。
             for (tc_index, collected) in collected_tool_calls.iter() {
                 if collected.name == "code_interpreter_handler" {
+                    let has_real_id = !collected.id.is_empty();
+                    let streaming_id = format!("streaming_{}", tc_index);
+                    
+                    // 第一步：如果流式期间使用的是 streaming_ ID 且真实 callId 已出现，
+                    // 额外用真实 callId 发射一次完整代码（is_final=false），让前端缓存下来
+                    if has_real_id && collected.id != streaming_id {
+                        if let Ok(params) = serde_json::from_str::<serde_json::Value>(&collected.arguments) {
+                            if let Some(code) = params.get("code").and_then(|v| v.as_str()) {
+                                self.emitter.emit_code_streaming(CodeStreamingPayload {
+                                    session_id: ctx.session_id.clone(),
+                                    call_id: collected.id.clone(),
+                                    code_delta: code.to_string(),
+                                    is_final: false,
+                                }).ok();
+                            }
+                        }
+                    }
+                    
+                    // 第二步：发射 is_final 事件（使用流式期间的 callId）
                     self.emitter.emit_code_streaming(CodeStreamingPayload {
                         session_id: ctx.session_id.clone(),
-                        call_id: if collected.id.is_empty() {
-                            format!("streaming_{}", tc_index)
-                        } else {
+                        call_id: if has_real_id {
                             collected.id.clone()
+                        } else {
+                            streaming_id
                         },
                         code_delta: String::new(),
                         is_final: true,
@@ -1030,7 +1006,7 @@ impl<R: Runtime> AgentExecutor<R> {
                             // 重试前刷新 Scratchpad 摘要（笔记可能在重试间隔被更新）
                             ctx.refresh_scratchpad_summary();
                             let retry_messages = ctx.get_messages_for_iteration(current_iteration);
-                            match self.router.chat_stream_with_max_tokens(&retry_messages, &tools, new_max_tokens).await {
+                            match self.router.chat_stream_with_max_tokens(&retry_messages, &tools, new_max_tokens, if ctx.preferred_provider_id.is_empty() { None } else { Some(ctx.preferred_provider_id.as_str()) }).await {
                                 Ok(mut retry_rx) => {
                                     // 收集重试响应
                                     let mut retry_content = String::new();
@@ -1193,13 +1169,6 @@ impl<R: Runtime> AgentExecutor<R> {
 
                     log::info!("执行 Tool, session_id={}, tool={}, call_id={}", ctx.session_id, tool_call.name, tool_call.id);
 
-                    self.emit_todo_progress(
-                        &ctx.session_id,
-                        total_steps,
-                        self.max_iterations,
-                        &tool_call.name,
-                    );
-
                     // 尝试解析 tool_call 参数，如果响应被截断则参数可能不完整
                     let params_result = serde_json::from_str::<serde_json::Value>(&tool_call.arguments);
 
@@ -1324,6 +1293,11 @@ impl<R: Runtime> AgentExecutor<R> {
                         None
                     };
 
+                    // 检测是否为 patches 模式（executed_code 回传时需要）
+                    let is_patches_mode = tool_call.name == "code_interpreter_handler"
+                        && params.get("code").is_none()
+                        && params.get("patches").is_some();
+
                     // 对需要路径安全校验的 Tool/Handler，注入工作区根目录
                     let mut safe_params = params;
                     let needs_workspace_root = matches!(
@@ -1334,6 +1308,7 @@ impl<R: Runtime> AgentExecutor<R> {
                         | "read_file_lines"
                         | "docx_handler" | "xlsx_handler" | "pptx_handler" | "pdf_handler"
                         | "code_interpreter_handler"  // 需要workspace_root作为working_dir
+                        | "validator_handler"
                     );
                     if needs_workspace_root && !ctx.workspace_path.is_empty() {
                         safe_params["workspace_root"] = json!(ctx.workspace_path);
@@ -1457,6 +1432,19 @@ impl<R: Runtime> AgentExecutor<R> {
                         None
                     };
                     if let Some(code) = executed_code {
+                        // patches mode: 先将完整代码通过 code_streaming 回传给前端用于代码预览
+                        if is_patches_mode {
+                            self.emitter.emit_code_streaming(CodeStreamingPayload {
+                                session_id: ctx.session_id.clone(),
+                                call_id: tool_call.id.clone(),
+                                code_delta: code.clone(),
+                                is_final: true,
+                            }).ok();
+                            log::debug!(
+                                "patch 模式: 已回传完整代码到前端, session_id={}, code_len={}",
+                                ctx.session_id, code.len()
+                            );
+                        }
                         ctx.set_last_code(code);
                     }
 
@@ -1654,15 +1642,6 @@ impl<R: Runtime> AgentExecutor<R> {
                 crate::services::agent::prompts::token_budget::TokenBudgetManager::estimate_tokens(&assistant_content)
             };
             self.emit_context_usage(ctx, response_tokens, final_usage.as_ref()).await;
-
-            self.emitter.emit_todo_update(TodoUpdatePayload {
-                session_id: ctx.session_id.clone(),
-                todos: vec![TodoItem {
-                    id: "done".to_string(),
-                    content: "任务完成".to_string(),
-                    status: "completed".to_string(),
-                }],
-            }).ok();
 
             let total_duration_ms = start_time.elapsed().as_millis() as u64;
             log::info!("Agent 执行完成, session_id={}, 总步骤={}, 总耗时={}ms", ctx.session_id, total_steps, total_duration_ms);

@@ -1,9 +1,9 @@
 import { useState, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from 'react-i18next';
 import { useFileTreeStore } from "../../stores/useFileTreeStore";
 import { useWorkspaceStore } from "../../stores/useWorkspaceStore";
 import { Icon } from "../common/Icon";
-import { SidebarSection } from "../layout/Sidebar";
 import { ContextMenu, type ContextMenuItem } from "../common/ContextMenu";
 import { DeleteConfirmDialog } from "../common/DeleteConfirmDialog";
 import * as tauriCmd from "../../services/tauri";
@@ -110,9 +110,9 @@ function FileTreeItem({
           ) : (
             <span className="ft-name">{node.name}</span>
           )}
-          <span className="ft-chevron" style={{ transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>
-            <Icon name="chevron-down" size={12} />
-          </span>
+<span className="ft-chevron" style={{ transform: isExpanded ? "rotate(0deg)" : "rotate(-90deg)" }}>
+  <Icon name="chevron-down" size={12} />
+</span>
         </div>
         {isExpanded && node.children && (
           <div className="ft-indent">
@@ -228,7 +228,7 @@ function NewItemInput({
   );
 
   return (
-    <div className="ni-overlay" onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+    <div className="ni-overlay">
       <div className="ni-dialog">
         <div className="ni-header">
           <span className="ni-icon">
@@ -253,15 +253,15 @@ function NewItemInput({
           {error && <p className="ni-error">{error}</p>}
         </div>
         <div className="ni-footer">
-          <button className="ni-btn ni-btn-cancel" onClick={onCancel}>
-            {t('fileTree.cancel')}
-          </button>
           <button
             className="ni-btn ni-btn-confirm"
             onClick={handleSubmit}
             disabled={!value.trim() || creating}
           >
             {creating ? t('fileTree.creating') : t('fileTree.create')}
+          </button>
+          <button className="ni-btn ni-btn-cancel" onClick={onCancel}>
+            {t('fileTree.cancel')}
           </button>
         </div>
       </div>
@@ -582,7 +582,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
   }, [contextMenu, activeWorkspaceId, handleCopyPath, onOpenPreview, onOpenVersionHistory]);
 
   return (
-    <SidebarSection title={t('fileTree.sectionTitle')}>
+    <div className="ft-section">
       {/* 搜索栏 */}
       <div className="ft-search">
         <Icon name="search" size={14} className="ft-search-icon" />
@@ -639,34 +639,37 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
       )}
 
       {/* 右键菜单 */}
-      {contextMenu && (
+      {contextMenu && createPortal(
         <ContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           items={contextMenuItems()}
           onClose={() => setContextMenu(null)}
-        />
+        />,
+        document.body
       )}
 
       {/* 删除确认对话框 */}
-      {deleteTarget && (
+      {deleteTarget && createPortal(
         <DeleteConfirmDialog
           name={deleteTarget.name}
           isDir={deleteTarget.isDir}
           onConfirm={handleDeleteConfirm}
           onCancel={() => setDeleteTarget(null)}
-        />
+        />,
+        document.body
       )}
 
       {/* 新建文件/文件夹输入弹窗 */}
-      {newItemState && activeWorkspaceId && (
+      {newItemState && activeWorkspaceId && createPortal(
         <NewItemInput
           type={newItemState.type}
           parentPath={newItemState.parentPath}
           workspaceId={activeWorkspaceId}
           onCreated={handleNewItemCreated}
           onCancel={() => setNewItemState(null)}
-        />
+        />,
+        document.body
       )}
 
       <style>{`
@@ -695,7 +698,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
         }
         .ft-search-input {
           flex: 1;
-          font-size: 12px;
+          font-size: 13px;
           color: var(--color-text-primary);
           background: transparent;
           border: none;
@@ -741,11 +744,11 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
           opacity: 0.4;
         }
         .ft-empty-text {
-          font-size: 12px;
+          font-size: 13px;
           color: var(--color-text-quaternary);
         }
         .ft-tree {
-          font-size: 12px;
+          font-size: 13px;
         }
         .ft-item {
           display: flex;
@@ -754,6 +757,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
           padding: 4px 8px;
           border-radius: var(--radius-sm);
           cursor: pointer;
+          user-select: none;
           transition: all 0.15s;
           color: var(--color-text-primary);
           position: relative;
@@ -804,7 +808,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-          font-size: 12px;
+          font-size: 13px;
           line-height: 1.5;
         }
         .ft-chevron {
@@ -824,7 +828,7 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
         }
         .ft-rename-input {
           flex: 1;
-          font-size: 12px;
+          font-size: 13px;
           line-height: 1.5;
           padding: 1px 4px;
           border: 1px solid var(--color-accent);
@@ -847,7 +851,14 @@ export function FileTreeSection({ onOpenPreview, onOpenVersionHistory }: { onOpe
           gap: 7px;
           padding: 4px 8px;
         }
+        .ft-section {
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+          min-height: 0;
+          padding: 0 12px 12px;
+        }
       `}</style>
-    </SidebarSection>
+    </div>
   );
 }

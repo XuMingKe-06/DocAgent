@@ -111,6 +111,14 @@ pub async fn start_agent(
         .unwrap_or("")
         .to_string();
 
+    // 从 options 中提取用户首选 Provider ID（空字符串表示未指定）
+    let provider_id = options
+        .as_ref()
+        .and_then(|o| o.get("providerId"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
     // 校验工作区目录是否存在（仅当指定了非默认工作区路径时检查）
     if !workspace_path.is_empty() && workspace_path != "." {
         let ws_path = std::path::Path::new(&workspace_path);
@@ -168,6 +176,7 @@ pub async fn start_agent(
             max_iterations,
             &workspace_path,
             &workspace_id,
+            &provider_id,
             should_stop,
             &db,
             &confirm_channels,
@@ -287,12 +296,16 @@ pub async fn get_context_usage(
     use crate::services::agent::prompts::task_type::TaskType;
 
     // 获取当前活跃 Provider 的上下文窗口大小、模型名称和缓存类型
+    // 通过 Router 的主 Provider ID 精确查找（避免 list_providers 顺序不确定）
     let (context_window, model_name, provider_cache_type) = {
         let router = state.llm_router.read().await;
         let providers = router.list_providers();
-        let default_provider = providers.iter().find(|p| p.is_default);
+        let main_provider_id = router.default_provider_id();
+        let main_provider = main_provider_id
+            .and_then(|id| providers.iter().find(|p| p.id == id))
+            .or_else(|| providers.first());
         let cache_type = router.current_cache_type();
-        match default_provider {
+        match main_provider {
             Some(p) => (p.context_window, p.model.clone(), cache_type.to_string()),
             None => (128_000, String::new(), cache_type.to_string()),
         }
@@ -720,6 +733,7 @@ async fn run_agent(
     max_iterations: u32,
     workspace_path: &str,
     workspace_id: &str,
+    provider_id: &str,
     should_stop: Arc<dyn Fn(&str) -> bool + Send + Sync>,
     db: &Arc<crate::db::Database>,
     confirm_channels: &Arc<tokio::sync::Mutex<std::collections::HashMap<String, tokio::sync::oneshot::Sender<crate::ConfirmDecision>>>>,
@@ -774,14 +788,14 @@ async fn run_agent(
         let cfg = tokio::task::block_in_place(|| config.blocking_lock());
         match cfg.load_llm_config() {
             Ok(llm_config) => {
-                match crate::config::llm_config::get_default_provider(&llm_config) {
+                match llm_config.providers.first() {
                     Some(provider) => {
                         let cw = provider.resolve_context_window();
-                        log::info!("从默认 Provider 解析上下文窗口: {} tokens (模型: {})", cw, provider.model);
+                        log::info!("从主 Provider 解析上下文窗口: {} tokens (模型: {})", cw, provider.model);
                         cw
                     }
                     None => {
-                        log::warn!("无默认 Provider，使用默认上下文窗口 128K");
+                        log::warn!("无可用 Provider，使用默认上下文窗口 128K");
                         128_000
                     }
                 }
@@ -797,6 +811,7 @@ async fn run_agent(
     ctx.max_iterations = max_iterations;
     ctx.workspace_path = workspace_path.to_string();
     ctx.workspace_id = workspace_id.to_string();
+    ctx.preferred_provider_id = provider_id.to_string();
     // 注入 Scratchpad 共享状态（与 ScratchpadTool 持有同一 Arc）
     // executor 每轮迭代开始时会调用 refresh_scratchpad_summary 读取笔记摘要
     ctx.set_scratchpad_states(scratchpad_states.clone());
@@ -893,9 +908,14 @@ async fn run_agent(
     let has_image_attachments = AttachmentService::has_image_attachments(attachments);
 
     // 获取当前 Provider 是否支持视觉（提前获取，用于数据层面处理）
+    // 通过 Router 的主 Provider ID 精确查找（避免 list_providers 顺序不确定）
     let supports_vision = if has_image_attachments {
         let providers = llm_router.list_providers();
-        providers.iter().find(|p| p.is_default)
+        let main_provider_id = llm_router.default_provider_id();
+        let main_provider = main_provider_id
+            .and_then(|id| providers.iter().find(|p| p.id == id))
+            .or_else(|| providers.first());
+        main_provider
             .map(|p| p.supports_vision)
             .unwrap_or(false)
     } else {

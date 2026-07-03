@@ -1,88 +1,60 @@
 import { useTranslation } from 'react-i18next';
-import { Icon } from "../common/Icon";
 import { useSettingsStore } from "../../stores/useSettingsStore";
 import { WindowControls } from "./WindowControls";
-import { WorkspaceSelector } from "./WorkspaceSelector";
-import type { ThemeMode } from "../../types";
 
 interface TopBarProps {
-  onToggleHistory: () => void;
-  onNewSession: () => void;
+  sidebarVisible: boolean;
+  onToggleSidebar: () => void;
 }
 
-export function TopBar({ onToggleHistory, onNewSession }: TopBarProps) {
+export function TopBar({ sidebarVisible, onToggleSidebar }: TopBarProps) {
   const { t } = useTranslation();
-  const { openSettings, llmProviders, activeProviderId, settings, updateSettings } = useSettingsStore();
-  const activeProvider = llmProviders.find((p) => p.id === activeProviderId);
+  const { llmProviders, activeProviderId, preferredProviderId } = useSettingsStore();
+  // 优先显示用户选择的首选 Provider，回退到默认 Provider，与 InputArea 发送逻辑一致
+  const activeProvider = llmProviders.find((p) => p.id === (preferredProviderId || activeProviderId));
 
   const hasProvider = !!activeProvider;
   const statusText = hasProvider ? activeProvider.model : t('topBar.disconnected');
   const statusColor = hasProvider ? "bg-success" : "bg-text-tertiary";
 
-  // 判断当前是否处于深色模式（考虑 system 模式下的系统偏好）
-  const isDarkMode = (() => {
-    const { themeMode } = settings.appearance;
-    if (themeMode === "dark") return true;
-    if (themeMode === "system") return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    return false;
-  })();
-
-  // 切换主题：深色 → 浅色，浅色 → 深色
-  const toggleTheme = () => {
-    const nextMode: ThemeMode = isDarkMode ? "light" : "dark";
-    updateSettings({ appearance: { themeMode: nextMode } });
-  };
-
   return (
-    <div role="banner" data-tauri-drag-region className="flex items-center h-[52px] pr-4 border-b border-border bg-bg flex-shrink-0 gap-3 z-[100]" style={{ paddingLeft: '24px' }}>
-      {/* 工作区选择器 */}
-      <WorkspaceSelector />
+    // drag region 与 WindowControls 各占自己的空间，不重叠，避免 drag.js 误拦截按钮事件
+    <div role="banner" className="flex items-center h-[52px] bg-bg-sub flex-shrink-0 z-[100]">
+      <div data-tauri-drag-region className="flex items-center flex-1 self-stretch gap-3 min-w-0 mr-3" style={{ paddingLeft: '24px' }}>
+        {/* 侧边栏收缩/展开按钮 */}
+        <button
+          type="button"
+          className="topbar-btn"
+          onClick={onToggleSidebar}
+          title={sidebarVisible ? t('topBar.collapseSidebar') : t('topBar.expandSidebar')}
+          aria-label={sidebarVisible ? t('topBar.collapseSidebar') : t('topBar.expandSidebar')}
+        >
+          {sidebarVisible ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <line x1="15" y1="3" x2="15" y2="21"/>
+              <polyline points="11 10 8 13 11 16"/>
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+              <line x1="9" y1="3" x2="9" y2="21"/>
+              <polyline points="13 10 16 13 13 16"/>
+            </svg>
+          )}
+        </button>
 
-      <div className="flex-1" />
+        {/* 左侧留白，工作区选择器已移至输入框左下角 */}
+        <div className="flex-1" />
 
-      {/* 状态指示器 - 对接实际 LLM Provider 状态 */}
-      <div className="flex items-center gap-[6px] text-[11px] text-text-tertiary" aria-label={hasProvider ? t('topBar.connected') : t('topBar.disconnected')}>
-        <span className={`w-[6px] h-[6px] rounded-full ${statusColor}`} />
-        <span>{statusText}</span>
+        {/* 状态指示器 - 对接实际 LLM Provider 状态 */}
+        <div className="flex items-center gap-[6px] text-[11px] text-text-tertiary" aria-label={hasProvider ? t('topBar.connected') : t('topBar.disconnected')}>
+          <span className={`w-[6px] h-[6px] rounded-full ${statusColor}`} />
+          <span>{statusText}</span>
+        </div>
       </div>
 
-      {/* 操作按钮 */}
-      <div className="flex items-center gap-1" role="toolbar" aria-label={t('topBar.toolbar')}>
-        <button
-          className="topbar-btn"
-          title={isDarkMode ? t('topBar.switchToLight') : t('topBar.switchToDark')}
-          aria-label={isDarkMode ? t('topBar.switchToLight') : t('topBar.switchToDark')}
-          onClick={toggleTheme}
-        >
-          <Icon name={isDarkMode ? "theme" : "moon"} />
-        </button>
-        <button
-          className="topbar-btn"
-          title={t('topBar.history')}
-          aria-label={t('topBar.history')}
-          onClick={onToggleHistory}
-        >
-          <Icon name="history" />
-        </button>
-        <button
-          className="topbar-btn"
-          title={t('topBar.newSession')}
-          aria-label={t('topBar.newSession')}
-          onClick={onNewSession}
-        >
-          <Icon name="plus" />
-        </button>
-        <button
-          className="topbar-btn"
-          title={t('topBar.settings')}
-          aria-label={t('topBar.settings')}
-          onClick={() => openSettings()}
-        >
-          <Icon name="settings" />
-        </button>
-      </div>
-
-      {/* 窗口控制按钮 */}
+      {/* 窗口控制按钮：参与流式布局，不与 drag region 重叠 */}
       <WindowControls />
     </div>
   );

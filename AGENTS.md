@@ -13,7 +13,7 @@
 9. 在任务过程中禁止使用emoji
 10. 本机操作系统为Windows11
 11. 严格遵守最小改动原则：优先编辑现有代码，不新建不必要文件；不添加多余注释
-12. 在每次任务（涉及到代码的任务）开始前，你必须调用superpowers skill，并严格遵守其规范
+12. 重要：在每次任务（涉及到代码的任务）开始前，你必须调用superpowers skill，并严格遵守其规范
 13. 在任务过程中，你需要积极调用相关skills，例如：执行代码智能暂存请调用git-commit skill
 
 ## 思考努力
@@ -57,3 +57,5 @@ Env `DOCAGENT_PYTHON` overrides the Python interpreter path for the Sidecar.
 - All file operations go through Rust Tauri commands, not directly from frontend.
 - Provider config includes `contextWindow`, `supportsVision`, `extraParams`.
 - Conventional commits with Chinese titles: `feat(范围): 中文标题`
+
+> 如需详细查看引导文件，请阅读根目录下`CLAUDE.md`文件
