@@ -76,7 +76,11 @@ jobs:
           }
 
           $ErrorActionPreference = "Stop"
-          $tagName = "${{ github.ref_name }}"
+
+          # 从 tauri.conf.json 读取版本号，兼容 tag 推送和 workflow_dispatch 两种触发方式
+          $configPath = "${{ github.workspace }}\src-tauri\tauri.conf.json"
+          $configVersion = (Get-Content $configPath -Raw | ConvertFrom-Json).version
+          $tagName = "v$configVersion"
           $releaseName = "DocAgent $tagName"
 
           # 查找构建产物
@@ -229,10 +233,14 @@ jobs:
             exit 0
           }
 
+          # 读取版本号
+          $configPath = "${{ github.workspace }}\src-tauri\tauri.conf.json"
+          $configVersion = (Get-Content $configPath -Raw | ConvertFrom-Json).version
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add updater/latest.json
-          git commit -m "chore: update Gitee latest.json for ${{ github.ref_name }} [skip ci]"
+          git commit -m "chore: update Gitee latest.json for v$configVersion [skip ci]"
 
           # 推送到 GitHub（使用 GITHUB_TOKEN）
           git push origin HEAD:main
