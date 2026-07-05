@@ -116,8 +116,12 @@ jobs:
           $releaseId = $null
           try {
             $existing = Invoke-RestMethod -Uri "$apiBase/releases/tags/$tagName?$tokenParam" -Method Get
-            $releaseId = $existing.id
-            Write-Host "Release 已存在，ID: $releaseId"
+            if ($existing.id) {
+              $releaseId = $existing.id
+              Write-Host "Release 已存在，ID: $releaseId"
+            } else {
+              Write-Host "Release 存在但 ID 为空，将通过列表重新获取"
+            }
           } catch {
             Write-Host "Release 不存在，将新建"
           }
@@ -147,12 +151,12 @@ jobs:
               } elseif ($statusCode -eq 404) {
                 Write-Host "::warning::Gitee 仓库不存在或 Token 无权限"
                 exit 0
-              } elseif ($statusCode -eq 400 -and $detail -match "已经存在") {
-                Write-Host "标签已有发行版，尝试获取现有 Release ID"
+              } elseif ($statusCode -eq 400) {
+                Write-Host "创建失败（400），尝试列出 Releases 查找现有 ID"
                 try {
                   $releases = Invoke-RestMethod -Uri "$apiBase/releases?$tokenParam&per_page=100" -Method Get
                   $existing = $releases | Where-Object { $_.tag_name -eq $tagName } | Select-Object -First 1
-                  if ($existing) {
+                  if ($existing -and $existing.id) {
                     $releaseId = $existing.id
                     Write-Host "找到现有 Release，ID: $releaseId"
                   } else {
