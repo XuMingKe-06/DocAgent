@@ -209,9 +209,11 @@ jobs:
           Write-Host "Gitee 同步完成"
           Write-Host "Release 地址: https://gitee.com/$env:GITEE_OWNER/$env:GITEE_REPO/releases/$tagName"
 
-      # 提交 updater/latest.json 到 GitHub 仓库（Gitee 镜像通过多推送同步）
+      # 提交 updater/latest.json 到 GitHub 和 Gitee 仓库
       - name: Commit updater/latest.json to repository
         shell: pwsh
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
         run: |
           $updaterFile = "${{ github.workspace }}\updater\latest.json"
           if (-not (Test-Path $updaterFile)) {
@@ -231,6 +233,17 @@ jobs:
           git add updater/latest.json
           git commit -m "chore: update Gitee latest.json for ${{ github.ref_name }} [skip ci]"
 
-          # 推送到 GitHub 的 main 分支
+          # 推送到 GitHub（使用 GITHUB_TOKEN）
           git push origin HEAD:main
-          Write-Host "updater/latest.json 已提交并推送"
+          Write-Host "已推送到 GitHub"
+
+          # 同时推送到 Gitee（使用 GITEE_TOKEN）
+          if ($env:GITEE_TOKEN) {
+            git remote add gitee_push "https://xumingke-06:$env:GITEE_TOKEN@gitee.com/xumingke-06/doc-agent.git"
+            git push gitee_push HEAD:main
+            git remote remove gitee_push
+            Write-Host "已推送到 Gitee"
+          } else {
+            Write-Host "::warning::GITEE_TOKEN 未设置，跳过 Gitee 推送"
+          }
+          Write-Host "updater/latest.json 已提交并同步到两个平台"
