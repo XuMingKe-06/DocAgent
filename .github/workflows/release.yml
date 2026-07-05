@@ -162,6 +162,7 @@ jobs:
             # 使用 System.Net.Http.MultipartFormDataContent 上传大文件
             try {
               $client = New-Object System.Net.Http.HttpClient
+              $client.Timeout = [System.TimeSpan]::FromMinutes(10)
               $content = New-Object System.Net.Http.MultipartFormDataContent
               $fileStream = [System.IO.File]::OpenRead($fileItem.FullName)
               $fileContent = New-Object System.Net.Http.StreamContent($fileStream)
@@ -179,31 +180,40 @@ jobs:
             }
           }
 
-          # 生成 Gitee 专用的 latest.json（指向 Gitee 下载地址）
-          $latestJson = Get-ChildItem -Path $nsisDir -Filter "latest.json" | Select-Object -First 1
-          if ($latestJson) {
-            $jsonContent = Get-Content $latestJson.FullName -Raw | ConvertFrom-Json
-            $giteeUrlBase = "https://gitee.com/$env:GITEE_OWNER/$env:GITEE_REPO/releases/download/$tagName"
-            foreach ($platform in $jsonContent.platforms.PSObject.Properties) {
-              $fileName = "$([System.IO.Path]::GetFileName($platform.Value.url))"
-              $platform.Value.url = "$giteeUrlBase/$fileName"
-            }
-            $giteeLatestJsonPath = Join-Path $nsisDir "latest-gitee.json"
-            $jsonContent | ConvertTo-Json -Depth 10 | Set-Content -Path $giteeLatestJsonPath
-
-            # 上传 Gitee latest.json 到 Gitee Release
-            Upload-FileToGitee -FilePath $giteeLatestJsonPath -ReleaseId $releaseId
-
-            # 同时保存一份到工作区，用于后续提交到仓库
-            $repoUpdaterDir = "${{ github.workspace }}\updater"
-            if (-not (Test-Path $repoUpdaterDir)) {
-              New-Item -ItemType Directory -Path $repoUpdaterDir -Force | Out-Null
-            }
-            Copy-Item -Path $giteeLatestJsonPath -Destination "$repoUpdaterDir\latest.json" -Force
-            Write-Host "Gitee latest.json 已保存到仓库 updater/latest.json"
-          } else {
-            Write-Host "::warning::未找到 latest.json，跳过 Gitee latest.json 生成"
+          # 构造 Gitee 专用的 latest.json（指向 Gitee 下载地址）
+          $giteeUrlBase = "https://gitee.com/$env:GITEE_OWNER/$env:GITEE_REPO/releases/download/$tagName"
+          $exeName = $exeFile.Name
+          $signature = ""
+          if ($sigFile) {
+            $signature = (Get-Content $sigFile.FullName -Raw).Trim()
           }
+          $latestJsonObj = @{
+            version = $configVersion
+            notes = $releaseBody.Trim()
+            pub_date = [System.DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.fffK")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $signature
+                url = "$giteeUrlBase/$exeName"
+              }
+              "windows-x86_64-nsis" = @{
+                signature = $signature
+                url = "$giteeUrlBase/$exeName"
+              }
+            }
+          }
+
+          # 保存到工作区 updater/latest.json（提交到仓库用）
+          $repoUpdaterDir = "${{ github.workspace }}\updater"
+          if (-not (Test-Path $repoUpdaterDir)) {
+            New-Item -ItemType Directory -Path $repoUpdaterDir -Force | Out-Null
+          }
+          $giteeLatestJsonPath = "$repoUpdaterDir\latest.json"
+          $latestJsonObj | ConvertTo-Json -Depth 10 | Set-Content -Path $giteeLatestJsonPath
+          Write-Host "Gitee latest.json 已生成并保存到仓库 updater/latest.json"
+
+          # 上传 Gitee latest.json 到 Gitee Release
+          Upload-FileToGitee -FilePath $giteeLatestJsonPath -ReleaseId $releaseId
 
           # 上传 .exe 和 .sig
           Upload-FileToGitee -FilePath $exeFile.FullName -ReleaseId $releaseId
