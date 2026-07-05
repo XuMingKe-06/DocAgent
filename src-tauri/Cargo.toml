@@ -3,6 +3,7 @@ name = "docagent"
 version = "1.0.2"
 description = "AI文档处理Agent桌面应用"
 authors = ["DocAgent Team"]
+license = "MIT"
 edition = "2021"
 
 [lib]
