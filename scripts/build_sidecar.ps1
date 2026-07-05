@@ -26,17 +26,6 @@ $GetPipUrl = "https://bootstrap.pypa.io/get-pip.py"
 # PyPI 镜像源（国内用户加速，清华 TUNA 镜像）
 # 如需使用官方源，改为 "https://pypi.org/simple"
 $PyMirrorUrl = "https://pypi.tuna.tsinghua.edu.cn/simple"
-# 镜像源连通性检测：如果镜像不可达（如 CI 环境被屏蔽），回退到官方 PyPI
-try {
-    $req = [System.Net.HttpWebRequest]::Create("$PyMirrorUrl/pip/")
-    $req.Timeout = 5000
-    $req.Method = "HEAD"
-    $req.GetResponse().Close()
-    Write-Info "镜像源可达: $PyMirrorUrl"
-} catch {
-    Write-Warn "镜像源不可达 ($($_.Exception.Message))，回退到官方 PyPI"
-    $PyMirrorUrl = "https://pypi.org/simple"
-}
 
 # 路径配置（基于脚本所在位置推导项目根目录）
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -103,6 +92,18 @@ function Get-DirSizeMB {
 # ============================================
 
 Write-Step "步骤 1/9：环境检查"
+
+# 镜像源连通性检测：如果镜像不可达（如 CI 环境被屏蔽），回退到官方 PyPI
+try {
+    $req = [System.Net.HttpWebRequest]::Create("$PyMirrorUrl/pip/")
+    $req.Timeout = 5000
+    $req.Method = "HEAD"
+    $req.GetResponse().Close()
+    Write-Info "镜像源可达: $PyMirrorUrl"
+} catch {
+    Write-Warn "镜像源不可达 ($($_.Exception.Message))，回退到官方 PyPI"
+    $PyMirrorUrl = "https://pypi.org/simple"
+}
 
 # 检查 sidecar 源码目录
 if (-not (Test-Path $SidecarSourceDir)) {
