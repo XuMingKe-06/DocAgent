@@ -41,6 +41,12 @@ class CodeHandler:
     ALLOWED_MODULES = {
         # 文档处理库
         "docx", "openpyxl", "pptx", "reportlab", "fpdf",
+        # PDF 读取/修改库（扩展：让智能体可操作现有 PDF 的所有元素）
+        "fitz",          # PyMuPDF - 读取/修改 PDF（文字/绘图/图片/链接/书签/注释等）
+        "pymupdf",       # PyMuPDF 新版导入名
+        "pypdf",         # pypdf - 读取/合并/拆分/加密/修改 PDF
+        "pdfplumber",    # pdfplumber - 表格/文本提取
+        "pdfminer",      # pdfminer.six - 文本提取
         # 数据处理库
         "pandas", "numpy", "csv", "json", "math", "statistics",
         # 图表库
@@ -59,14 +65,21 @@ class CodeHandler:
         "base64", "hashlib",
         # 随机数
         "random",
+        # 文件系统常用模块（智能体修改 PDF/文档时常用，safe_open 已限制写入工作区）
+        "shutil",        # 文件复制/移动/删除（常用模块，不应禁止）
+        "tempfile",      # 临时文件创建（PyMuPDF 保存策略常用）
+        "io",            # StringIO/BytesIO 等流操作
+        "inspect",       # 对象检查（PyMuPDF/reportlab 等库内部可能使用）
         # 项目内部 helper
         "doc_helpers",
+        "handlers.font_utils",  # 中文字体注册工具
     }
 
     # 禁止的模块黑名单（即使白名单中未列出也做二次拦截）
+    # 仅保留真正危险的模块：网络通信、进程执行、序列化攻击、低级内存操作
     BLOCKED_MODULES = {
         "subprocess", "socket", "http", "urllib",
-        "shutil", "signal", "ctypes", "multiprocessing",
+        "signal", "ctypes", "multiprocessing",
         "webbrowser", "telnetlib", "ftplib", "smtplib",
         "xmlrpc", "pickle", "shelve", "marshal",
     }

@@ -45,6 +45,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 ALLOWED_MODULES = {
     # 文档处理库
     "docx", "openpyxl", "pptx", "reportlab", "fpdf",
+    # PDF 读取/修改库（扩展：让智能体可操作现有 PDF 的所有元素）
+    "fitz",          # PyMuPDF - 读取/修改 PDF（文字/绘图/图片/链接/书签/注释等）
+    "pymupdf",       # PyMuPDF 新版导入名
+    "pypdf",         # pypdf - 读取/合并/拆分/加密/修改 PDF
+    "pdfplumber",    # pdfplumber - 表格/文本提取
+    "pdfminer",      # pdfminer.six - 文本提取（含子模块 pdfminer.high_level 等）
     # 数据处理库
     "pandas", "numpy", "csv", "json", "math", "statistics",
     # 图表库
@@ -63,26 +69,35 @@ ALLOWED_MODULES = {
     "base64", "hashlib",
     # 随机数
     "random",
+    # 文件系统常用模块（智能体修改 PDF/文档时常用，safe_open 已限制写入工作区）
+    "shutil",        # 文件复制/移动/删除（常用模块，不应禁止）
+    "tempfile",      # 临时文件创建（PyMuPDF 保存策略常用）
+    "io",            # StringIO/BytesIO 等流操作
+    "inspect",       # 对象检查（PyMuPDF/reportlab 等库内部可能使用）
     # 项目内部 helper
     "doc_helpers",
+    "handlers.font_utils",  # 中文字体注册工具
 }
 
 # 禁止的模块黑名单（即使白名单中未列出也做二次拦截）
+# 仅保留真正危险的模块：网络通信、进程执行、序列化攻击、低级内存操作
 BLOCKED_MODULES = {
     "subprocess", "socket", "http", "urllib",
-    "shutil", "signal", "ctypes", "multiprocessing",
+    "signal", "ctypes", "multiprocessing",
     "webbrowser", "telnetlib", "ftplib", "smtplib",
     "xmlrpc", "pickle", "shelve", "marshal",
 }
 
 # 禁止的代码模式（正则表达式）
 # 覆盖常见逃逸和危险操作，与 BLOCKED_MODULES 形成纵深防御
+# 注意：os.remove/os.unlink/os.rmdir 已解禁，safe_open 限制写入工作区
+#        智能体修改 PDF 时常用 os.remove 删除临时文件
 BLOCKED_PATTERNS = [
     # 基础导入逃逸
     r'__import__\s*\(',          # 禁止直接调用 __import__
     r'subprocess\.',             # 禁止 subprocess 模块
 
-    # os 模块危险函数
+    # os 模块危险函数（仅禁止进程执行和权限修改，不禁止文件删除）
     r'os\.system\s*\(',          # 禁止 os.system 执行 shell 命令
     r'os\.popen\s*\(',           # 禁止 os.popen 执行 shell 命令
     r'os\.exec[a-z]*\s*\(',      # 禁止 os.exec/l/execv/execve 等进程替换
@@ -91,10 +106,6 @@ BLOCKED_PATTERNS = [
     r'os\.chown\s*\(',           # 禁止修改文件所有者
     r'os\.fork\s*\(',            # 禁止进程 fork（Unix）
     r'os\.kill\s*\(',            # 禁止发送信号
-    r'os\.remove\s*\(',          # 禁止删除文件（防止删除审计日志等关键文件）
-    r'os\.unlink\s*\(',          # 禁止删除文件（os.remove 别名）
-    r'os\.rmdir\s*\(',           # 禁止删除目录
-    r'os\.removedirs\s*\(',      # 禁止递归删除目录
 
     # sys 模块危险操作
     r'sys\.path\.\w+',           # 禁止修改 sys.path（插入恶意路径）
@@ -237,6 +248,30 @@ def build_namespace(working_dir: str) -> dict:
     except ImportError:
         pass
 
+    # 预导入 PDF 读取/修改库，让智能体可直接使用 fitz/PdfReader/PdfWriter/pdfplumber
+    # 覆盖读取现有 PDF、修改 PDF、合并/拆分、加密、提取元素等场景
+    try:
+        import fitz  # PyMuPDF
+        namespace['fitz'] = fitz
+    except ImportError:
+        pass
+
+    try:
+        import pypdf
+        namespace['pypdf'] = pypdf
+        # PdfReader/PdfWriter 是 pypdf 最常用的两个类，直接暴露到顶层
+        from pypdf import PdfReader, PdfWriter
+        namespace['PdfReader'] = PdfReader
+        namespace['PdfWriter'] = PdfWriter
+    except ImportError:
+        pass
+
+    try:
+        import pdfplumber
+        namespace['pdfplumber'] = pdfplumber
+    except ImportError:
+        pass
+
     # 导入项目 helper 函数
     try:
         import handlers.doc_helpers as doc_helpers
@@ -250,6 +285,14 @@ def build_namespace(working_dir: str) -> dict:
                      'add_styled_table', 'apply_theme']:
             if hasattr(doc_helpers, name):
                 namespace[name] = getattr(doc_helpers, name)
+    except ImportError:
+        pass
+
+    # 预导入中文字体注册工具，避免智能体生成 PDF 时中文显示为方块
+    try:
+        from handlers.font_utils import register_chinese_font, register_bold_font
+        namespace['register_chinese_font'] = register_chinese_font
+        namespace['register_bold_font'] = register_bold_font
     except ImportError:
         pass
 

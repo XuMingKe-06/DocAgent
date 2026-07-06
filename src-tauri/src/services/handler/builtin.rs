@@ -140,6 +140,34 @@ async fn execute_read(
     if !params["include_images"].is_null() {
         sidecar_params["include_images"] = json!(params["include_images"].as_bool().unwrap_or(false));
     }
+    // PDF read 扩展参数（视觉级布局/链接/书签/字体/绘图/图片二进制/元数据/页面几何/签名）
+    if !params["include_links"].is_null() {
+        sidecar_params["include_links"] = json!(params["include_links"].as_bool().unwrap_or(false));
+    }
+    if !params["include_toc"].is_null() {
+        sidecar_params["include_toc"] = json!(params["include_toc"].as_bool().unwrap_or(false));
+    }
+    if !params["include_fonts"].is_null() {
+        sidecar_params["include_fonts"] = json!(params["include_fonts"].as_bool().unwrap_or(false));
+    }
+    if !params["include_drawings"].is_null() {
+        sidecar_params["include_drawings"] = json!(params["include_drawings"].as_bool().unwrap_or(false));
+    }
+    if !params["include_image_data"].is_null() {
+        sidecar_params["include_image_data"] = json!(params["include_image_data"].as_bool().unwrap_or(false));
+    }
+    if !params["include_metadata_full"].is_null() {
+        sidecar_params["include_metadata_full"] = json!(params["include_metadata_full"].as_bool().unwrap_or(false));
+    }
+    if !params["include_page_geometry"].is_null() {
+        sidecar_params["include_page_geometry"] = json!(params["include_page_geometry"].as_bool().unwrap_or(false));
+    }
+    if !params["include_signatures"].is_null() {
+        sidecar_params["include_signatures"] = json!(params["include_signatures"].as_bool().unwrap_or(false));
+    }
+    if !params["include_visual"].is_null() {
+        sidecar_params["include_visual"] = json!(params["include_visual"].as_bool().unwrap_or(false));
+    }
 
     // PPT read 专用参数
     if !params["include_notes"].is_null() {
@@ -296,6 +324,152 @@ async fn execute_analyze(
             output: None,
             error: Some(e.message),
             duration_ms: start.elapsed().as_millis() as u64, error_code: None,
+        },
+    }
+}
+
+/// 执行 modify 操作的通用逻辑（目前仅 PDF 支持）
+/// modify 操作通过 operation 参数分发到具体子操作，参数透传给 Sidecar
+async fn execute_modify(
+    doc_service: &DocumentService,
+    doc_type: &str,
+    params: Value,
+) -> HandlerResult {
+    let start = Instant::now();
+    let file_path = params["path"].as_str().unwrap_or("");
+    let workspace_root = params["workspace_root"].as_str().unwrap_or("");
+    let resolved_path = resolve_path(file_path, workspace_root);
+
+    // 路径安全校验：源文件必须在工作区内
+    if let Err(e) = validate_workspace_path(&resolved_path, workspace_root) {
+        log::warn!("Handler modify 操作源路径校验失败: {}", e);
+        return HandlerResult {
+            success: false,
+            output: None,
+            error: Some(e),
+            duration_ms: start.elapsed().as_millis() as u64,
+            error_code: Some(crate::errors::DOC_PERMISSION_DENIED),
+        };
+    }
+
+    // 构建透传给 Sidecar 的参数
+    let mut sidecar_params = json!({
+        "path": resolved_path,
+    });
+
+    // 透传 operation 参数（必需）
+    if let Some(operation) = params["operation"].as_str() {
+        sidecar_params["operation"] = json!(operation);
+    }
+
+    // 透传 output_path（如果存在），并校验路径在工作区内
+    if let Some(output_path) = params["output_path"].as_str() {
+        if !output_path.is_empty() {
+            let resolved_output = resolve_path(output_path, workspace_root);
+            if let Err(e) = validate_workspace_path(&resolved_output, workspace_root) {
+                log::warn!("Handler modify 操作输出路径校验失败: {}", e);
+                return HandlerResult {
+                    success: false,
+                    output: None,
+                    error: Some(e),
+                    duration_ms: start.elapsed().as_millis() as u64,
+                    error_code: Some(crate::errors::DOC_PERMISSION_DENIED),
+                };
+            }
+            sidecar_params["output_path"] = json!(resolved_output);
+        }
+    }
+
+    // 透传所有其他参数，对路径类参数做安全校验
+    if let Some(obj) = params.as_object() {
+        for (key, value) in obj {
+            // 跳过已处理或不需要透传的字段
+            if matches!(key.as_str(), "workspace_root" | "path" | "output_path" | "action" | "operation") {
+                continue;
+            }
+
+            // input_paths（merge 操作）：解析并校验每个路径
+            if key == "input_paths" {
+                if let Some(arr) = value.as_array() {
+                    let mut resolved_paths = Vec::new();
+                    for v in arr {
+                        if let Some(p) = v.as_str() {
+                            let resolved = resolve_path(p, workspace_root);
+                            if let Err(e) = validate_workspace_path(&resolved, workspace_root) {
+                                log::warn!("Handler modify merge 输入路径校验失败: {}", e);
+                                return HandlerResult {
+                                    success: false,
+                                    output: None,
+                                    error: Some(format!("合并输入文件路径不在工作区内: {}", e)),
+                                    duration_ms: start.elapsed().as_millis() as u64,
+                                    error_code: Some(crate::errors::DOC_PERMISSION_DENIED),
+                                };
+                            }
+                            resolved_paths.push(resolved);
+                        }
+                    }
+                    sidecar_params["input_paths"] = json!(resolved_paths);
+                }
+                continue;
+            }
+
+            // output_dir（split 操作）：解析并校验路径
+            if key == "output_dir" {
+                if let Some(dir) = value.as_str() {
+                    let resolved_dir = resolve_path(dir, workspace_root);
+                    if let Err(e) = validate_workspace_path(&resolved_dir, workspace_root) {
+                        log::warn!("Handler modify split output_dir 校验失败: {}", e);
+                        return HandlerResult {
+                            success: false,
+                            output: None,
+                            error: Some(format!("拆分输出目录不在工作区内: {}", e)),
+                            duration_ms: start.elapsed().as_millis() as u64,
+                            error_code: Some(crate::errors::DOC_PERMISSION_DENIED),
+                        };
+                    }
+                    sidecar_params["output_dir"] = json!(resolved_dir);
+                }
+                continue;
+            }
+
+            // image_path（add_image_watermark 操作）：解析并校验路径
+            if key == "image_path" {
+                if let Some(img_path) = value.as_str() {
+                    let resolved_img = resolve_path(img_path, workspace_root);
+                    if let Err(e) = validate_workspace_path(&resolved_img, workspace_root) {
+                        log::warn!("Handler modify image_path 校验失败: {}", e);
+                        return HandlerResult {
+                            success: false,
+                            output: None,
+                            error: Some(format!("水印图片路径不在工作区内: {}", e)),
+                            duration_ms: start.elapsed().as_millis() as u64,
+                            error_code: Some(crate::errors::DOC_PERMISSION_DENIED),
+                        };
+                    }
+                    sidecar_params["image_path"] = json!(resolved_img);
+                }
+                continue;
+            }
+
+            // 其他参数（pages/rotation/text/bookmarks/metadata/fields 等）直接透传
+            sidecar_params[key] = value.clone();
+        }
+    }
+
+    match doc_service.process("modify", doc_type, sidecar_params).await {
+        Ok(data) => HandlerResult {
+            success: true,
+            output: Some(data),
+            error: None,
+            duration_ms: start.elapsed().as_millis() as u64,
+            error_code: None,
+        },
+        Err(e) => HandlerResult {
+            success: false,
+            output: None,
+            error: Some(e.message),
+            duration_ms: start.elapsed().as_millis() as u64,
+            error_code: None,
         },
     }
 }
@@ -596,7 +770,7 @@ impl Handler for PptxHandler {
 // ============================================================================
 
 /// PDF 文档处理器
-/// 聚合 read/convert/analyze 三种操作
+/// 聚合 read/convert/analyze/modify 四种操作
 struct PdfHandler {
     doc_service: Arc<DocumentService>,
 }
@@ -611,7 +785,13 @@ impl PdfHandler {
 impl Handler for PdfHandler {
     fn handler_name(&self) -> &str { "pdf_handler" }
     fn description(&self) -> &str {
-        "PDF文档(.pdf)处理器，支持读取、格式转换、分析三种操作。转换支持 txt/md/html 格式（与 sidecar pdf_handler.convert 实际支持一致）。"
+        "PDF文档(.pdf)处理器，支持读取(read)、格式转换(convert)、分析(analyze)、修改(modify)四种操作。\
+        modify 通过 operation 参数分发到 17 个子操作：\
+        页面操作(rotate_pages/delete_pages/extract_pages/reorder_pages)、\
+        合并拆分(merge/split)、水印(add_text_watermark/add_image_watermark)、\
+        页眉页脚(add_header_footer)、加密解密(encrypt/decrypt)、\
+        元数据(set_metadata)、书签目录(add_bookmarks/set_toc)、\
+        注释(add_annotation)、表单填充(fill_form)、压缩(compress)。"
     }
     fn category(&self) -> &str { "document" }
     fn is_builtin(&self) -> bool { true }
@@ -624,8 +804,8 @@ impl Handler for PdfHandler {
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["read", "convert", "analyze"],
-                    "description": "操作类型: read=读取文档, convert=格式转换, analyze=分析文档"
+                    "enum": ["read", "convert", "analyze", "modify"],
+                    "description": "操作类型: read=读取文档, convert=格式转换, analyze=分析文档, modify=修改文档"
                 },
                 "path": {
                     "type": "string",
@@ -633,8 +813,9 @@ impl Handler for PdfHandler {
                 },
                 "pages": {
                     "type": "string",
-                    "description": "[read] 页码范围，如 \"1-5,8,10-12\"，默认读取所有页"
+                    "description": "[read/modify] 页码范围，如 \"1-5,8,10-12\" 或 \"all\"，默认读取所有页"
                 },
+                // ===== read 操作参数 =====
                 "include_layout": {
                     "type": "boolean",
                     "description": "[read] 是否提取文本位置和样式（字号/字体/颜色），使用 PyMuPDF get_text(\"dict\")，默认 false",
@@ -660,14 +841,295 @@ impl Handler for PdfHandler {
                     "description": "[read] 是否提取图片信息（数量/位置/尺寸），使用 PyMuPDF，默认 false",
                     "default": false
                 },
+                "include_links": {
+                    "type": "boolean",
+                    "description": "[read] 是否提取超链接（URI/内部跳转），使用 PyMuPDF page.get_links()，默认 false",
+                    "default": false
+                },
+                "include_toc": {
+                    "type": "boolean",
+                    "description": "[read] 是否提取书签/大纲（目录），使用 PyMuPDF doc.get_toc()，默认 false",
+                    "default": false
+                },
+                "include_fonts": {
+                    "type": "boolean",
+                    "description": "[read] 是否提取字体清单，使用 PyMuPDF page.get_fonts()，默认 false",
+                    "default": false
+                },
+                "include_drawings": {
+                    "type": "boolean",
+                    "description": "[read] 是否提取绘图元素（横线/边框/矩形/曲线等矢量图形），使用 PyMuPDF page.get_drawings()，默认 false。视觉级布局的核心开关，让智能体看到 PDF 中的所有视觉元素",
+                    "default": false
+                },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "[read] 是否提取图片二进制数据（base64 编码），使用 PyMuPDF doc.extract_image()，默认 false。注意：开启后返回数据可能很大",
+                    "default": false
+                },
+                "include_metadata_full": {
+                    "type": "boolean",
+                    "description": "[read] 是否提取完整元数据（含日期/keywords/PDF版本/加密状态等），默认 false",
+                    "default": false
+                },
+                "include_page_geometry": {
+                    "type": "boolean",
+                    "description": "[read] 是否提取页面几何信息（尺寸/方向/旋转角度/mediabox/cropbox），默认 false",
+                    "default": false
+                },
+                "include_signatures": {
+                    "type": "boolean",
+                    "description": "[read] 是否提取数字签名信息（遍历 widget 中的签名字段），默认 false",
+                    "default": false
+                },
+                "include_visual": {
+                    "type": "boolean",
+                    "description": "[read] 便捷开关，启用时同时提取 layout + drawings + page_geometry（视觉级布局）。让智能体像看页面一样获得 PDF 的所有视觉元素布局信息，默认 false",
+                    "default": false
+                },
+                // ===== convert 操作参数 =====
                 "target_format": {
                     "type": "string",
                     "enum": ["txt", "md", "html"],
                     "description": "[convert] 目标格式"
                 },
+                // ===== modify 操作参数 =====
+                "operation": {
+                    "type": "string",
+                    "enum": ["rotate_pages", "delete_pages", "extract_pages", "reorder_pages",
+                             "merge", "split",
+                             "add_text_watermark", "add_image_watermark",
+                             "add_header_footer",
+                             "encrypt", "decrypt",
+                             "set_metadata",
+                             "add_bookmarks", "set_toc",
+                             "add_annotation",
+                             "fill_form",
+                             "compress"],
+                    "description": "[modify] 修改操作类型，分发到具体子操作"
+                },
                 "output_path": {
                     "type": "string",
-                    "description": "[convert] 输出文件路径（可选，默认自动生成）"
+                    "description": "[convert/modify] 输出文件路径（可选；convert 默认自动生成，modify 默认覆盖源文件）"
+                },
+                // 页面操作参数
+                "rotation": {
+                    "type": "integer",
+                    "enum": [90, 180, 270],
+                    "description": "[modify rotate_pages] 旋转角度（顺时针）"
+                },
+                "new_order": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "[modify reorder_pages] 新的页面顺序列表（1-based），必须包含所有页面且每个只出现一次"
+                },
+                // 合并拆分参数
+                "input_paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "[modify merge] 要合并到源 PDF 之后的 PDF 文件路径列表（相对于工作区）"
+                },
+                "mode": {
+                    "type": "string",
+                    "enum": ["ranges", "every_page", "every_n_pages"],
+                    "description": "[modify split] 拆分模式: ranges=按范围, every_page=每页一个PDF, every_n_pages=每N页一个PDF"
+                },
+                "ranges": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "start": {"type": "integer", "description": "起始页（1-based）"},
+                            "end": {"type": "integer", "description": "结束页（1-based）"}
+                        }
+                    },
+                    "description": "[modify split] 拆分范围列表（mode='ranges' 时必填）"
+                },
+                "n": {
+                    "type": "integer",
+                    "description": "[modify split] 每 N 页拆分为一个 PDF（mode='every_n_pages' 时必填）"
+                },
+                "output_dir": {
+                    "type": "string",
+                    "description": "[modify split] 输出目录（可选，默认与源文件同目录）"
+                },
+                // 水印参数
+                "text": {
+                    "type": "string",
+                    "description": "[modify add_text_watermark] 水印文字（支持中文，自动使用 CJK 字体）"
+                },
+                "image_path": {
+                    "type": "string",
+                    "description": "[modify add_image_watermark] 水印图片路径（相对于工作区）"
+                },
+                "font_size": {
+                    "type": "number",
+                    "description": "[modify add_text_watermark/add_header_footer] 字号（add_text_watermark 默认 50，add_header_footer 默认 10）"
+                },
+                "color": {
+                    "description": "[modify add_text_watermark/add_annotation] 颜色，可为十六进制字符串（如 \"#FF0000\"）或 RGB 元组 [r,g,b]（0-1）",
+                    "oneOf": [
+                        {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+                        {"type": "array", "items": {"type": "number"}, "minItems": 3, "maxItems": 3}
+                    ]
+                },
+                "opacity": {
+                    "type": "number",
+                    "minimum": 0, "maximum": 1,
+                    "description": "[modify add_text_watermark/add_image_watermark] 不透明度（0-1，默认 0.3）"
+                },
+                "position": {
+                    "description": "[modify add_text_watermark/add_image_watermark] 水印位置：枚举或坐标",
+                    "oneOf": [
+                        {"type": "string", "enum": ["center", "top-left", "top-right", "bottom-left", "bottom-right"]},
+                        {"type": "array", "items": {"type": "number"}, "minItems": 2, "maxItems": 2}
+                    ]
+                },
+                "scale": {
+                    "type": "number",
+                    "description": "[modify add_image_watermark] 图片缩放比例（默认 0.5）"
+                },
+                // 页眉页脚参数
+                "header_text": {
+                    "type": "string",
+                    "description": "[modify add_header_footer] 页眉文字（可选）"
+                },
+                "footer_text": {
+                    "type": "string",
+                    "description": "[modify add_header_footer] 页脚文字（可选）"
+                },
+                "margin": {
+                    "type": "number",
+                    "description": "[modify add_header_footer] 边距（points，默认 30）"
+                },
+                "show_page_number": {
+                    "type": "boolean",
+                    "description": "[modify add_header_footer] 是否在页脚显示页码（默认 true）"
+                },
+                "header_align": {
+                    "type": "string",
+                    "enum": ["left", "center", "right"],
+                    "description": "[modify add_header_footer] 页眉对齐（默认 center）"
+                },
+                "footer_align": {
+                    "type": "string",
+                    "enum": ["left", "center", "right"],
+                    "description": "[modify add_header_footer] 页脚对齐（默认 center）"
+                },
+                // 加密解密参数
+                "user_password": {
+                    "type": "string",
+                    "description": "[modify encrypt] 用户密码（打开 PDF 需要）"
+                },
+                "owner_password": {
+                    "type": "string",
+                    "description": "[modify encrypt] 所有者密码（修改权限需要，默认同 user_password）"
+                },
+                "password": {
+                    "type": "string",
+                    "description": "[modify decrypt] PDF 密码（用户密码或所有者密码）"
+                },
+                "permissions": {
+                    "type": "object",
+                    "description": "[modify encrypt] 权限字典，可包含 print/copy/modify/annotate/fill_forms/extract/assemble/print_hq（默认全部允许）",
+                    "properties": {
+                        "print": {"type": "boolean"},
+                        "copy": {"type": "boolean"},
+                        "modify": {"type": "boolean"},
+                        "annotate": {"type": "boolean"},
+                        "fill_forms": {"type": "boolean"},
+                        "extract": {"type": "boolean"},
+                        "assemble": {"type": "boolean"},
+                        "print_hq": {"type": "boolean"}
+                    }
+                },
+                // 元数据参数
+                "metadata": {
+                    "type": "object",
+                    "description": "[modify set_metadata] 元数据字典，可包含 title/author/subject/keywords/creator/producer",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "author": {"type": "string"},
+                        "subject": {"type": "string"},
+                        "keywords": {"type": "string"},
+                        "creator": {"type": "string"},
+                        "producer": {"type": "string"}
+                    }
+                },
+                // 书签目录参数
+                "bookmarks": {
+                    "type": "array",
+                    "description": "[modify add_bookmarks] 书签列表（在现有书签后追加）",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string", "description": "书签标题"},
+                            "page": {"type": "integer", "description": "目标页码（1-based）"},
+                            "level": {"type": "integer", "description": "层级（1=顶级，2=二级，...）"}
+                        },
+                        "required": ["title", "page"]
+                    }
+                },
+                "toc": {
+                    "type": "array",
+                    "description": "[modify set_toc] 目录大纲列表（覆盖现有 TOC）",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string", "description": "目录条目标题"},
+                            "page": {"type": "integer", "description": "目标页码（1-based）"},
+                            "level": {"type": "integer", "description": "层级（1=顶级，2=二级，...）"}
+                        },
+                        "required": ["title", "page"]
+                    }
+                },
+                // 注释参数
+                "type": {
+                    "type": "string",
+                    "enum": ["text", "highlight", "underline", "strikethrough", "squiggly", "stamp"],
+                    "description": "[modify add_annotation] 注释类型"
+                },
+                "rect": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 4, "maxItems": 4,
+                    "description": "[modify add_annotation] 注释区域 [x0, y0, x1, y1]（highlight/underline/strikethrough/squiggly/stamp 必填）"
+                },
+                "point": {
+                    "type": "array",
+                    "items": {"type": "number"},
+                    "minItems": 2, "maxItems": 2,
+                    "description": "[modify add_annotation] 注释位置 [x, y]（text 类型必填）"
+                },
+                "contents": {
+                    "type": "string",
+                    "description": "[modify add_annotation] 注释内容文字"
+                },
+                "author": {
+                    "type": "string",
+                    "description": "[modify add_annotation] 注释作者"
+                },
+                // 表单参数
+                "fields": {
+                    "type": "object",
+                    "description": "[modify fill_form] 表单字段值字典，如 {\"name\": \"张三\", \"age\": \"25\"}",
+                    "additionalProperties": {"type": "string"}
+                },
+                // 压缩参数
+                "garbage": {
+                    "type": "boolean",
+                    "description": "[modify compress] 是否清除垃圾对象（默认 true）"
+                },
+                "deflate": {
+                    "type": "boolean",
+                    "description": "[modify compress] 是否使用 deflate 压缩流（默认 true）"
+                },
+                "clean": {
+                    "type": "boolean",
+                    "description": "[modify compress] 是否清理内容流（默认 true）"
+                },
+                "subset_fonts": {
+                    "type": "boolean",
+                    "description": "[modify compress] 是否子集化字体（默认 true）"
                 }
             },
             "required": ["action", "path"]
@@ -679,6 +1141,7 @@ impl Handler for PdfHandler {
             "read" => execute_read(&self.doc_service, "pdf", params).await,
             "convert" => execute_convert(&self.doc_service, "pdf", params).await,
             "analyze" => execute_analyze(&self.doc_service, "pdf", params).await,
+            "modify" => execute_modify(&self.doc_service, "pdf", params).await,
             _ => HandlerResult {
                 success: false,
                 output: None,

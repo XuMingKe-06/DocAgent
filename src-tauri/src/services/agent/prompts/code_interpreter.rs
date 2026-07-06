@@ -19,14 +19,16 @@ pub const CODE_INTERPRETER_GUIDE: &str = r#"
 - 读取文档内容 -> action="read"
 - 格式转换 -> action="convert"
 - 文档分析统计 -> action="analyze"
+- **修改 PDF** -> action="modify"（pdf_handler 提供 17 个子操作，优先使用，详见 PDF_DESIGN_GUIDE）
 
 #### 代码编写规范
 
 1. **使用 helper 函数**：优先使用 `create_word_doc()`、`save_word_doc()` 等 helper，它们内置了专业配色方案
 2. **保存到 working_dir**：所有输出文件保存到 `working_dir` 变量指定的目录
-3. **中文支持**：matplotlib 使用 `plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']`
+3. **中文支持**：matplotlib 使用 `plt.rcParams['font.sans-serif'] = ['Microsoft YaHei']`；reportlab 使用 `register_chinese_font()` 注册中文字体
 4. **错误处理**：代码应有基本的 try/except，避免因小错误导致整体失败
 5. **代码简洁**：一次只做一件事，避免过长的代码
+6. **PDF 修改原则**：编辑现有 PDF 时直接用 PyMuPDF 修改原文件，**不要用代码重新生成 PDF**（详见 PDF_DESIGN_GUIDE）
 
 #### 示例：生成带图表的 Word 报告
 
