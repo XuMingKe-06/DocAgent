@@ -199,7 +199,7 @@ jobs:
             Write-Host "正在上传: $fileName ($([math]::Round($fileItem.Length/1MB,2)) MB)"
             try {
               $client = New-Object System.Net.Http.HttpClient
-              $client.Timeout = [System.TimeSpan]::FromMinutes(10)
+              $client.Timeout = [System.TimeSpan]::FromMinutes(120)
               $content = New-Object System.Net.Http.MultipartFormDataContent
               $fileStream = [System.IO.File]::OpenRead($fileItem.FullName)
               $fileContent = New-Object System.Net.Http.StreamContent($fileStream)
