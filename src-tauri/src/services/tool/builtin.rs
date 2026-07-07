@@ -1314,6 +1314,178 @@ mod tests {
         assert!(summary.contains("2. 第二条笔记"));
         assert!(summary.contains("update_notes"));
     }
+
+    /// 测试 is_script_filename 函数：识别脚本文件扩展名
+    #[test]
+    fn test_is_script_filename() {
+        // 脚本文件扩展名应被识别
+        assert!(is_script_filename("test.py"));
+        assert!(is_script_filename("script.sh"));
+        assert!(is_script_filename("run.bash"));
+        assert!(is_script_filename("power.ps1"));
+        assert!(is_script_filename("batch.bat"));
+        assert!(is_script_filename("cmd.cmd"));
+        assert!(is_script_filename("ruby.rb"));
+        assert!(is_script_filename("lua.lua"));
+        assert!(is_script_filename("perl.pl"));
+
+        // 大小写不敏感
+        assert!(is_script_filename("TEST.PY"));
+        assert!(is_script_filename("Script.SH"));
+
+        // 包含路径的脚本文件
+        assert!(is_script_filename("/tmp/test.py"));
+        assert!(is_script_filename("D:\\workspace\\script.py"));
+        assert!(is_script_filename("subdir/script.sh"));
+
+        // 非脚本文件不应被识别
+        assert!(!is_script_filename("readme.txt"));
+        assert!(!is_script_filename("notes.md"));
+        assert!(!is_script_filename("data.csv"));
+        assert!(!is_script_filename("config.json"));
+        assert!(!is_script_filename("document.docx"));
+        assert!(!is_script_filename("image.png"));
+        assert!(!is_script_filename("no_extension"));
+    }
+
+    /// 测试 is_script_leak_command 函数：检测 cp 命令将脚本复制到工作区（Windows 风格路径）
+    #[test]
+    fn test_is_script_leak_command_cp_windows_path() {
+        let workspace_root = "D:\\DeskTop\\test";
+
+        // 日志中的实际命令：cp 脚本到工作区（Windows 风格路径）
+        let cmd = "cp \"C:/Users/a1926/AppData/Local/Temp/docagent/scripts/modify_resume_pdf.py\" \"D:/DeskTop/test/modify_resume_pdf.py\" && cd \"D:/DeskTop/test\" && python modify_resume_pdf.py 2>&1";
+        assert!(is_script_leak_command(cmd, workspace_root),
+            "Windows 风格路径的 cp 命令应被识别为脚本泄露");
+    }
+
+    /// 测试 is_script_leak_command 函数：检测 cp 命令将脚本复制到工作区（Git Bash 风格路径）
+    #[test]
+    fn test_is_script_leak_command_cp_gitbash_path() {
+        let workspace_root = "D:\\DeskTop\\test";
+
+        // 日志中的实际命令：cp 脚本到工作区（Git Bash 风格路径 /d/DeskTop/test）
+        let cmd = "cp \"C:/Users/a1926/AppData/Local/Temp/docagent/scripts/fix_resume.py\" \"/d/DeskTop/test/fix_resume.py\" && cd /d/DeskTop/test && python -u fix_resume.py 2>&1";
+        assert!(is_script_leak_command(cmd, workspace_root),
+            "Git Bash 风格路径的 cp 命令应被识别为脚本泄露");
+    }
+
+    /// 测试 is_script_leak_command 函数：检测 mv 命令将脚本移动到工作区
+    #[test]
+    fn test_is_script_leak_command_mv_to_workspace() {
+        let workspace_root = "D:\\DeskTop\\test";
+
+        let cmd = "mv /tmp/docagent/scripts/script.py /d/DeskTop/test/script.py";
+        assert!(is_script_leak_command(cmd, workspace_root),
+            "mv 命令将脚本移动到工作区应被识别为脚本泄露");
+    }
+
+    /// 测试 is_script_leak_command 函数：检测重定向将脚本写入工作区
+    #[test]
+    fn test_is_script_leak_command_redirect_to_workspace() {
+        let workspace_root = "D:\\DeskTop\\test";
+
+        // 使用 echo + 重定向写入脚本文件
+        let cmd = "echo \"print('hello')\" > /d/DeskTop/test/hello.py";
+        assert!(is_script_leak_command(cmd, workspace_root),
+            "重定向写入脚本到工作区应被识别为脚本泄露");
+
+        // 使用 cat + 重定向
+        let cmd2 = "cat > /d/DeskTop/test/script.py << EOF\nprint('hello')\nEOF";
+        assert!(is_script_leak_command(cmd2, workspace_root),
+            "cat 重定向写入脚本到工作区应被识别为脚本泄露");
+    }
+
+    /// 测试 is_script_leak_command 函数：安全命令不应被误判
+    #[test]
+    fn test_is_script_leak_command_safe_commands() {
+        let workspace_root = "D:\\DeskTop\\test";
+
+        // 直接执行 temp 目录中的脚本（不复制到工作区）
+        let cmd1 = "python \"C:/Users/a1926/AppData/Local/Temp/docagent/scripts/script.py\" 2>&1";
+        assert!(!is_script_leak_command(cmd1, workspace_root),
+            "直接执行 temp 目录脚本不应被识别为脚本泄露");
+
+        // 列出工作区文件
+        let cmd2 = "ls -la /d/DeskTop/test/";
+        assert!(!is_script_leak_command(cmd2, workspace_root),
+            "ls 命令不应被识别为脚本泄露");
+
+        // 在工作区内执行 python -c 内联代码
+        let cmd3 = "cd /d/DeskTop/test && python -c \"print('hello')\"";
+        assert!(!is_script_leak_command(cmd3, workspace_root),
+            "python -c 内联代码不应被识别为脚本泄露");
+
+        // 复制非脚本文件到工作区
+        let cmd4 = "cp /tmp/data.csv /d/DeskTop/test/data.csv";
+        assert!(!is_script_leak_command(cmd4, workspace_root),
+            "复制非脚本文件不应被识别为脚本泄露");
+
+        // workspace_root 为空
+        let cmd5 = "cp /tmp/script.py /workspace/script.py";
+        assert!(!is_script_leak_command(cmd5, ""),
+            "workspace_root 为空时不应识别为脚本泄露");
+    }
+
+    /// 测试 is_script_leak_command 函数：多种脚本扩展名
+    #[test]
+    fn test_is_script_leak_command_various_script_extensions() {
+        let workspace_root = "D:\\DeskTop\\test";
+
+        // .sh 脚本
+        assert!(is_script_leak_command(
+            "cp /tmp/script.sh /d/DeskTop/test/script.sh", workspace_root));
+        // .bash 脚本
+        assert!(is_script_leak_command(
+            "cp /tmp/script.bash /d/DeskTop/test/script.bash", workspace_root));
+        // .ps1 脚本
+        assert!(is_script_leak_command(
+            "cp /tmp/script.ps1 /d/DeskTop/test/script.ps1", workspace_root));
+        // .bat 脚本
+        assert!(is_script_leak_command(
+            "cp /tmp/script.bat /d/DeskTop/test/script.bat", workspace_root));
+    }
+
+    /// 集成测试：WriteTextFileTool 拒绝写入脚本文件到工作区
+    /// 验证 LLM 试图通过 write_text_file 创建 .py 文件时会被拒绝
+    #[tokio::test]
+    async fn test_write_text_file_rejects_script_file() {
+        let mut registry = ToolRegistry::new();
+        let _ = register_builtin_tools(&mut registry, String::new());
+
+        let tool = registry.get_arc("write_text_file").unwrap();
+
+        // 尝试写入 .py 脚本文件，应被拒绝
+        let result = tool.execute(json!({
+            "path": "script.py",
+            "content": "print('hello')",
+            "workspace_root": ""
+        })).await;
+
+        assert!(!result.success, "写入 .py 文件应被拒绝");
+        assert!(result.error.is_some());
+        let error = result.error.unwrap();
+        assert!(error.contains("脚本文件"), "错误信息应提及脚本文件");
+        assert!(error.contains("write_script"), "错误信息应引导使用 write_script 工具");
+
+        // 尝试写入 .sh 脚本文件，也应被拒绝
+        let result2 = tool.execute(json!({
+            "path": "script.sh",
+            "content": "echo hello",
+            "workspace_root": ""
+        })).await;
+
+        assert!(!result2.success, "写入 .sh 文件应被拒绝");
+
+        // 写入普通文本文件应成功（不被拒绝）
+        let result3 = tool.execute(json!({
+            "path": "readme.txt",
+            "content": "hello world",
+            "workspace_root": ""
+        })).await;
+
+        assert!(result3.success, "写入普通文本文件应成功");
+    }
 }
 
 // ============================================================
@@ -1874,12 +2046,24 @@ impl Tool for CreateDirectoryTool {
 // write_text_file - 写入纯文本文件
 // ============================================================
 
+/// 判断文件名是否为脚本文件
+/// 用于阻止通过 write_text_file 工具将脚本文件写入工作区
+/// 受保护扩展名：.py/.sh/.bash/.ps1/.bat/.cmd/.rb/.lua/.pl
+fn is_script_filename(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    const SCRIPT_EXTENSIONS: &[&str] = &[
+        ".py", ".sh", ".bash", ".ps1", ".bat", ".cmd",
+        ".rb", ".lua", ".pl",
+    ];
+    SCRIPT_EXTENSIONS.iter().any(|ext| lower.ends_with(ext))
+}
+
 struct WriteTextFileTool;
 
 #[async_trait]
 impl Tool for WriteTextFileTool {
     fn tool_name(&self) -> &str { "write_text_file" }
-    fn description(&self) -> &str { "写入纯文本文件内容（.txt/.md/.csv/.json等），不依赖Sidecar。使用场景：创建纯文本文件、修改Markdown文件、保存JSON配置。支持追加模式。注意：仅适用于纯文本，生成结构化文档请使用docx_handler/xlsx_handler/pptx_handler/pdf_handler的generate操作。内容大小限制4KB（约4000字符），超出可能触发LLM响应截断。" }
+    fn description(&self) -> &str { "写入纯文本文件内容（.txt/.md/.csv/.json等），不依赖Sidecar。使用场景：创建纯文本文件、修改Markdown文件、保存JSON配置。支持追加模式。注意：仅适用于纯文本，生成结构化文档请使用docx_handler/xlsx_handler/pptx_handler/pdf_handler的generate操作。禁止写入脚本文件（.py/.sh/.bash/.ps1/.bat/.cmd等），脚本文件请使用write_script工具写入系统临时目录。内容大小限制4KB（约4000字符），超出可能触发LLM响应截断。" }
     fn category(&self) -> &str { "filesystem" }
     fn parameters(&self) -> Value {
         json!({
@@ -1922,6 +2106,22 @@ impl Tool for WriteTextFileTool {
                 output: None,
                 error: Some("缺少文件路径".to_string()),
                 duration_ms: start.elapsed().as_millis() as u64, error_code: Some(crate::errors::TOOL_INVALID_PARAMS),
+            };
+        }
+
+        // 安全校验：拒绝写入脚本文件到工作区
+        // 脚本文件应通过 write_script 工具创建到系统临时目录，避免污染工作区
+        // 受保护扩展名：.py/.sh/.bash/.ps1/.bat/.cmd/.rb/.lua/.pl 等
+        if is_script_filename(file_path) {
+            return ToolResult {
+                success: false,
+                output: None,
+                error: Some(format!(
+                    "不允许通过 write_text_file 写入脚本文件: {}。请改用 write_script 工具将脚本写入系统临时目录，再通过 run_command 工具执行",
+                    file_path
+                )),
+                duration_ms: start.elapsed().as_millis() as u64,
+                error_code: Some(crate::errors::TOOL_INVALID_PARAMS),
             };
         }
 
@@ -3347,6 +3547,79 @@ fn infer_script_language(filename: &str, language: &str) -> (String, &'static st
 // 2. 从 PATH 环境变量查找 git.exe，推断 bash.exe 位置
 // 3. 从 PATH 直接查找 bash.exe
 
+/// 检测命令是否试图将脚本文件复制/移动到工作区目录
+/// 阻止以下脚本泄露途径：
+/// 1. cp/mv 命令将脚本文件从临时目录复制到工作区
+/// 2. 重定向（>、>>）将脚本内容写入工作区
+/// 3. install 命令将脚本安装到工作区
+///
+/// 检测逻辑：命令同时满足以下条件时拒绝执行
+/// - 包含文件复制/移动/重定向操作（cp/copy/mv/move/install/>/>>）
+/// - 命令中出现脚本文件扩展名（.py/.sh/.bash/.ps1/.bat/.cmd 等）
+/// - 命令中出现工作区路径（用于判断目标是否为工作区）
+///
+/// 路径格式兼容：
+/// - Windows 风格：D:\DeskTop\test 或 D:/DeskTop/test
+/// - Git Bash 风格：/d/DeskTop/test（盘符 D: 转换为 /d/）
+fn is_script_leak_command(command: &str, workspace_root: &str) -> bool {
+    if workspace_root.is_empty() {
+        return false;
+    }
+
+    let lower = command.to_lowercase();
+
+    // 计算工作区路径的多种格式表示，使命令中任意一种格式都能匹配
+    // 1. Windows 风格（正斜杠）：D:\DeskTop\test -> d:/desktop/test
+    let ws_windows = workspace_root.to_lowercase().replace('\\', "/");
+    // 2. Git Bash 风格：D:/DeskTop/test -> /d/DeskTop/test
+    //    将 "d:/..." 转换为 "/d/..."（移除冒号，前加 /）
+    let ws_gitbash = if ws_windows.len() >= 2 && ws_windows.as_bytes()[1] == b':' {
+        format!("/{}", ws_windows.replacen(':', "", 1))
+    } else {
+        ws_windows.clone()
+    };
+
+    // 命令中是否出现工作区路径（任意一种格式匹配即可）
+    let cmd_normalized = lower.replace('\\', "/");
+    let mentions_workspace = cmd_normalized.contains(&ws_windows)
+        || cmd_normalized.contains(&ws_gitbash);
+    if !mentions_workspace {
+        return false;
+    }
+
+    // 命令中是否出现脚本文件扩展名（作为子字符串）
+    // 命令中的脚本路径可能是 .py、.sh 等扩展名，需要检查多种边界情况
+    const SCRIPT_EXT_TOKENS: &[&str] = &[
+        ".py ", ".py\"", ".py'", ".py;",
+        ".sh ", ".sh\"", ".sh'", ".sh;",
+        ".bash ", ".bash\"", ".bash'", ".bash;",
+        ".ps1 ", ".ps1\"", ".ps1'", ".ps1;",
+        ".bat ", ".bat\"", ".bat'", ".bat;",
+        ".cmd ", ".cmd\"", ".cmd'", ".cmd;",
+    ];
+    let has_script_ext = SCRIPT_EXT_TOKENS.iter().any(|tok| lower.contains(tok))
+        || lower.ends_with(".py")
+        || lower.ends_with(".sh")
+        || lower.ends_with(".bash")
+        || lower.ends_with(".ps1")
+        || lower.ends_with(".bat")
+        || lower.ends_with(".cmd");
+    if !has_script_ext {
+        return false;
+    }
+
+    // 命令中是否包含文件复制/移动/重定向操作
+    // cp/copy/mv/move 命令；>、>> 重定向；install 安装命令；tee 写入命令
+    lower.contains("cp ")
+        || lower.contains("copy ")
+        || lower.contains("mv ")
+        || lower.contains("move ")
+        || lower.contains("install ")
+        || lower.contains("> ")
+        || lower.contains(">>")
+        || lower.contains("tee ")
+}
+
 /// 命令执行工具
 /// 通过 Git Bash 执行 Shell 命令，捕获 stdout/stderr/exit_code
 pub struct RunCommandTool {
@@ -3366,7 +3639,8 @@ impl Tool for RunCommandTool {
          工作目录默认为当前工作区，可通过 working_dir 参数指定其他目录。\
          命令超时默认 60 秒，可通过 timeout 参数调整（最大 300 秒）。\
          输出超过 6000 字符会被自动截断。\
-         高风险命令（含 rm/del/rmdir 等）会请求用户确认。"
+         高风险命令（含 rm/del/rmdir 等）会请求用户确认。\
+         重要：禁止通过 cp/mv/重定向等方式将脚本文件（.py/.sh/.bash等）复制到工作区目录，脚本文件应只在系统临时目录中执行。"
     }
 
     fn category(&self) -> &str { "code" }
@@ -3412,6 +3686,25 @@ impl Tool for RunCommandTool {
                 success: false,
                 output: None,
                 error: Some("缺少命令参数".to_string()),
+                duration_ms: start.elapsed().as_millis() as u64,
+                error_code: Some(crate::errors::TOOL_INVALID_PARAMS),
+            };
+        }
+
+        // 安全校验：阻止将脚本文件复制/移动到工作区目录
+        // 脚本文件应只在系统临时目录中创建和执行，不允许通过 cp/mv/重定向等方式泄露到工作区
+        if is_script_leak_command(&command, workspace_root) {
+            log::warn!(
+                "run_command: 检测到脚本泄露命令，已拒绝执行: {}",
+                command
+            );
+            return ToolResult {
+                success: false,
+                output: None,
+                error: Some(format!(
+                    "检测到命令试图将脚本文件复制或移动到工作区目录，已拒绝执行。脚本文件应只在系统临时目录中创建和执行，请直接通过 'python <脚本路径>' 或 'bash <脚本路径>' 在临时目录中执行脚本。命令: {}",
+                    command
+                )),
                 duration_ms: start.elapsed().as_millis() as u64,
                 error_code: Some(crate::errors::TOOL_INVALID_PARAMS),
             };
