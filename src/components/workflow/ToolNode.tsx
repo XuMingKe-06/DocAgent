@@ -13,6 +13,8 @@ export function ToolNode({ node }: ToolNodeProps) {
   // 判断工具是否正在执行中
   const isRunning = node.status === "running";
   const [errorExpanded, setErrorExpanded] = useState(false);
+  // 控制命令输出详情的展开/收起
+  const [outputExpanded, setOutputExpanded] = useState(false);
 
   // 错误文本：截断显示
   const errorText = data.error || "";
@@ -20,6 +22,26 @@ export function ToolNode({ node }: ToolNodeProps) {
   const displayError = shouldTruncateError && !errorExpanded
     ? errorText.slice(0, 150) + "..."
     : errorText;
+
+  // run_command 工具的命令和结果展示
+  const isRunCommand = data.toolName === "run_command";
+  const command = isRunCommand ? String(data.input?.command ?? "") : "";
+  const workingDir = isRunCommand ? String(data.input?.working_dir ?? "") : "";
+  // 执行结果：stdout/stderr/exit_code
+  const result = data.result as { stdout?: string; stderr?: string; exit_code?: number } | undefined;
+  const stdout = result?.stdout ?? "";
+  const stderr = result?.stderr ?? "";
+  const exitCode = result?.exit_code;
+  const hasOutput = stdout.length > 0 || stderr.length > 0;
+  // 截断长输出（默认显示前 500 字符，展开后显示全部）
+  const OUTPUT_TRUNCATE_LEN = 500;
+  const shouldTruncateOutput = (stdout.length + stderr.length) > OUTPUT_TRUNCATE_LEN;
+  const truncateOutput = (text: string) => {
+    if (!shouldTruncateOutput || outputExpanded) return text;
+    return text.length > OUTPUT_TRUNCATE_LEN
+      ? text.slice(0, OUTPUT_TRUNCATE_LEN) + "..."
+      : text;
+  };
 
   return (
     <div className={`wf-node${isRunning ? " wf-tool-running" : ""}`}>
@@ -50,6 +72,77 @@ export function ToolNode({ node }: ToolNodeProps) {
             </span>
           )}
         </div>
+
+        {/* run_command 工具：展示完整命令、工作目录和执行结果 */}
+        {isRunCommand && command && (
+          <div className="wf-run-command-detail">
+            {/* 命令展示行 */}
+            <div className="wf-run-command-row">
+              <code className="wf-run-command-code">
+                <span className="wf-run-command-prompt">$ </span>
+                {command}
+              </code>
+              {/* 工作目录（非默认时展示） */}
+              {workingDir && (
+                <span className="wf-run-command-cwd" title={workingDir}>
+                  {t('toolBrief.document')}: {workingDir}
+                </span>
+              )}
+            </div>
+
+            {/* 执行结果（完成后展示） */}
+            {!isRunning && hasOutput && (
+              <div className="wf-run-command-output">
+                {/* 退出码标签 */}
+                {exitCode !== undefined && (
+                  <span
+                    className={`wf-run-command-exit${exitCode === 0 ? " wf-exit-ok" : " wf-exit-err"}`}
+                  >
+                    {t('toolBrief.exitCode')}: {exitCode}
+                  </span>
+                )}
+                {/* stdout 输出 */}
+                {stdout && (
+                  <pre className="wf-run-command-stdout">
+                    <span className="wf-run-command-label">{t('toolBrief.output')}:</span>
+                    {"\n"}
+                    {truncateOutput(stdout)}
+                  </pre>
+                )}
+                {/* stderr 错误输出 */}
+                {stderr && (
+                  <pre className="wf-run-command-stderr">
+                    <span className="wf-run-command-label">{t('toolBrief.errorOutput')}:</span>
+                    {"\n"}
+                    {truncateOutput(stderr)}
+                  </pre>
+                )}
+                {/* 长输出展开/收起按钮 */}
+                {shouldTruncateOutput && (
+                  <button
+                    className="wf-error-expand-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOutputExpanded(!outputExpanded);
+                    }}
+                  >
+                    {outputExpanded ? t('toolNode.collapseError') : t('toolNode.expandError')}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* 执行成功但无输出 */}
+            {!isRunning && !hasOutput && data.success && (
+              <div className="wf-run-command-output">
+                <span className="wf-run-command-exit wf-exit-ok">
+                  {t('toolBrief.exitCode')}: {exitCode ?? 0}
+                </span>
+                <span className="wf-run-command-noop">{t('toolBrief.noOutput')}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

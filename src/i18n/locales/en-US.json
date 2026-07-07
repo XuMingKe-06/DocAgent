@@ -711,7 +711,13 @@
     "search": "Search",
     "file": "file",
     "listDirectory": "List directory",
-    "write": "Write"
+    "write": "Write",
+    "runCommand": "Run command",
+    "writeScript": "Write script",
+    "exitCode": "Exit code",
+    "output": "Output",
+    "errorOutput": "Error output",
+    "noOutput": "(no output)"
   },
   "session": {
     "newSession": "New Session"

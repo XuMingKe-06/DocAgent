@@ -688,7 +688,13 @@
     "search": "搜索",
     "file": "文件",
     "listDirectory": "列出目录",
-    "write": "写入"
+    "write": "写入",
+    "runCommand": "执行命令",
+    "writeScript": "写入脚本",
+    "exitCode": "退出码",
+    "output": "输出",
+    "errorOutput": "错误输出",
+    "noOutput": "（无输出）"
   },
   "session": {
     "newSession": "新会话"

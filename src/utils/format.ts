@@ -93,6 +93,14 @@ export function generateToolBrief(toolName: string, input: Record<string, unknow
       return `${i18n.t('toolBrief.read')} ${f("path") || i18n.t('toolBrief.file')}`;
     case "write_text_file":
       return `${i18n.t('toolBrief.write')} ${f("path") || i18n.t('toolBrief.file')}`;
+    case "run_command":
+      // 显示实际执行的命令内容，给用户直观反馈
+      return f("command") ? `$ ${f("command")}` : i18n.t('toolBrief.runCommand');
+    case "write_script":
+      // 显示脚本语言和文件名
+      return f("filename")
+        ? `${i18n.t('toolBrief.writeScript')} ${f("filename")}`
+        : i18n.t('toolBrief.writeScript');
     default:
       return toolName;
   }
