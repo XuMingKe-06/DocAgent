@@ -1118,6 +1118,8 @@ fn current_timestamp_ms() -> u64 {
 
 ### T3.12:实现 TodoWrite 工具
 
+> **命名规则说明**：`todowrite` 工具沿用 OpenCode 原名，不适用"复合词保留下划线"规则。OpenCode 生态中该工具名已约定俗成。
+
 **文件**:
 - 创建:`src-tauri/src/services/tool/builtin/todowrite.rs`
 - 修改:`src-tauri/src/services/tool/builtin.rs`(注册 TodoWriteTool)
@@ -1420,7 +1422,7 @@ async fn execute_iteration(&self, session_id: &str, ...) -> ... {
 
 ```rust
 // 在 AgentContext 中,移除 format_scratchpad_summary 的注入
-// Scratchpad 仍可通过 update_notes 工具使用,但不再自动注入摘要
+// Scratchpad 仍可通过 scratchpad 工具使用,但不再自动注入摘要
 // TodoList 摘要取代 Scratchpad 摘要的位置
 
 impl AgentContext {

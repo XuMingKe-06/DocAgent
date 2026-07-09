@@ -212,9 +212,10 @@ impl PermissionAction {
 pub enum PermissionType {
     /// 通配:匹配所有工具
     Wildcard,
-    /// 读取文件:read, read_lines
+    /// 读取文件:read(支持行号范围,合并自原 read_lines)
     Read,
-    /// 编辑文件:edit, write, remove, rename
+    /// 编辑文件:edit, write, apply_patch, remove, rename
+    /// 说明:参照 OpenCode 官方模型,edit 权限类别统一覆盖 edit/write/apply_patch 三个文件修改工具
     Edit,
     /// 通配符搜索:glob
     Glob,
@@ -243,6 +244,9 @@ pub enum PermissionType {
     /// 文档处理:docx, xlsx, pptx, pdf
     /// v1.1 新增:用于 Document 模式下的文档 Handler 权限控制
     Document,
+    /// 询问用户:question(向用户提问以获取澄清信息)
+    /// 参照 OpenCode 官方模型,question 是独立权限类别
+    Question,
 }
 
 impl fmt::Display for PermissionType {
@@ -264,6 +268,7 @@ impl fmt::Display for PermissionType {
             PermissionType::ExternalDirectory => write!(f, "external_directory"),
             PermissionType::DoomLoop => write!(f, "doom_loop"),
             PermissionType::Document => write!(f, "document"),
+            PermissionType::Question => write!(f, "question"),
         }
     }
 }
@@ -288,6 +293,7 @@ impl PermissionType {
             "external_directory" => Some(Self::ExternalDirectory),
             "doom_loop" => Some(Self::DoomLoop),
             "document" => Some(Self::Document),
+            "question" => Some(Self::Question),
             _ => None,
         }
     }
@@ -296,8 +302,8 @@ impl PermissionType {
     /// 用于将工具调用映射到权限检查
     pub fn from_tool_name(tool_name: &str) -> Self {
         match tool_name {
-            "read" | "read_lines" => Self::Read,
-            "edit" | "write" | "remove" | "rename" | "copy" => Self::Edit,
+            "read" | "hash" | "exists" | "file_info" => Self::Read,
+            "edit" | "write" | "apply_patch" | "remove" | "rename" | "copy" | "mkdir" => Self::Edit,
             "remove_dir" => Self::Edit,
             "glob" => Self::Glob,
             "grep" | "search" => Self::Grep,
@@ -307,6 +313,8 @@ impl PermissionType {
             "task" => Self::Task,
             "webfetch" => Self::WebFetch,
             "websearch" => Self::WebSearch,
+            // question 工具映射到 Question 权限类型(独立类别)
+            "question" => Self::Question,
             // v1.1: 文档 Handler 映射到 Document 权限类型
             "docx" | "xlsx" | "pptx" | "pdf" => Self::Document,
             _ => Self::Wildcard,
@@ -1097,6 +1105,8 @@ impl PermissionRegistry {
             PermissionRule::new(RuleScope::Global, PermissionType::Skill, "*".into(), PermissionAction::Allow),
             // LSP:默认允许(阶段5实现)
             PermissionRule::new(RuleScope::Global, PermissionType::Lsp, "*".into(), PermissionAction::Allow),
+            // 询问用户:默认允许(低风险,仅向用户提问以获取澄清信息)
+            PermissionRule::new(RuleScope::Global, PermissionType::Question, "*".into(), PermissionAction::Allow),
         ]
     }
 
@@ -1258,7 +1268,7 @@ impl PermissionRequest {
 fn extract_target(tool_name: &str, params: &serde_json::Value) -> String {
     match tool_name {
         // 文件路径类工具:提取 path 或 file_path 参数
-        "read" | "read_lines" | "edit" | "write" | "remove"
+        "read" | "edit" | "write" | "apply_patch" | "remove"
         | "rename" | "copy" | "file_info" | "exists" | "hash" => {
             params.get("path")
                 .or_else(|| params.get("file_path"))
@@ -1937,7 +1947,8 @@ use crate::services::permission::{
 pub struct AgentExecutor<R: Runtime> {
     router: Arc<LlmRouter>,
     tool_registry: Arc<ToolRegistry>,
-    // [移除] 阶段1已移除 registry 字段
+    // [保留] v1.1: Document 模式下使用 handler_registry
+    handler_registry: Arc<Mutex<HandlerRegistry>>,
     emitter: AgentEmitter<R>,
     confirm_channels: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<crate::ConfirmDecision>>>>,
     // [新增] 权限审批通道(三选项)
@@ -2253,10 +2264,11 @@ impl AgentMode {
                     "high"
                 }
             }
-            "edit" | "write" | "rename" => "medium",
+            "edit" | "write" | "apply_patch" | "rename" | "copy" | "mkdir" => "medium",
             "write_script" => "medium",
-            "read" | "read_lines" | "list" | "file_info" | "exists" => "low",
+            "read" | "list" | "file_info" | "exists" => "low",
             "glob" | "grep" | "search" | "hash" => "low",
+            "question" => "low",
             _ => "normal",
         }
     }
@@ -2273,6 +2285,11 @@ impl AgentMode {
                 let path = params.get("path").and_then(|v| v.as_str()).unwrap_or("未知");
                 format!("写入文件: {}", path)
             }
+            "apply_patch" => {
+                let path = params.get("path").or_else(|| params.get("file_path"))
+                    .and_then(|v| v.as_str()).unwrap_or("未知");
+                format!("应用补丁: {}", path)
+            }
             "remove" => {
                 let path = params.get("path").and_then(|v| v.as_str()).unwrap_or("未知");
                 format!("删除文件: {}", path)
@@ -2284,6 +2301,12 @@ impl AgentMode {
             "write_script" => {
                 let lang = params.get("language").and_then(|v| v.as_str()).unwrap_or("脚本");
                 format!("写入并执行 {} 脚本", lang)
+            }
+            "question" => {
+                let question = params.get("question").and_then(|v| v.as_str())
+                    .or_else(|| params.get("text").and_then(|v| v.as_str()))
+                    .unwrap_or("未知问题");
+                format!("询问用户: {}", question)
             }
             _ => base_desc.to_string(),
         }
@@ -2708,14 +2731,14 @@ pub fn layer_agent_mode(mode: &AgentMode) -> String {
 你正处于 Plan 模式,在此模式下你只能进行只读操作:
 
 ### 允许的操作
-- 读取文件内容(read, read_lines)
+- 读取文件内容(read)
 - 搜索文件(glob, grep, search)
 - 列出目录(list)
 - 获取文件信息(file_info, exists)
 - 计算文件哈希(hash)
 
 ### 禁止的操作
-- 编辑文件(edit, write)
+- 编辑文件(edit, write, apply_patch)
 - 删除文件(remove, remove_dir)
 - 执行命令(bash)
 - 写入脚本(write_script)
@@ -2890,7 +2913,7 @@ pub struct AppState {
     pub confirm_channels: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<ConfirmDecision>>>>,
     // [新增] 权限审批通道(三选项)
     pub permission_channels: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionDecision>>>>,
-    // [移除] 阶段1已移除 doc_service 和 handler_registry
+    // [保留] v1.1: Document 模式下使用 doc_service 和 handler_registry
     pub llm_router: Arc<tokio::sync::RwLock<Arc<crate::services::llm::router::LlmRouter>>>,
     pub tool_registry: Arc<crate::services::tool::registry::ToolRegistry>,
     pub fs_watcher: Arc<crate::services::fs_watcher::FsWatcherService<tauri::Wry>>,
@@ -3172,7 +3195,12 @@ pub async fn switch_agent_mode(
             format!("无效的 Agent 模式: {}", mode),
         )),
     };
-    state.agent_mode_manager.switch_to_mode(&session_id, agent_mode).await;
+    // AgentModeManager 未提供统一的 switch_to_mode,按枚举分发到具体方法
+    match agent_mode {
+        AgentMode::Plan => state.agent_mode_manager.switch_to_plan(&session_id).await,
+        AgentMode::Build => state.agent_mode_manager.switch_to_build(&session_id).await,
+        AgentMode::Document => state.agent_mode_manager.switch_to_document(&session_id).await,
+    }
     log::info!("会话 {} 模式已切换为: {:?}", session_id, agent_mode);
     Ok(())
 }
@@ -4092,10 +4120,13 @@ npm run build
     "task": "allow",
     "skill": "allow",
     "webfetch": "allow",
-    "websearch": "allow"
+    "websearch": "allow",
+    "question": "allow"
   }
 }
 ```
+
+> 说明:`edit` 权限类别统一覆盖 `edit`、`write`、`apply_patch` 三个文件修改工具(参照 OpenCode 官方模型);`question` 是独立权限类别,控制向用户提问的工具。
 
 ### 7.3 DocAgent 相关文档
 

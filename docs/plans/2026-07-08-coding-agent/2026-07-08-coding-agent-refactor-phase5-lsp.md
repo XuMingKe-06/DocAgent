@@ -4,7 +4,7 @@
 > **创建日期**:2026-07-08
 > **阶段目标**:实现 LSP(Language Server Protocol)客户端,支持与外部语言服务器通信,提供代码跳转、引用查找、诊断信息、悬停信息等能力,让 Agent 获得现代 IDE 级别的代码理解能力
 > **依赖阶段**:[阶段 1:核心架构与工具链](./2026-07-08-coding-agent-refactor-phase1-core.md)、[阶段 2:权限系统与 Agent 模式](./2026-07-08-coding-agent-refactor-phase2-permission.md)、[阶段 3:Skill 系统与上下文管理](./2026-07-08-coding-agent-refactor-phase3-skill-context.md)
-> **预计任务数**:20 个(T5.01-T5.20)
+> **预计任务数**:17 个(T5.01-T5.17)
 > **v1.1 修订**:LSP 工具为只读代码理解工具,在 Plan/Build/Document 三种模式下均可用,无需按模式过滤
 
 ---
@@ -21,11 +21,16 @@ OpenCode 是第一个将 LSP(Language Server Protocol)视为"一等公民"的 AI
    - **上下文注入**:在发送请求前,主动提取调用栈、参数类型等元数据,让语言服务器返回更精准的结果
    - **多语言协同**:内置 LSP 路由层,根据文件路径自动选择对应语言服务器,支持跨语言跳转
 
-3. **LSP 工具链**:OpenCode 暴露以下 LSP 工具给 Agent:
-   - `lsp_definition`:跳转到符号定义
-   - `lsp_references`:查找符号引用
-   - `lsp_diagnostics`:获取文件诊断信息
-   - `lsp_hover`:获取悬停信息(类型、文档)
+3. **LSP 工具**:OpenCode 暴露单一 `lsp` 工具给 Agent(实验性,需环境变量 `OPENCODE_EXPERIMENTAL_LSP_TOOL` 开启),通过 `operation` 参数路由不同操作:
+   - `definition`:跳转到符号定义
+   - `references`:查找符号引用
+   - `hover`:获取悬停信息(类型、文档)
+   - `diagnostics`:获取文件诊断信息
+   - `document_symbol`:获取文档符号列表
+   - `workspace_symbol`:搜索工作区符号
+   - `implementation`:跳转到实现
+   - `call_hierarchy`:获取调用层级(direction=incoming|outgoing)
+   - 注:OpenCode 原生支持 9 种操作,其中 `incomingCalls`/`outgoingCalls` 在 DocAgent 中合并为 `call_hierarchy` 操作(通过子参数 `direction` 区分方向)
 
 ### 1.2 DocAgent 现状
 
@@ -38,9 +43,11 @@ OpenCode 是第一个将 LSP(Language Server Protocol)视为"一等公民"的 AI
 
 1. **实现 LSP 客户端**:支持与外部 LSP 服务器通过 JSON-RPC 2.0 通信
 2. **支持主流语言**:Rust(rust-analyzer)、Python(pylsp)、TypeScript(typescript-language-server)、Go(gopls)
-3. **实现 LSP 工具链**:goto_definition、find_references、diagnostics、hover
+3. **实现 LSP 工具**:单一 `lsp` 工具(参照 OpenCode 架构),通过 `operation` 参数路由 8 种操作(definition/references/hover/diagnostics/document_symbol/workspace_symbol/implementation/call_hierarchy)
 4. **LSP 服务器管理**:自动启动/停止,健康检查,结果缓存
 5. **权限系统集成**:LSP 工具受权限系统控制(默认 allow)
+
+> **注意**:LSP 工具为实验性功能,参照 OpenCode 的 `OPENCODE_EXPERIMENTAL_LSP_TOOL` 机制,通过配置项 `lsp.experimental_enabled`(默认 false)控制是否暴露给 Agent。
 
 ### 1.4 设计原则
 
@@ -63,19 +70,13 @@ T5.01 (LSP 依赖) ── T5.02 (LSP 类型) ── T5.03 (LSP 客户端)
                                             │       │
                                             │       └── T5.06 (结果缓存)
                                             │
-                                            ├── T5.07 (goto_definition 工具)
-                                            │
-                                            ├── T5.08 (find_references 工具)
-                                            │
-                                            ├── T5.09 (diagnostics 工具)
-                                            │
-                                            └── T5.10 (hover 工具)
+                                            └── T5.07 (lsp 工具,operation 参数路由)
 
-T5.11 (LSP 配置) ── T5.12 (LSP 权限) ── T5.13 (前端 LSP 状态)
+T5.08 (LSP 配置) ── T5.09 (LSP 权限) ── T5.10 (前端 LSP 状态)
 
-T5.14 (健康检查) ── T5.15 (优雅降级) ── T5.16 (多语言协同)
+T5.11 (健康检查) ── T5.12 (优雅降级) ── T5.13 (多语言协同)
 
-T5.17 (集成测试) ── T5.18 (文档更新) ── T5.19 (性能优化) ── T5.20 (验收测试)
+T5.14 (集成测试) ── T5.15 (文档更新) ── T5.16 (性能优化) ── T5.17 (验收测试)
 ```
 
 ---
@@ -717,6 +718,76 @@ impl LspClient {
         }).collect())
     }
 
+    /// 请求 textDocument/documentSymbol(获取文档符号列表)
+    /// TODO: 补充完整实现,解析 DocumentSymbol 数组为 LspSymbol
+    pub async fn document_symbol(
+        &self,
+        file_path: &Path,
+    ) -> Result<Vec<LspSymbol>, CommandError> {
+        let uri = path_to_uri(file_path);
+        let result = self.request("textDocument/documentSymbol", json!({
+            "textDocument": { "uri": uri }
+        })).await?;
+
+        // TODO: 解析 DocumentSymbol[] 响应为 LspSymbol 列表
+        // DocumentSymbol 包含: name, kind, range, selectionRange, detail?, children?
+        let _ = result; // 暂时忽略,待实现
+        Ok(vec![])
+    }
+
+    /// 请求 workspace/symbol(搜索工作区符号)
+    /// TODO: 补充完整实现,解析 SymbolInformation 数组为 LspSymbol
+    pub async fn workspace_symbol(
+        &self,
+        query: &str,
+    ) -> Result<Vec<LspSymbol>, CommandError> {
+        let result = self.request("workspace/symbol", json!({
+            "query": query
+        })).await?;
+
+        // TODO: 解析 SymbolInformation[] 响应为 LspSymbol 列表
+        // SymbolInformation 包含: name, kind, location, containerName?
+        let _ = result; // 暂时忽略,待实现
+        Ok(vec![])
+    }
+
+    /// 请求 textDocument/implementation(跳转到实现)
+    /// TODO: 补充完整实现,解析响应为 LspLocation 列表
+    pub async fn goto_implementation(
+        &self,
+        file_path: &Path,
+        line: u32,
+        character: u32,
+    ) -> Result<Vec<LspLocation>, CommandError> {
+        let uri = path_to_uri(file_path);
+        let result = self.request("textDocument/implementation", json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        })).await?;
+
+        // TODO: 复用 parse_locations 解析响应
+        Ok(parse_locations(&result))
+    }
+
+    /// 请求 textDocument/prepareCallHierarchy(准备调用层级)
+    /// TODO: 补充完整实现,定义 CallHierarchyItem 类型并解析响应
+    pub async fn prepare_call_hierarchy(
+        &self,
+        file_path: &Path,
+        line: u32,
+        character: u32,
+    ) -> Result<serde_json::Value, CommandError> {
+        let uri = path_to_uri(file_path);
+        let result = self.request("textDocument/prepareCallHierarchy", json!({
+            "textDocument": { "uri": uri },
+            "position": { "line": line, "character": character }
+        })).await?;
+
+        // TODO: 定义 CallHierarchyItem 结构并解析响应
+        // 后续 incomingCalls/outgoingCalls 请求需要使用 prepareCallHierarchy 返回的 item
+        Ok(result)
+    }
+
     /// 停止 LSP 服务器
     pub async fn shutdown(&self) -> Result<(), CommandError> {
         // 发送 shutdown 请求
@@ -1223,13 +1294,15 @@ impl LspResultCache {
 }
 ```
 
+**优化建议**:当前为每个 LSP 请求类型(definition/hover/references)分别建立独立的 RwLock<HashMap>,代码重复度高。未来可重构为泛型缓存 `HashMap<CacheKey, CacheEntry<T>>`,减少代码重复。当前阶段保持分类型实现以降低类型复杂性。
+
 **验证**:
 - `cargo build -p docagent_lib` 成功
 - 单元测试:缓存命中、过期、失效
 
 ---
 
-### T5.07:实现 lsp_definition 工具
+### T5.07:实现 lsp 工具(单一工具,operation 参数路由)
 
 **文件**:
 - 创建:`src-tauri/src/services/tool/builtin/lsp_tools.rs`
@@ -1237,8 +1310,9 @@ impl LspResultCache {
 
 **实施内容**:
 ```rust
-//! LSP 工具集:暴露 LSP 能力给 Agent
-//! 包含 goto_definition、find_references、diagnostics、hover 四个工具
+//! LSP 工具:暴露 LSP 能力给 Agent(单一工具,通过 operation 参数路由)
+//! 参照 OpenCode 架构,通过 operation 参数支持 8 种操作:
+//! definition/references/hover/diagnostics/document_symbol/workspace_symbol/implementation/call_hierarchy
 
 use async_trait::async_trait;
 use crate::services::tool::trait_def::Tool;
@@ -1251,8 +1325,8 @@ use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// lsp_definition 工具:跳转到符号定义
-pub struct LspGotoDefinitionTool {
+/// lsp 工具:单一入口,通过 operation 参数路由不同 LSP 操作(实验性)
+pub struct LspTool {
     /// LSP 服务器管理器
     manager: Arc<LspServerManager>,
     /// 语言路由器
@@ -1261,7 +1335,7 @@ pub struct LspGotoDefinitionTool {
     cache: Arc<LspResultCache>,
 }
 
-impl LspGotoDefinitionTool {
+impl LspTool {
     pub fn new(
         manager: Arc<LspServerManager>,
         router: Arc<LanguageRouter>,
@@ -1272,22 +1346,36 @@ impl LspGotoDefinitionTool {
 }
 
 #[async_trait]
-impl Tool for LspGotoDefinitionTool {
+impl Tool for LspTool {
     fn tool_name(&self) -> &str {
-        "lsp_definition"
+        "lsp"
     }
 
     fn description(&self) -> &str {
-        "跳转到符号的定义位置。基于 LSP 协议,精确定位函数、类、变量等符号的定义。比文本搜索更准确,能理解代码语义。支持 Rust、Python、TypeScript、Go、Java 等语言。"
+        "LSP 代码智能工具(实验性)。通过 operation 参数指定操作类型:\n\
+         - definition: 跳转到符号定义\n\
+         - references: 查找符号引用\n\
+         - hover: 获取悬停信息\n\
+         - diagnostics: 获取文件诊断\n\
+         - document_symbol: 获取文档符号列表\n\
+         - workspace_symbol: 搜索工作区符号\n\
+         - implementation: 跳转到实现\n\
+         - call_hierarchy: 获取调用层级(direction=incoming|outgoing)"
     }
 
     fn parameters(&self) -> Value {
         json!({
             "type": "object",
             "properties": {
-                "filePath": {
+                "operation": {
                     "type": "string",
-                    "description": "文件路径(相对于工作区根目录)"
+                    "enum": ["definition", "references", "hover", "diagnostics",
+                             "document_symbol", "workspace_symbol", "implementation", "call_hierarchy"],
+                    "description": "LSP 操作类型"
+                },
+                "file_path": {
+                    "type": "string",
+                    "description": "文件路径(绝对或相对工作区)"
                 },
                 "line": {
                     "type": "integer",
@@ -1296,9 +1384,23 @@ impl Tool for LspGotoDefinitionTool {
                 "character": {
                     "type": "integer",
                     "description": "光标所在列号(从 0 开始)"
+                },
+                "direction": {
+                    "type": "string",
+                    "enum": ["incoming", "outgoing"],
+                    "description": "call_hierarchy 方向(incoming=被谁调用,outgoing=调用了谁)"
+                },
+                "query": {
+                    "type": "string",
+                    "description": "workspace_symbol 搜索查询"
+                },
+                "include_declaration": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "references 是否包含声明位置"
                 }
             },
-            "required": ["filePath", "line", "character"]
+            "required": ["operation", "file_path"]
         })
     }
 
@@ -1307,11 +1409,52 @@ impl Tool for LspGotoDefinitionTool {
         params: Value,
         workspace_root: &str,
     ) -> Result<ToolResult, crate::errors::CommandError> {
-        let file_path_str = params.get("filePath")
+        let operation = params.get("operation")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::errors::CommandError::tool(
                 crate::errors::TOOL_INVALID_PARAMS,
-                "缺少 filePath 参数",
+                "缺少 operation 参数",
+            ))?;
+
+        match operation {
+            "definition" => self.try_lsp_definition(&params, workspace_root).await,
+            "references" => self.try_lsp_references(&params, workspace_root).await,
+            "hover" => self.try_lsp_hover(&params, workspace_root).await,
+            "diagnostics" => self.try_lsp_diagnostics(&params, workspace_root).await,
+            "document_symbol" => self.try_lsp_document_symbol(&params, workspace_root).await,
+            "workspace_symbol" => self.try_lsp_workspace_symbol(&params, workspace_root).await,
+            "implementation" => self.try_lsp_implementation(&params, workspace_root).await,
+            "call_hierarchy" => self.try_lsp_call_hierarchy(&params, workspace_root).await,
+            _ => Err(crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                format!("未知 operation: {}", operation),
+            )),
+        }
+    }
+}
+
+impl LspTool {
+    /// 解析文件路径为绝对路径(相对工作区根目录时拼接)
+    fn resolve_path(file_path_str: &str, workspace_root: &str) -> PathBuf {
+        let file_path = PathBuf::from(file_path_str);
+        if file_path.is_absolute() {
+            file_path
+        } else {
+            PathBuf::from(workspace_root).join(&file_path)
+        }
+    }
+
+    /// definition 操作:跳转到符号定义
+    async fn try_lsp_definition(
+        &self,
+        params: &Value,
+        workspace_root: &str,
+    ) -> Result<ToolResult, crate::errors::CommandError> {
+        let file_path_str = params.get("file_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                "缺少 file_path 参数",
             ))?;
 
         let line = params.get("line")
@@ -1323,12 +1466,7 @@ impl Tool for LspGotoDefinitionTool {
             .unwrap_or(0) as u32;
 
         // 解析文件路径
-        let file_path = PathBuf::from(file_path_str);
-        let abs_path = if file_path.is_absolute() {
-            file_path
-        } else {
-            PathBuf::from(workspace_root).join(&file_path)
-        };
+        let abs_path = Self::resolve_path(file_path_str, workspace_root);
 
         // 检查缓存
         if let Some(cached) = self.cache.get_definition(
@@ -1389,85 +1527,18 @@ impl Tool for LspGotoDefinitionTool {
             })),
         })
     }
-}
-```
 
-**验证**:
-- `cargo build -p docagent_lib` 成功
-- 集成测试:对测试代码执行 goto_definition
-
----
-
-### T5.08:实现 lsp_references 工具
-
-**文件**:
-- 修改:`src-tauri/src/services/tool/builtin/lsp_tools.rs`
-
-**实施内容**:
-```rust
-/// lsp_references 工具:查找符号的所有引用
-pub struct LspFindReferencesTool {
-    manager: Arc<LspServerManager>,
-    router: Arc<LanguageRouter>,
-    cache: Arc<LspResultCache>,
-}
-
-impl LspFindReferencesTool {
-    pub fn new(
-        manager: Arc<LspServerManager>,
-        router: Arc<LanguageRouter>,
-        cache: Arc<LspResultCache>,
-    ) -> Self {
-        Self { manager, router, cache }
-    }
-}
-
-#[async_trait]
-impl Tool for LspFindReferencesTool {
-    fn tool_name(&self) -> &str {
-        "lsp_references"
-    }
-
-    fn description(&self) -> &str {
-        "查找符号的所有引用位置。基于 LSP 协议,返回该符号在整个项目中被使用的位置列表。用于分析代码依赖关系、评估修改影响范围。"
-    }
-
-    fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "filePath": {
-                    "type": "string",
-                    "description": "文件路径"
-                },
-                "line": {
-                    "type": "integer",
-                    "description": "符号所在行号(从 0 开始)"
-                },
-                "character": {
-                    "type": "integer",
-                    "description": "符号所在列号(从 0 开始)"
-                },
-                "includeDeclaration": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "是否包含声明位置"
-                }
-            },
-            "required": ["filePath", "line", "character"]
-        })
-    }
-
-    async fn execute(
+    /// references 操作:查找符号的所有引用
+    async fn try_lsp_references(
         &self,
-        params: Value,
+        params: &Value,
         workspace_root: &str,
     ) -> Result<ToolResult, crate::errors::CommandError> {
-        let file_path_str = params.get("filePath")
+        let file_path_str = params.get("file_path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::errors::CommandError::tool(
                 crate::errors::TOOL_INVALID_PARAMS,
-                "缺少 filePath 参数",
+                "缺少 file_path 参数",
             ))?;
 
         let line = params.get("line")
@@ -1478,17 +1549,12 @@ impl Tool for LspFindReferencesTool {
             .and_then(|v| v.as_u64())
             .unwrap_or(0) as u32;
 
-        let include_declaration = params.get("includeDeclaration")
+        let include_declaration = params.get("include_declaration")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
 
         // 解析文件路径
-        let file_path = PathBuf::from(file_path_str);
-        let abs_path = if file_path.is_absolute() {
-            file_path
-        } else {
-            PathBuf::from(workspace_root).join(&file_path)
-        };
+        let abs_path = Self::resolve_path(file_path_str, workspace_root);
 
         // 检测语言
         let language = self.router.detect_language(&abs_path)
@@ -1523,78 +1589,22 @@ impl Tool for LspFindReferencesTool {
             })),
         })
     }
-}
-```
 
-**验证**:
-- `cargo build -p docagent_lib` 成功
-
----
-
-### T5.09:实现 lsp_diagnostics 工具
-
-**文件**:
-- 修改:`src-tauri/src/services/tool/builtin/lsp_tools.rs`
-
-**实施内容**:
-```rust
-/// lsp_diagnostics 工具:获取文件诊断信息(错误、警告)
-pub struct LspDiagnosticsTool {
-    manager: Arc<LspServerManager>,
-    router: Arc<LanguageRouter>,
-}
-
-impl LspDiagnosticsTool {
-    pub fn new(
-        manager: Arc<LspServerManager>,
-        router: Arc<LanguageRouter>,
-    ) -> Self {
-        Self { manager, router }
-    }
-}
-
-#[async_trait]
-impl Tool for LspDiagnosticsTool {
-    fn tool_name(&self) -> &str {
-        "lsp_diagnostics"
-    }
-
-    fn description(&self) -> &str {
-        "获取文件的诊断信息(编译错误、类型错误、警告等)。基于 LSP 协议,返回语言服务器检测到的问题列表。用于代码质量检查、错误定位。"
-    }
-
-    fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "filePath": {
-                    "type": "string",
-                    "description": "文件路径"
-                }
-            },
-            "required": ["filePath"]
-        })
-    }
-
-    async fn execute(
+    /// diagnostics 操作:获取文件诊断信息(错误、警告)
+    async fn try_lsp_diagnostics(
         &self,
-        params: Value,
+        params: &Value,
         workspace_root: &str,
     ) -> Result<ToolResult, crate::errors::CommandError> {
-        let file_path_str = params.get("filePath")
+        let file_path_str = params.get("file_path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::errors::CommandError::tool(
                 crate::errors::TOOL_INVALID_PARAMS,
-                "缺少 filePath 参数",
+                "缺少 file_path 参数",
             ))?;
 
         // 解析文件路径
-        let file_path = PathBuf::from(file_path_str);
-        let abs_path = if file_path.is_absolute() {
-            file_path
-        } else {
-            PathBuf::from(workspace_root).join(&file_path)
-        };
+        let abs_path = Self::resolve_path(file_path_str, workspace_root);
 
         // 检测语言
         let language = self.router.detect_language(&abs_path)
@@ -1637,79 +1647,18 @@ impl Tool for LspDiagnosticsTool {
             })),
         })
     }
-}
-```
 
-**验证**:
-- `cargo build -p docagent_lib` 成功
-
----
-
-### T5.10:实现 lsp_hover 工具
-
-**文件**:
-- 修改:`src-tauri/src/services/tool/builtin/lsp_tools.rs`
-
-**实施内容**:
-```rust
-/// lsp_hover 工具:获取符号的悬停信息(类型、文档)
-pub struct LspHoverTool {
-    manager: Arc<LspServerManager>,
-    router: Arc<LanguageRouter>,
-    cache: Arc<LspResultCache>,
-}
-
-impl LspHoverTool {
-    pub fn new(
-        manager: Arc<LspServerManager>,
-        router: Arc<LanguageRouter>,
-        cache: Arc<LspResultCache>,
-    ) -> Self {
-        Self { manager, router, cache }
-    }
-}
-
-#[async_trait]
-impl Tool for LspHoverTool {
-    fn tool_name(&self) -> &str {
-        "lsp_hover"
-    }
-
-    fn description(&self) -> &str {
-        "获取符号的悬停信息(类型签名、文档说明)。基于 LSP 协议,返回符号的详细类型信息和文档。用于理解符号的用法和含义。"
-    }
-
-    fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "filePath": {
-                    "type": "string",
-                    "description": "文件路径"
-                },
-                "line": {
-                    "type": "integer",
-                    "description": "符号所在行号(从 0 开始)"
-                },
-                "character": {
-                    "type": "integer",
-                    "description": "符号所在列号(从 0 开始)"
-                }
-            },
-            "required": ["filePath", "line", "character"]
-        })
-    }
-
-    async fn execute(
+    /// hover 操作:获取符号的悬停信息(类型、文档)
+    async fn try_lsp_hover(
         &self,
-        params: Value,
+        params: &Value,
         workspace_root: &str,
     ) -> Result<ToolResult, crate::errors::CommandError> {
-        let file_path_str = params.get("filePath")
+        let file_path_str = params.get("file_path")
             .and_then(|v| v.as_str())
             .ok_or_else(|| crate::errors::CommandError::tool(
                 crate::errors::TOOL_INVALID_PARAMS,
-                "缺少 filePath 参数",
+                "缺少 file_path 参数",
             ))?;
 
         let line = params.get("line")
@@ -1721,12 +1670,7 @@ impl Tool for LspHoverTool {
             .unwrap_or(0) as u32;
 
         // 解析文件路径
-        let file_path = PathBuf::from(file_path_str);
-        let abs_path = if file_path.is_absolute() {
-            file_path
-        } else {
-            PathBuf::from(workspace_root).join(&file_path)
-        };
+        let abs_path = Self::resolve_path(file_path_str, workspace_root);
 
         // 检查缓存
         if let Some(cached) = self.cache.get_hover(
@@ -1785,15 +1729,233 @@ impl Tool for LspHoverTool {
             })),
         })
     }
+
+    /// document_symbol 操作:获取文档符号列表
+    /// TODO: 完善 LSP textDocument/documentSymbol 请求的错误处理与缓存
+    async fn try_lsp_document_symbol(
+        &self,
+        params: &Value,
+        workspace_root: &str,
+    ) -> Result<ToolResult, crate::errors::CommandError> {
+        let file_path_str = params.get("file_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                "缺少 file_path 参数",
+            ))?;
+
+        // 解析文件路径
+        let abs_path = Self::resolve_path(file_path_str, workspace_root);
+
+        // 检测语言
+        let language = self.router.detect_language(&abs_path)
+            .ok_or_else(|| crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                format!("无法识别文件语言: {}", file_path_str),
+            ))?;
+
+        // 获取或启动 LSP 服务器
+        let client = self.manager.get_or_start(&language).await?;
+
+        // 发送 didOpen
+        let content = std::fs::read_to_string(&abs_path)?;
+        let language_id = self.router.get_language_id(&language);
+        client.did_open(&abs_path, language_id, &content).await?;
+
+        // 请求 documentSymbol
+        let symbols = client.document_symbol(&abs_path).await?;
+
+        Ok(ToolResult {
+            success: true,
+            result: json!({
+                "symbols": symbols,
+                "total": symbols.len(),
+                "language": language,
+            }),
+            error: None,
+            metadata: Some(json!({
+                "language": language,
+                "filePath": abs_path.to_string_lossy(),
+            })),
+        })
+    }
+
+    /// workspace_symbol 操作:搜索工作区符号
+    /// TODO: 实现 LSP workspace/symbol 请求(需遍历所有已启动的语言服务器)
+    async fn try_lsp_workspace_symbol(
+        &self,
+        params: &Value,
+        workspace_root: &str,
+    ) -> Result<ToolResult, crate::errors::CommandError> {
+        let query = params.get("query")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                "缺少 query 参数",
+            ))?;
+
+        // workspace_symbol 不绑定特定文件,需向所有已启动的 LSP 服务器查询
+        let symbols = self.manager.workspace_symbol(query).await?;
+
+        Ok(ToolResult {
+            success: true,
+            result: json!({
+                "symbols": symbols,
+                "total": symbols.len(),
+                "query": query,
+            }),
+            error: None,
+            metadata: Some(json!({
+                "query": query,
+                "workspaceRoot": workspace_root,
+            })),
+        })
+    }
+
+    /// implementation 操作:跳转到实现
+    /// TODO: 完善 LSP textDocument/implementation 请求的缓存逻辑
+    async fn try_lsp_implementation(
+        &self,
+        params: &Value,
+        workspace_root: &str,
+    ) -> Result<ToolResult, crate::errors::CommandError> {
+        let file_path_str = params.get("file_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                "缺少 file_path 参数",
+            ))?;
+
+        let line = params.get("line")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        let character = params.get("character")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        // 解析文件路径
+        let abs_path = Self::resolve_path(file_path_str, workspace_root);
+
+        // 检测语言
+        let language = self.router.detect_language(&abs_path)
+            .ok_or_else(|| crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                format!("无法识别文件语言: {}", file_path_str),
+            ))?;
+
+        // 获取或启动 LSP 服务器
+        let client = self.manager.get_or_start(&language).await?;
+
+        // 发送 didOpen
+        let content = std::fs::read_to_string(&abs_path)?;
+        let language_id = self.router.get_language_id(&language);
+        client.did_open(&abs_path, language_id, &content).await?;
+
+        // 请求 implementation
+        let locations = client.goto_implementation(&abs_path, line, character).await?;
+
+        Ok(ToolResult {
+            success: true,
+            result: json!({
+                "locations": locations,
+                "total": locations.len(),
+                "language": language,
+            }),
+            error: None,
+            metadata: Some(json!({
+                "language": language,
+                "filePath": abs_path.to_string_lossy(),
+                "position": { "line": line, "character": character },
+            })),
+        })
+    }
+
+    /// call_hierarchy 操作:获取调用层级
+    /// direction=incoming 查找谁调用了该符号,outgoing 查找该符号调用了谁
+    /// TODO: 实现 LSP textDocument/prepareCallHierarchy + callHierarchy/incomingCalls + callHierarchy/outgoingCalls
+    async fn try_lsp_call_hierarchy(
+        &self,
+        params: &Value,
+        workspace_root: &str,
+    ) -> Result<ToolResult, crate::errors::CommandError> {
+        let file_path_str = params.get("file_path")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                "缺少 file_path 参数",
+            ))?;
+
+        let line = params.get("line")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        let character = params.get("character")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
+        let direction = params.get("direction")
+            .and_then(|v| v.as_str())
+            .unwrap_or("incoming");
+
+        // 解析文件路径
+        let abs_path = Self::resolve_path(file_path_str, workspace_root);
+
+        // 检测语言
+        let language = self.router.detect_language(&abs_path)
+            .ok_or_else(|| crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                format!("无法识别文件语言: {}", file_path_str),
+            ))?;
+
+        // 获取或启动 LSP 服务器
+        let client = self.manager.get_or_start(&language).await?;
+
+        // 发送 didOpen
+        let content = std::fs::read_to_string(&abs_path)?;
+        let language_id = self.router.get_language_id(&language);
+        client.did_open(&abs_path, language_id, &content).await?;
+
+        // 准备调用层级
+        let items = client.prepare_call_hierarchy(&abs_path, line, character).await?;
+
+        // 根据方向查询 incoming 或 outgoing
+        let calls = match direction {
+            "incoming" => client.incoming_calls(&items).await?,
+            "outgoing" => client.outgoing_calls(&items).await?,
+            _ => return Err(crate::errors::CommandError::tool(
+                crate::errors::TOOL_INVALID_PARAMS,
+                format!("未知 direction: {}", direction),
+            )),
+        };
+
+        Ok(ToolResult {
+            success: true,
+            result: json!({
+                "calls": calls,
+                "total": calls.len(),
+                "direction": direction,
+                "language": language,
+            }),
+            error: None,
+            metadata: Some(json!({
+                "language": language,
+                "filePath": abs_path.to_string_lossy(),
+                "position": { "line": line, "character": character },
+                "direction": direction,
+            })),
+        })
+    }
 }
 ```
 
 **验证**:
 - `cargo build -p docagent_lib` 成功
+- 集成测试:对测试代码执行 lsp 工具的各种 operation(definition/references/hover/diagnostics/document_symbol/workspace_symbol/implementation/call_hierarchy)
 
 ---
 
-### T5.11:定义 LSP 配置
+### T5.08:定义 LSP 配置
 
 **文件**:
 - 修改:`src-tauri/src/config/app_settings.rs`
@@ -1903,7 +2065,7 @@ fn default_true() -> bool {
 
 ---
 
-### T5.12:LSP 权限集成
+### T5.09:LSP 权限集成
 
 **文件**:
 - 修改:`src-tauri/src/services/permission/types.rs`(添加 Lsp 权限类型)
@@ -1916,7 +2078,7 @@ fn default_true() -> bool {
 // 在 types.rs 的 PermissionType 枚举中添加
 pub enum PermissionType {
     // ... 现有变体
-    /// LSP 工具(goto_definition, find_references, diagnostics, hover)
+    /// LSP 工具(单一 lsp 工具,通过 operation 参数路由 8 种操作)
     Lsp,
 }
 ```
@@ -1925,7 +2087,7 @@ pub enum PermissionType {
 ```rust
 // 在 execute_tool 方法中
 let permission_type = match tool_name {
-    "lsp_definition" | "lsp_references" | "lsp_diagnostics" | "lsp_hover" => {
+    "lsp" => {
         PermissionType::Lsp
     }
     // ... 其他工具
@@ -1947,7 +2109,7 @@ let permission_type = match tool_name {
 
 ---
 
-### T5.13:前端 LSP 状态展示
+### T5.10:前端 LSP 状态展示
 
 **文件**:
 - 创建:`src/components/settings/LspStatusPanel.tsx`
@@ -2039,7 +2201,7 @@ export function LspStatusPanel() {
 
 ---
 
-### T5.14:LSP 服务器健康检查
+### T5.11:LSP 服务器健康检查
 
 **文件**:
 - 修改:`src-tauri/src/services/lsp/manager.rs`
@@ -2089,7 +2251,9 @@ tokio::spawn(async move {
 
 ---
 
-### T5.15:优雅降级机制
+### T5.12:优雅降级机制
+
+**目标**:实现单一 `lsp` 工具的降级机制。本任务以 `definition` 操作为示例实现完整的降级逻辑,`references`/`hover`/`diagnostics` 等其他操作采用相同的降级模式(try_lsp_* 方法 + fallback_to_source_code),所有 operation 在 LSP 不可用时统一降级为 SourceCode 搜索,实现时可参照本任务的代码模板。
 
 **文件**:
 - 修改:`src-tauri/src/services/tool/builtin/lsp_tools.rs`
@@ -2099,18 +2263,18 @@ tokio::spawn(async move {
 当 LSP 服务器不可用时,降级为 SourceCode 工具:
 
 ```rust
-// 在 LspGotoDefinitionTool 的 execute 方法中
-async fn execute(
+// 在 LspTool 的 try_lsp_definition 方法中(其他 operation 的 try_lsp_* 方法参照实现)
+async fn try_lsp_definition(
     &self,
-    params: Value,
+    params: &Value,
     workspace_root: &str,
 ) -> Result<ToolResult, crate::errors::CommandError> {
     // 尝试使用 LSP
-    match self.try_lsp_definition(&params, workspace_root).await {
+    match self.try_lsp_definition_inner(&params, workspace_root).await {
         Ok(result) => Ok(result),
         Err(e) => {
             log::warn!(
-                "LSP goto_definition 失败,降级为 SourceCode 搜索: {}",
+                "LSP definition 失败,降级为 SourceCode 搜索: {}",
                 e
             );
             
@@ -2139,7 +2303,52 @@ async fn fallback_to_source_code(
         metadata: Some(json!({"fallback": true})),
     })
 }
+
+/// 尝试通过 LSP 获取定义位置,失败时降级为 SourceCode 搜索
+async fn try_lsp_definition(
+    &self,
+    params: &Value,
+    workspace_root: &str,
+) -> Result<ToolResult, crate::errors::CommandError> {
+    let file_path = params["file_path"].as_str()
+        .ok_or_else(|| crate::errors::CommandError::invalid_parameter("缺少 file_path 参数"))?;
+    let line = params["line"].as_u64()
+        .ok_or_else(|| crate::errors::CommandError::invalid_parameter("缺少 line 参数"))? as u32;
+    let character = params["character"].as_u64()
+        .ok_or_else(|| crate::errors::CommandError::invalid_parameter("缺少 character 参数"))? as u32;
+
+    // 获取或启动对应语言的 LSP 服务器
+    let abs_path = std::path::Path::new(workspace_root).join(file_path);
+    let client = match self.manager.get_or_start_client(&abs_path).await {
+        Ok(client) => client,
+        Err(e) => {
+            log::warn!("LSP 服务器不可用: {},降级为 SourceCode 搜索", e);
+            return self.fallback_to_source_code(params.clone(), workspace_root).await;
+        }
+    };
+
+    // 调用 LSP goto_definition
+    match client.goto_definition(&abs_path, line, character).await {
+        Ok(locations) => {
+            if locations.is_empty() {
+                // LSP 返回空结果,降级为 SourceCode
+                self.fallback_to_source_code(params.clone(), workspace_root).await
+            } else {
+                Ok(ToolResult::success(json!({
+                    "locations": locations,
+                    "source": "lsp",
+                })))
+            }
+        }
+        Err(e) => {
+            log::warn!("LSP goto_definition 失败: {},降级为 SourceCode 搜索", e);
+            self.fallback_to_source_code(params.clone(), workspace_root).await
+        }
+    }
+}
 ```
+
+**补充说明**:单一 `lsp` 工具的其他 operation(references/hover/diagnostics/document_symbol/workspace_symbol/implementation/call_hierarchy)的降级方法(try_lsp_references/try_lsp_hover/try_lsp_diagnostics 等)采用相同模式,此处不再重复实现,开发者参照 try_lsp_definition 实现。所有 operation 在 LSP 不可用时统一降级为 SourceCode 搜索。
 
 **验证**:
 - `cargo build -p docagent_lib` 成功
@@ -2147,7 +2356,9 @@ async fn fallback_to_source_code(
 
 ---
 
-### T5.16:多语言协同(跨语言跳转)
+### T5.13(可选/未来计划) 跨语言符号跳转
+
+**目标**:本任务为基础框架实现,实用价值有限。建议作为未来计划,不在当前阶段实施。当前阶段仅保留设计文档,不实现代码。
 
 **文件**:
 - 修改:`src-tauri/src/services/lsp/router.rs`
@@ -2190,7 +2401,7 @@ impl LanguageRouter {
 
 ---
 
-### T5.17:编写集成测试
+### T5.14:编写集成测试
 
 **文件**:
 - 创建:`src-tauri/tests/lsp_integration_test.rs`
@@ -2328,7 +2539,7 @@ async fn test_symbol_kind_name_conversion() {
 
 ---
 
-### T5.18:更新文档与工具注册
+### T5.15:更新文档与工具注册
 
 **文件**:
 - 修改:`src-tauri/src/services/tool/builtin.rs`(注册 LSP 工具)
@@ -2348,26 +2559,15 @@ pub fn register_builtin_tools(
 ) -> SharedScratchpadStates {
     // ... 现有工具注册
     
-    // 阶段 5 新增 LSP 工具
-    registry.register(Box::new(LspGotoDefinitionTool::new(
-        lsp_manager.clone(),
-        lsp_router.clone(),
-        lsp_cache.clone(),
-    )));
-    registry.register(Box::new(LspFindReferencesTool::new(
-        lsp_manager.clone(),
-        lsp_router.clone(),
-        lsp_cache.clone(),
-    )));
-    registry.register(Box::new(LspDiagnosticsTool::new(
-        lsp_manager.clone(),
-        lsp_router.clone(),
-    )));
-    registry.register(Box::new(LspHoverTool::new(
-        lsp_manager.clone(),
-        lsp_router.clone(),
-        lsp_cache.clone(),
-    )));
+    // 阶段 5 新增 LSP 工具(单一工具,operation 参数路由)
+    // 仅在实验性开关开启时注册
+    if lsp_config.experimental_enabled {
+        registry.register(Box::new(LspTool::new(
+            lsp_manager.clone(),
+            lsp_router.clone(),
+            lsp_cache.clone(),
+        )));
+    }
     
     // ...
 }
@@ -2415,19 +2615,26 @@ if lsp_config.health_check_interval_seconds > 0 {
 ```markdown
 ## 内置工具
 
-- `lsp_definition`: 跳转到符号定义(LSP)
-- `lsp_references`: 查找符号引用(LSP)
-- `lsp_diagnostics`: 获取文件诊断信息(LSP)
-- `lsp_hover`: 获取符号悬停信息(LSP)
+- `lsp`: LSP 工具(实验性,需 `lsp.experimental_enabled=true` 开启),通过 `operation` 参数路由 8 种操作:
+  - `definition`: 跳转到符号定义
+  - `references`: 查找符号引用
+  - `hover`: 获取符号悬停信息(类型、文档)
+  - `diagnostics`: 获取文件诊断信息
+  - `document_symbol`: 获取文档符号列表
+  - `workspace_symbol`: 搜索工作区符号
+  - `implementation`: 跳转到实现
+  - `call_hierarchy`: 获取调用层级(direction=incoming|outgoing)
 ```
 
 **验证**:
 - `cargo build -p docagent_lib` 成功
-- 应用启动后,工具列表包含 4 个 LSP 工具
+- 应用启动后,工具列表包含 1 个 LSP 工具(实验性开关开启时)
 
 ---
 
-### T5.19:性能优化
+### T5.16(可选) LSP 服务器预热机制
+
+**目标**:预热机制与按需启动原则存在权衡。预热可减少首次调用的延迟,但增加启动资源占用。建议默认关闭预热,通过配置项 `lsp.preheat_on_startup` 控制(默认 false)。
 
 **文件**:
 - 修改:`src-tauri/src/services/lsp/client.rs`
@@ -2465,7 +2672,7 @@ if let Some(lsp_cache) = &lsp_cache {
 
 ---
 
-### T5.20:验收测试
+### T5.17:验收测试
 
 **文件**:
 - 创建:`src-tauri/tests/lsp_acceptance_test.rs`
@@ -2500,17 +2707,18 @@ async fn acceptance_rust_lsp_integration() {
     let router = std::sync::Arc::new(LanguageRouter::new());
     let cache = std::sync::Arc::new(LspResultCache::new(300, 500));
     
-    // 测试 goto_definition
-    let goto_tool = LspGotoDefinitionTool::new(
+    // 测试 lsp definition 操作
+    let lsp_tool = LspTool::new(
         manager.clone(),
         router.clone(),
         cache.clone(),
     );
     
-    // 对 src/lib.rs 中的某行执行 goto_definition
-    let result = goto_tool.execute(
+    // 对 src/lib.rs 中的某行执行 definition 操作
+    let result = lsp_tool.execute(
         json!({
-            "filePath": "src/lib.rs",
+            "operation": "definition",
+            "file_path": "src/lib.rs",
             "line": 0,
             "character": 0
         }),
@@ -2641,20 +2849,17 @@ async fn acceptance_lsp_server_lifecycle() {
 | T5.04 | 实现 LSP 服务器管理器 | 待实施 | - | |
 | T5.05 | 实现语言路由 | 待实施 | - | |
 | T5.06 | 实现结果缓存 | 待实施 | - | |
-| T5.07 | 实现 lsp_definition 工具 | 待实施 | - | |
-| T5.08 | 实现 lsp_references 工具 | 待实施 | - | |
-| T5.09 | 实现 lsp_diagnostics 工具 | 待实施 | - | |
-| T5.10 | 实现 lsp_hover 工具 | 待实施 | - | |
-| T5.11 | 定义 LSP 配置 | 待实施 | - | |
-| T5.12 | LSP 权限集成 | 待实施 | - | |
-| T5.13 | 前端 LSP 状态展示 | 待实施 | - | |
-| T5.14 | LSP 服务器健康检查 | 待实施 | - | |
-| T5.15 | 优雅降级机制 | 待实施 | - | |
-| T5.16 | 多语言协同 | 待实施 | - | |
-| T5.17 | 编写集成测试 | 待实施 | - | |
-| T5.18 | 更新文档与工具注册 | 待实施 | - | |
-| T5.19 | 性能优化 | 待实施 | - | |
-| T5.20 | 验收测试 | 待实施 | - | |
+| T5.07 | 实现 lsp 工具(单一工具,operation 参数路由) | 待实施 | - | |
+| T5.08 | 定义 LSP 配置 | 待实施 | - | |
+| T5.09 | LSP 权限集成 | 待实施 | - | |
+| T5.10 | 前端 LSP 状态展示 | 待实施 | - | |
+| T5.11 | LSP 服务器健康检查 | 待实施 | - | |
+| T5.12 | 优雅降级机制 | 待实施 | - | |
+| T5.13 | 多语言协同 | 待实施 | - | |
+| T5.14 | 编写集成测试 | 待实施 | - | |
+| T5.15 | 更新文档与工具注册 | 待实施 | - | |
+| T5.16 | 性能优化 | 待实施 | - | |
+| T5.17 | 验收测试 | 待实施 | - | |
 
 ---
 
@@ -2684,14 +2889,14 @@ async fn acceptance_lsp_server_lifecycle() {
 
 ### 9.2 验收标准
 
-- 所有 20 个任务(T5.01-T5.20)实施完成
+- 所有 17 个任务(T5.01-T5.17)实施完成
 - `cargo test` 全部通过(包括 7 个新增集成测试)
 - `cargo clippy` 无警告
 - `npx tsc -b` 无类型错误
-- 手动测试:在 Rust 项目中调用 `lsp_definition`,正确定位函数定义
-- 手动测试:调用 `lsp_references`,返回所有引用位置
-- 手动测试:调用 `lsp_diagnostics`,返回编译错误和警告
-- 手动测试:调用 `lsp_hover`,返回符号类型和文档
+- 手动测试:在 Rust 项目中调用 `lsp` 工具(operation=definition),正确定位函数定义
+- 手动测试:调用 `lsp` 工具(operation=references),返回所有引用位置
+- 手动测试:调用 `lsp` 工具(operation=diagnostics),返回编译错误和警告
+- 手动测试:调用 `lsp` 工具(operation=hover),返回符号类型和文档
 - 手动测试:LSP 服务器不可用时,自动降级为 SourceCode
 - 手动测试:设置弹窗中可见 LSP 状态面板,可重启服务器
 - v1.1 验证:LSP 工具在 Plan/Build/Document 三种模式下均可用(只读工具,无需按模式过滤)
@@ -2707,7 +2912,7 @@ async fn acceptance_lsp_server_lifecycle() {
 1. **LSP 客户端**:基于 JSON-RPC 2.0 协议,支持 stdio 传输
 2. **服务器管理**:按需启动、自动停止、健康检查、结果缓存
 3. **语言路由**:根据文件扩展名自动选择 LSP 服务器
-4. **工具链**:4 个 LSP 工具(goto_definition、find_references、diagnostics、hover)
+4. **工具链**:单一 `lsp` 工具(实验性,通过 `operation` 参数路由 8 种操作:definition/references/hover/diagnostics/document_symbol/workspace_symbol/implementation/call_hierarchy)
 5. **优雅降级**:LSP 不可用时自动回退到 SourceCode
 6. **权限集成**:LSP 工具受权限系统控制
 

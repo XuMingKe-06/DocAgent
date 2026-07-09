@@ -15,7 +15,7 @@
 将 DocAgent 从"文档处理 Agent"改造为"编程 Agent"的基础形态,使其能够:
 
 1. 通过 `read`(带行号)、`edit`(精确字符串替换)、`write` 完成代码文件的读写和编辑
-2. 通过 `glob`(模式匹配)、`grep`(ripgrep 正则搜索)快速定位代码
+2. 通过 `glob`(模式匹配)、`grep`(基于 ignore crate 的正则搜索)快速定位代码
 3. 通过 `bash`(增强权限)执行编译、测试、构建等命令
 4. 通过 `write_script` + `bash` 编写并执行脚本解决复杂任务
 5. 通过 AGENTS.md 机制加载项目级规则(项目级 + 全局级)
@@ -74,8 +74,8 @@
 | T1.07 | 实现 AGENTS.md 加载机制 | 新增 | 中 | T1.06 |
 | T1.08 | 改造 read 工具(增加行号、二进制保护) | 改造 | 中 | T1.04 |
 | T1.09 | 新增 edit 工具(精确字符串替换) | 新增 | 高 | T1.04 |
-| T1.10 | 新增 glob 工具(基于 globset) | 新增 | 中 | T1.04 |
-| T1.11 | 新增 grep 工具(基于 ripgrep) | 新增 | 高 | T1.04 |
+| T1.10 | 新增 glob 工具(基于 ignore crate(ripgrep 封装,支持 .gitignore)) | 新增 | 中 | T1.04 |
+| T1.11 | 新增 grep 工具(基于 ignore crate(ripgrep 封装,支持 .gitignore)) | 新增 | 高 | T1.04 |
 | T1.12 | 改造 bash 工具(增强权限控制) | 改造 | 中 | T1.06 |
 | T1.13 | 更新 AppState 和 AgentExecutor(保留 handler_registry,预留模式过滤钩子) | 重构 | 中 | T1.02 |
 | T1.14 | 集成测试:验证核心编程能力(同时验证文档 Handler 保留) | 测试 | 中 | T1.08-T1.13 |
@@ -321,25 +321,15 @@ pub mod document;
 similar = "2.5"
 ```
 
-**步骤 2:新增 glob 工具依赖**
+**步骤 2:新增 glob/grep 工具依赖(基于 ignore crate)**
 
 ```toml
-# glob 工具:文件模式匹配
-globset = "0.4"
+# glob/grep 工具:基于 ignore crate(ripgrep 的高层级封装,支持 .gitignore)
+ignore = "0.4"
+globset = "0.4"  # 仍用于 glob 模式编译
 ```
 
-**步骤 3:新增 grep 工具依赖**
-
-```toml
-# grep 工具:基于 ripgrep 的内容搜索
-grep = "0.3"
-grep-searcher = "0.1"
-grep-regex = "0.1"
-```
-
-> 注意:ripgrep 的 crate 也可以用 `ignore = "0.4"`(更高层级的封装,支持 .gitignore)。推荐使用 `ignore` crate,它提供了与 ripgrep CLI 相同的搜索行为。
-
-**步骤 4:确认 Sidecar 相关依赖保留**
+**步骤 3:确认 Sidecar 相关依赖保留**
 
 确认 Cargo.toml 中以下依赖保留(不删除):
 - 与 Sidecar 进程管理相关的依赖(如 `tauri-plugin-shell`)
@@ -351,9 +341,9 @@ grep-regex = "0.1"
 
 ---
 
-### T1.05: 新增 edit/glob/grep 所需依赖到 Cargo.toml
+### T1.05: 保留 Sidecar 依赖,确认构建正常
 
-**目标**:为新增的 3 个核心编程工具添加 Rust 依赖
+**目标**:确认 Sidecar 相关依赖保留,Cargo.toml 构建正常
 
 **修改文件**:[src-tauri/Cargo.toml](file:///d:/DeskTop/DocAgent/src-tauri/Cargo.toml)
 
@@ -366,11 +356,9 @@ grep-regex = "0.1"
 # 阶段 1 新增:编程 Agent 核心工具依赖
 # glob 工具:高性能文件模式匹配
 globset = "0.4"
-# 文件遍历:支持 glob 工具的目录遍历
-walkdir = "2"
-# grep 工具:ripgrep 核心搜索库
-grep = "0.3"
-# grep 工具:正则表达式引擎(grep crate 的依赖,显式声明以便直接使用)
+# glob/grep 文件遍历:基于 ignore crate(ripgrep 封装,支持 .gitignore)
+ignore = "0.4"
+# grep 工具:正则表达式引擎
 regex = "1"
 # edit 工具:差异计算和补丁生成(用于显示编辑前后的 diff)
 similar = "2"
@@ -380,7 +368,7 @@ similar = "2"
 
 **验证步骤**:
 - 运行 `cargo build -p docagent_lib`,确认新依赖能被正确下载和编译
-- 运行 `cargo tree | grep -E "globset|walkdir|grep|similar"`,确认依赖树正确
+- 运行 `cargo tree | grep -E "globset|ignore|regex|similar"`,确认依赖树正确
 
 ---
 
@@ -607,9 +595,9 @@ fn layer_tool_strategy() -> String {
 
 ### 代码探索(只读)
 - 按文件名模式查找 -> glob(如 `**/*.rs`、`src/**/*.ts`)
-- 按内容搜索 -> grep(支持正则,基于 ripgrep)
+- 按内容搜索 -> grep(支持正则,基于 ignore crate(ripgrep 封装))
 - 读取文件内容 -> read(带行号,支持指定行范围)
-- 按行范围读取大文件 -> read_lines
+- 按行范围读取大文件 -> read(使用 start_line/end_line 参数;read_lines 已合并到 read)
 - 浏览目录结构 -> list
 - 获取文件元数据 -> file_info
 
@@ -632,7 +620,7 @@ fn layer_tool_strategy() -> String {
 - 计算文件哈希 -> hash
 
 ### 任务管理
-- 记录工作笔记 -> update_notes(scratchpad 草稿本)
+- 记录工作笔记 -> scratchpad(草稿本)
 
 ## 工具调用最佳实践
 
@@ -1218,7 +1206,7 @@ async fn execute(&self, params: Value) -> ToolResult {
     if metadata.len() as usize > max_size {
         return ToolResult {
             success: false, output: None,
-            error: Some(format!("文件过大 ({}字节),超过最大读取限制 ({}字节),请使用 read_lines 工具按行范围读取", metadata.len(), max_size)),
+            error: Some(format!("文件过大 ({}字节),超过最大读取限制 ({}字节),请使用 read 工具的 start_line/end_line 参数按行范围读取", metadata.len(), max_size)),
             duration_ms: start.elapsed().as_millis() as u64,
             error_code: None,
         };
@@ -1682,7 +1670,7 @@ fn extract_snapshot_paths(&self, handler_name: &str, params: &serde_json::Value)
 
 **步骤 4:在 executor.rs 中将 edit 加入 needs_workspace_root 和 HIGH_RISK 列表**
 
-修改 `needs_workspace_root` 匹配(第 1141 行附近),增加 `"edit"`:
+修改 `needs_workspace_root` 匹配(第 1141 行附近),增加 `"edit"`,并移除已合并的 `"read_lines"`:
 
 ```rust
 let needs_workspace_root = matches!(
@@ -1690,9 +1678,10 @@ let needs_workspace_root = matches!(
     "list" | "search" | "read" | "file_info"
     | "exists" | "remove" | "mkdir" | "write"
     | "rename" | "copy" | "remove_dir" | "hash"
-    | "read_lines"
     | "edit"  // 新增
     | "write_script" | "bash"
+    // 注意:read_lines 已合并到 read(使用 start_line/end_line 参数),不再单独注册
+    // 注意:apply_patch 路径在 patchText 内解析,question 无文件操作,均不加入此列表
 );
 ```
 
@@ -1817,7 +1806,7 @@ async fn test_edit_tool_no_match_error() {
 
 ---
 
-### T1.10: 新增 glob 工具(基于 globset)
+### T1.10: 新增 glob 工具(基于 ignore crate(ripgrep 封装,支持 .gitignore))
 
 **目标**:实现高性能文件模式匹配工具,支持 `**/*.rs`、`{a,b}/*.ts` 等模式
 
@@ -1931,43 +1920,32 @@ impl Tool for GlobTool {
             })
             .collect();
 
-        // 默认排除目录
-        let default_excludes = [
-            "node_modules", ".git", "target", "dist", "build",
-            "__pycache__", ".venv", "venv", ".next", ".nuxt",
-        ];
-
-        // 遍历目录收集匹配文件
+        // 遍历目录收集匹配文件(基于 ignore crate,自动遵循 .gitignore)
         let workspace_root_owned = workspace_root.to_string();
         let base_owned = resolved_base.clone();
         let result = tokio::task::spawn_blocking(move || {
             let mut matches = Vec::new();
-            for entry in walkdir::WalkDir::new(&base_owned)
-                .into_iter()
-                .filter_entry(|e| {
-                    // 过滤默认排除目录
-                    if e.file_type().is_dir() {
-                        let name = e.file_name().to_string_lossy();
-                        if default_excludes.contains(&name.as_ref()) {
-                            return false;
-                        }
-                    }
-                    true
-                })
-            {
+            // 构建 ignore 遍历器(自动遵循 .gitignore/.ignore/全局 gitignore/.git/info/exclude)
+            let walker = ignore::WalkBuilder::new(&base_owned)
+                .hidden(true)           // 跳过隐藏文件
+                .ignore(true)           // 遵循 .ignore 文件
+                .git_ignore(true)       // 遵循 .gitignore
+                .git_global(true)       // 遵循全局 gitignore
+                .git_exclude(true)      // 遵循 .git/info/exclude
+                .build();
+            for entry in walker {
                 let entry = match entry {
                     Ok(e) => e,
                     Err(_) => continue,
                 };
 
-                if !entry.file_type().is_file() {
+                if !entry.file_type().map_or(false, |t| t.is_file()) {
                     continue;
                 }
 
                 // 计算相对于 base 的路径,用于 glob 匹配
-                let rel_path = entry.path()
-                    .strip_prefix(&base_owned)
-                    .unwrap_or(entry.path());
+                let path = entry.path();
+                let rel_path = path.strip_prefix(&base_owned).unwrap_or(path);
                 let rel_str = rel_path.to_string_lossy().replace('\\', "/");
 
                 // 检查是否匹配主模式
@@ -2081,7 +2059,7 @@ async fn test_glob_with_excludes() {
 
 ---
 
-### T1.11: 新增 grep 工具(基于 ripgrep)
+### T1.11: 新增 grep 工具(基于 ignore crate(ripgrep 封装,支持 .gitignore))
 
 **目标**:实现高性能内容搜索工具,支持正则表达式、多文件搜索、上下文行显示
 
@@ -2091,7 +2069,7 @@ async fn test_glob_with_excludes() {
 
 ```rust
 // ============================================================
-// grep - 内容搜索工具(参照 OpenCode grep 工具,基于 ripgrep)
+// grep - 内容搜索工具(参照 OpenCode grep 工具,基于 ignore crate(ripgrep 封装,支持 .gitignore))
 // ============================================================
 
 struct GrepTool;
@@ -2100,10 +2078,10 @@ struct GrepTool;
 impl Tool for GrepTool {
     fn tool_name(&self) -> &str { "grep" }
     fn description(&self) -> &str {
-        "在文件中搜索文本或正则表达式(基于 ripgrep,高性能)。\
+        "在文件中搜索文本或正则表达式(基于 ignore crate(ripgrep 封装),高性能)。\
          支持多文件搜索、正则匹配、上下文行显示。\
          常见用法:搜索函数定义、查找引用、定位代码。\
-         自动跳过二进制文件和默认排除目录(node_modules/.git/target 等)。\
+         自动跳过二进制文件,并遵循 .gitignore/.ignore 排除规则。\
          返回匹配的文件路径、行号和匹配内容。"
     }
     fn category(&self) -> &str { "filesystem" }
@@ -2211,12 +2189,6 @@ impl Tool for GrepTool {
                 .map(|g| g.compile_matcher())
         });
 
-        // 默认排除目录
-        let default_excludes = [
-            "node_modules", ".git", "target", "dist", "build",
-            "__pycache__", ".venv", "venv", ".next", ".nuxt",
-        ];
-
         let workspace_root_owned = workspace_root.to_string();
         let base_owned = resolved_base.clone();
 
@@ -2224,23 +2196,22 @@ impl Tool for GrepTool {
             let mut matches = Vec::new();
             let mut total_matches = 0;
 
-            'outer: for entry in walkdir::WalkDir::new(&base_owned)
-                .into_iter()
-                .filter_entry(|e| {
-                    if e.file_type().is_dir() {
-                        let name = e.file_name().to_string_lossy();
-                        !default_excludes.contains(&name.as_ref())
-                    } else {
-                        true
-                    }
-                })
-            {
+            // 构建 ignore 遍历器(自动遵循 .gitignore/.ignore/全局 gitignore/.git/info/exclude)
+            let walker = ignore::WalkBuilder::new(&base_owned)
+                .hidden(true)           // 跳过隐藏文件
+                .ignore(true)           // 遵循 .ignore 文件
+                .git_ignore(true)       // 遵循 .gitignore
+                .git_global(true)       // 遵循全局 gitignore
+                .git_exclude(true)      // 遵循 .git/info/exclude
+                .build();
+
+            'outer: for entry in walker {
                 let entry = match entry {
                     Ok(e) => e,
                     Err(_) => continue,
                 };
 
-                if !entry.file_type().is_file() {
+                if !entry.file_type().map_or(false, |t| t.is_file()) {
                     continue;
                 }
 
@@ -2433,6 +2404,175 @@ async fn test_grep_with_context() {
 
 ---
 
+### 补充任务: 新增 apply_patch 工具(参照 OpenCode apply_patch)
+
+**目标**:应用补丁文本修改代码,支持 Add File / Update File / Move to / Delete File 操作,适用于多文件批量修改
+
+**参照**:OpenCode apply_patch 工具实现(使用 `output.args.patchText` 而非 `output.args.filePath`)
+
+**修改文件**:[src-tauri/src/services/tool/builtin.rs](file:///d:/DeskTop/DocAgent/src-tauri/src/services/tool/builtin.rs)
+
+**工具定义**:
+- 工具名:`apply_patch`
+- 功能:应用补丁文本修改代码(支持新增文件/更新文件/移动文件/删除文件)
+- 权限类别:归入 `edit` 权限类别(需用户确认,与 EditTool 一致)
+- 参数:
+  - `patchText`(string,必填):补丁文本,包含以下标记:
+    - `*** Add File: <path>` — 新增文件,后续行为文件内容
+    - `*** Update File: <path>` — 更新文件,后续行以 `< 行内容` 表示删除、`> 行内容` 表示新增
+    - `*** Move to: <path>` — 将前一文件移动到指定路径
+    - `*** Delete File: <path>` — 删除指定文件
+- 返回:应用结果摘要(成功/失败计数、受影响文件列表)
+
+**步骤 1:实现 ApplyPatchTool 结构体**
+
+```rust
+// ============================================================
+// apply_patch - 补丁应用工具(参照 OpenCode apply_patch 工具)
+// ============================================================
+
+struct ApplyPatchTool;
+
+#[async_trait]
+impl Tool for ApplyPatchTool {
+    fn tool_name(&self) -> &str { "apply_patch" }
+    fn description(&self) -> &str {
+        "应用补丁文本修改代码文件。\
+         支持的操作:*** Add File(新增)、*** Update File(更新)、\
+         *** Move to(移动)、*** Delete File(删除)。\
+         适用于多文件批量修改、结构化代码变更。"
+    }
+    fn category(&self) -> &str { "filesystem" }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "patchText": {
+                    "type": "string",
+                    "description": "补丁文本,包含 *** Add File / *** Update File / *** Move to / *** Delete File 标记"
+                }
+            },
+            "required": ["patchText"]
+        })
+    }
+    async fn execute(&self, params: Value) -> ToolResult {
+        // TODO: 解析 patchText,逐段应用 Add/Update/Move/Delete 操作
+        // 路径校验:所有路径必须在 workspace_root 内(由 executor 注入)
+        // 权限:归入 edit 类别,在 ConfirmationLevel::EditOnly 下需用户确认
+        // 参照 OpenCode 实现:使用 output.args.patchText
+        unimplemented!()
+    }
+}
+```
+
+**步骤 2:在 register_builtin_tools 中注册**
+
+```rust
+registry.register(Box::new(ApplyPatchTool));
+```
+
+**步骤 3:在 executor.rs 中将 apply_patch 归入 edit 权限类别**
+
+- apply_patch 不加入 `needs_workspace_root`(路径在 patchText 内解析,由工具内部校验 workspace_root)
+- apply_patch 归入 EditOnly 确认逻辑(与 edit 工具一致,涉及文件修改)
+
+**验证步骤**:
+- `cargo test test_apply_patch` 全部通过
+- 手动验证:Agent 能通过 apply_patch 工具批量修改多个文件
+
+---
+
+### 补充任务: 新增 question 工具(参照 OpenCode question)
+
+**目标**:向用户提问以获取澄清信息或让用户在多个选项中选择,支持多问题累积后统一提交
+
+**参照**:OpenCode question 工具实现(允许用户在多个问题间导航后统一提交)
+
+**修改文件**:[src-tauri/src/services/tool/builtin.rs](file:///d:/DeskTop/DocAgent/src-tauri/src/services/tool/builtin.rs)
+
+**工具定义**:
+- 工具名:`question`
+- 功能:向用户提问,获取澄清信息(支持单选/多选/自由输入)
+- 权限类别:无文件操作,不需要 workspace_root,不归入 HIGH_RISK
+- 参数:
+  - `header`(string,必填):问题的短标签(如 "语言选择")
+  - `question`(string,必填):问题文本
+  - `options`(array,可选):选项数组,每项为 `{ "label": string, "description": string }`;为空时允许用户自由输入
+- 返回:用户选择的选项 label 或自定义输入文本
+
+**步骤 1:实现 QuestionTool 结构体**
+
+```rust
+// ============================================================
+// question - 向用户提问工具(参照 OpenCode question 工具)
+// ============================================================
+
+struct QuestionTool;
+
+#[async_trait]
+impl Tool for QuestionTool {
+    fn tool_name(&self) -> &str { "question" }
+    fn description(&self) -> &str {
+        "向用户提问以获取澄清信息。\
+         支持提供选项让用户选择,或允许自由输入。\
+         多个 question 调用可累积,用户在所有问题间导航后统一提交。"
+    }
+    fn category(&self) -> &str { "interaction" }
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "header": {
+                    "type": "string",
+                    "description": "问题的短标签(如 '语言选择')"
+                },
+                "question": {
+                    "type": "string",
+                    "description": "问题文本"
+                },
+                "options": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "label": {"type": "string"},
+                            "description": {"type": "string"}
+                        }
+                    },
+                    "description": "选项数组;为空时允许用户自由输入",
+                    "default": []
+                }
+            },
+            "required": ["header", "question"]
+        })
+    }
+    async fn execute(&self, params: Value) -> ToolResult {
+        // TODO: 通过事件系统向前端推送问题,等待用户作答
+        // 参照 agent:confirm 机制,使用 oneshot channel 同步等待
+        // 支持多个问题累积后统一提交
+        unimplemented!()
+    }
+}
+```
+
+**步骤 2:在 register_builtin_tools 中注册**
+
+```rust
+registry.register(Box::new(QuestionTool));
+```
+
+**步骤 3:在 executor.rs 中处理 question 工具**
+
+- question 不加入 `needs_workspace_root`(无文件操作)
+- question 不归入 HIGH_RISK(只读交互,不修改文件)
+- 通过事件系统(`agent:question`)向前端推送,前端渲染问题 UI,用户作答后通过 channel 回传
+
+**验证步骤**:
+- `cargo test test_question` 全部通过
+- 手动验证:Agent 能通过 question 工具向用户提问并接收回答
+
+---
+
 ### T1.12: 改造 bash 工具(增强权限控制)
 
 **目标**:为 bash 工具增加命令 AST 解析(检测高风险命令)、外部目录访问检测
@@ -2597,7 +2737,7 @@ pub struct AppState {
 }
 ```
 
-> **注意**:handler_registry 始终注册 4 个文档 Handler,但在阶段 2 实现 Agent 模式后,executor 构建 tool_definitions 时会按当前模式过滤:非 Document 模式下过滤掉 4 个 Handler,Document 模式下保留。本阶段(阶段 1)暂不实现过滤逻辑,所有工具都会出现在列表中(阶段 2 会补充过滤)。
+> **注意**:handler_registry 始终注册 4 个文档 Handler + 1 个 validator,但在阶段 2 实现 Agent 模式后,executor 构建 tool_definitions 时会按当前模式过滤:非 Document 模式下过滤掉所有 Handler,Document 模式下保留。本阶段(阶段 1)已移除 Handler 合并逻辑,executor 不再将 Handler 加入 tool_definitions(LLM 看不到 Handler);但 executor 保留 registry 字段,工具执行分支仍可在 LLM 直接调用 Handler 名时执行(阶段 2 会补充按模式过滤)。
 
 **步骤 2:确认 setup 中的初始化逻辑保留**
 
@@ -2633,21 +2773,21 @@ let state = AppState {
 
 修改 [src-tauri/src/services/agent/executor.rs](file:///d:/DeskTop/DocAgent/src-tauri/src/services/agent/executor.rs):
 
-1. 移除 `registry` 字段(第 118 行)
+1. 保留 `registry` 字段(v1.1: Document 模式下使用)
 2. 修改 `new()` 方法签名(第 134-154 行):
 
 ```rust
 pub fn new(
     router: Arc<LlmRouter>,
     tool_registry: Arc<ToolRegistry>,
-    // 移除 registry 参数
+    handler_registry: Arc<Mutex<HandlerRegistry>>,  // [保留] Document 模式下使用
     emitter: AgentEmitter<R>,
     confirm_channels: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<ConfirmDecision>>>>,
 ) -> Self {
     Self {
         router,
         tool_registry,
-        // 移除 registry 字段赋值
+        // 保留 registry 字段赋值
         emitter,
         confirm_channels,
         max_iterations: 100,
@@ -2769,16 +2909,35 @@ let executor = AgentExecutor::new(
 
 ```rust
 //! 阶段 1 集成测试:验证编程 Agent 核心能力
-//! 测试场景:读取文件 -> 编辑代码 -> 搜索代码 -> 执行命令
+//! 测试场景:读取文件 -> 编辑代码 -> 搜索代码 -> 查找文件
+//! 同时验证文档 Handler 仍保留在 handler_registry 中(供阶段 2 Document 模式使用)
 
 use docagent_lib::services::tool::registry::ToolRegistry;
 use docagent_lib::services::tool::builtin::register_builtin_tools;
+use docagent_lib::services::handler::registry::HandlerRegistry;
+use docagent_lib::services::handler::builtin::register_builtin_handlers;
+use docagent_lib::services::document::{SidecarManager, DocumentService};
 use serde_json::json;
+use std::sync::Arc;
 
-/// 辅助函数:创建已注册所有工具的 ToolRegistry
+/// 辅助函数:创建已注册所有内置工具的 ToolRegistry
 fn create_test_registry() -> ToolRegistry {
     let mut registry = ToolRegistry::new();
     let _ = register_builtin_tools(&mut registry, String::new());
+    registry
+}
+
+/// 辅助函数:创建已注册所有内置 Handler 的 HandlerRegistry
+/// 使用假参数创建 SidecarManager(不启动 Sidecar 进程,仅用于注册 Handler)
+fn create_test_handler_registry() -> HandlerRegistry {
+    let sidecar = SidecarManager::new(
+        "python".to_string(),
+        "fake_script.py".to_string(),
+        120,
+    );
+    let doc_service = Arc::new(DocumentService::new(sidecar));
+    let mut registry = HandlerRegistry::new();
+    register_builtin_handlers(&mut registry, doc_service);
     registry
 }
 
@@ -2798,23 +2957,27 @@ fn test_all_core_tools_registered() {
     assert!(tool_names.contains(&"write_script"), "缺少 write_script 工具");
 
     // 验证工具总数(16 原有 Tool + 3 新增 = 19,不含 Handler)
-    // 注意:4 个文档 Handler 在 handler_registry 中,不在 tool_registry 中
+    // 注意:文档 Handler 在 handler_registry 中,不在 tool_registry 中
     assert_eq!(tools.len(), 19, "工具数量不正确,实际: {}", tools.len());
 }
 
 #[test]
 fn test_handler_tools_preserved() {
-    // 验证文档 Handler 仍然保留在 handler_registry 中(供 Document 模式使用)
+    // 验证文档 Handler 仍然保留在 handler_registry 中(供阶段 2 Document 模式使用)
     // 注意:Handler 在 handler_registry 中,与 tool_registry 分离
-    // 阶段 2 实现 Agent 模式后,executor 会按模式决定是否将 Handler 加入 tool_definitions
+    // 阶段 1 executor 不再将 Handler 加入 tool_definitions(LLM 看不到 Handler)
+    // 阶段 2 实现 Agent 模式后,Document 模式下会重新将 Handler 加入 tool_definitions
     let handler_registry = create_test_handler_registry();
     let handlers = handler_registry.list_handlers();
 
-    let handler_names: Vec<&str> = handlers.iter().map(|h| h.handler_name()).collect();
+    // list_handlers 返回 HandlerInfo,通过 id 字段获取 Handler 名称
+    // 原 docx_handler 改名为 docx ，其他同理
+    let handler_names: Vec<&str> = handlers.iter().map(|h| h.id.as_str()).collect();
     assert!(handler_names.contains(&"docx"), "docx 应保留");
     assert!(handler_names.contains(&"xlsx"), "xlsx 应保留");
     assert!(handler_names.contains(&"pptx"), "pptx 应保留");
     assert!(handler_names.contains(&"pdf"), "pdf 应保留");
+    assert!(handler_names.contains(&"validator"), "validator 应保留");
 }
 
 #[tokio::test]
@@ -2836,7 +2999,9 @@ async fn test_programming_workflow() {
         "workspace_root": "",
     })).await;
     assert!(result.success);
-    let content = result.output.unwrap()["content"].as_str().unwrap();
+    let output = result.output.unwrap();
+    let content = output["content"].as_str().unwrap();
+    // 行号格式:右对齐宽度 6 + "→" + 行内容
     assert!(content.contains("     1→pub fn add"));
     assert!(content.contains("     2→    a + b"));
 
@@ -2862,7 +3027,8 @@ async fn test_programming_workflow() {
         "workspace_root": "",
     })).await;
     assert!(result.success);
-    let matches = result.output.unwrap()["matches"].as_array().unwrap();
+    let output = result.output.unwrap();
+    let matches = output["matches"].as_array().unwrap();
     assert_eq!(matches.len(), 2);  // add 和 subtract
 
     // 步骤 5:使用 glob 查找文件(验证 glob)
@@ -2873,7 +3039,8 @@ async fn test_programming_workflow() {
         "workspace_root": "",
     })).await;
     assert!(result.success);
-    let matches = result.output.unwrap()["matches"].as_array().unwrap();
+    let output = result.output.unwrap();
+    let matches = output["matches"].as_array().unwrap();
     assert_eq!(matches.len(), 1);
 
     // 清理
@@ -3002,9 +3169,9 @@ cargo test test_read_with_line_numbers
 
 | 风险 | 影响 | 应对 |
 |------|------|------|
-| 移除 Sidecar 后附件系统不工作 | 图片/文档附件无法解析 | T1.02 步骤 6 已处理,图片附件保留(纯 Rust),文档附件改为文件名引用 |
+| 保留 Sidecar 的风险:Sidecar 进程崩溃影响文档处理 | 文档附件解析失败 | T1.02 已保留 doc_service 依赖,通过 Sidecar 处理文档附件 |
 | 数据库中已有 handler 相关记录 | 历史数据兼容 | 保留 errors.rs 中的错误码,不删除数据库表 |
-| 前端调用已移除的命令 | 运行时错误 | T1.03 已清理 tauri.ts 中的命令封装 |
+| 前端调用保留的命令 | 正常运行 | T1.03 已确认 tauri.ts 中 sidecar 命令封装保留,不做任何删除 |
 | edit 工具误操作覆盖文件 | 数据丢失 | edit 自动创建版本快照(通过 snapshot_fn) |
 | glob/grep 性能在大项目上不佳 | 响应延迟 | 默认排除 node_modules/.git 等;max_matches 限制结果数 |
 
@@ -3057,7 +3224,7 @@ cargo test test_read_with_line_numbers
 ### 7.2 Rust crate 文档
 
 - [globset crate](https://docs.rs/globset):glob 模式匹配
-- [walkdir crate](https://docs.rs/walkdir):目录遍历
+- [ignore crate](https://docs.rs/ignore):目录遍历(ripgrep 封装,支持 .gitignore)
 - [regex crate](https://docs.rs/regex):正则表达式
 - [similar crate](https://docs.rs/similar):差异计算
 
@@ -3073,19 +3240,19 @@ cargo test test_read_with_line_numbers
 
 | 任务 ID | 任务名称 | 状态 | 完成日期 | 备注 |
 |---------|---------|------|---------|------|
-| T1.01 | 确认保留 Python Sidecar(无需改动) | 未开始 | - | |
-| T1.02 | 确认保留后端 Handler 服务和 DocumentService | 未开始 | - | |
-| T1.03 | 确认保留前端文档预览和 HandlersTab | 未开始 | - | |
-| T1.04 | 新增 edit/glob/grep 所需依赖到 Cargo.toml | 未开始 | - | |
-| T1.05 | 保留 Sidecar 依赖,确认构建正常 | 未开始 | - | |
-| T1.06 | 重构系统提示词 - 身份层与规则层 | 未开始 | - | |
-| T1.07 | 实现 AGENTS.md 加载机制 | 未开始 | - | |
-| T1.08 | 改造 read 工具(增加行号、二进制保护) | 未开始 | - | |
-| T1.09 | 新增 edit 工具(精确字符串替换) | 未开始 | - | |
-| T1.10 | 新增 glob 工具(基于 globset) | 未开始 | - | |
-| T1.11 | 新增 grep 工具(基于 ripgrep) | 未开始 | - | |
-| T1.12 | 改造 bash 工具(增强权限控制) | 未开始 | - | |
-| T1.13 | 更新 AppState 和 AgentExecutor(保留 handler_registry,预留模式过滤钩子) | 未开始 | - | |
-| T1.14 | 集成测试:验证核心编程能力(同时验证文档 Handler 保留) | 未开始 | - | |
+| T1.01 | 确认保留 Python Sidecar(无需改动) | 未开始 | | |
+| T1.02 | 确认保留后端 Handler 服务和 DocumentService | 未开始 | | |
+| T1.03 | 确认保留前端文档预览和 HandlersTab | 未开始 | | |
+| T1.04 | 新增 edit/glob/grep 所需依赖到 Cargo.toml | 未开始 | | |
+| T1.05 | 保留 Sidecar 依赖,确认构建正常 | 未开始 | | |
+| T1.06 | 重构系统提示词 - 身份层与规则层 | 未开始 | | |
+| T1.07 | 实现 AGENTS.md 加载机制 | 未开始 | | |
+| T1.08 | 改造 read 工具(增加行号、二进制保护) | 未开始 | | |
+| T1.09 | 新增 edit 工具(精确字符串替换) | 未开始 | | |
+| T1.10 | 新增 glob 工具(基于 ignore crate(ripgrep 封装,支持 .gitignore)) | 未开始 | | |
+| T1.11 | 新增 grep 工具(基于 ignore crate(ripgrep 封装,支持 .gitignore)) | 未开始 | | |
+| T1.12 | 改造 bash 工具(增强权限控制) | 未开始 | | |
+| T1.13 | 更新 AppState 和 AgentExecutor(保留 handler_registry,预留模式过滤钩子) | 未开始 | | |
+| T1.14 | 集成测试:验证核心编程能力(同时验证文档 Handler 保留) | 未开始 | | |
 
-**阶段 1 完成标志**:所有任务状态为"已完成",且第四节的检查清单全部通过。
+**阶段 1 完成标志**:所有任务状态为"未开始",且第四节的检查清单全部通过。

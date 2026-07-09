@@ -1,6 +1,7 @@
 # DocAgent 编程 Agent 改造总体计划
 
-> 文档版本:v1.1(2026-07-08 修订:保留文档 Handler,新增 Document 模式)
+> 文档版本:v1.2(2026-07-09 修订:LSP 单工具架构,新增 apply_patch/question 工具,工具清单对齐 OpenCode 13 个,grep/glob 基于 ignore crate,websearch 改为 MCP 协议,read_lines 合并到 read)
+> v1.1(2026-07-08 修订:保留文档 Handler,新增 Document 模式)
 > 创建日期:2026-07-08
 > 改造目标:将 DocAgent 从文档处理智能体改造为通用编程 Agent,参照 OpenCode 的功能实现,同时保留文档处理能力(按 Document 模式启用)
 > 改造原则:全面改造,分阶段进行,保证质量,不改变现有 UI 设计
@@ -20,7 +21,7 @@ DocAgent 起初定位为 AI 文档处理桌面应用,基于 Tauri 2.x (Rust + Re
 参照开源编程 Agent [OpenCode](https://github.com/sst/opencode) (sst/opencode, branch 2.0) 的功能实现,对 DocAgent 进行大型改造:
 
 1. **系统提示词架构**:从"文档处理专家"重构为"编程 Agent",引入 AGENTS.md 机制、Agent 类型特定 prompt
-2. **内置工具链**:保留文档 Handler(按模式动态启用),新增编程核心工具(edit/glob/grep/todowrite/task/webfetch/lsp_* 等)
+2. **内置工具链**:保留文档 Handler(按模式动态启用),新增编程核心工具(edit/glob/grep/todowrite/task/webfetch/lsp 等)
 3. **Agent 模式**:实现 Plan(只读规划)/Build(执行修改)/Document(文档处理)三态模式切换,文档 Handler 仅在 Document 模式下出现在工具列表中
 4. **权限系统**:从简单 ConfirmationLevel 升级为三态权限(allow/deny/ask) + 可持久化规则
 5. **Skill 系统**:实现 SKILL.md 加载机制,按需注入领域能力
@@ -45,11 +46,11 @@ DocAgent 起初定位为 AI 文档处理桌面应用,基于 Tauri 2.x (Rust + Re
 |------|----------|---------------|----------|
 | **定位** | 终端编程 Agent | 文档处理 Agent | 桌面编程 Agent |
 | **语言栈** | TypeScript (Bun) | Rust + React/TypeScript | 保持 Rust + React |
-| **Agent 类型** | build/plan/general/explore/compaction/title/summary (7个) | 单一 Agent | 引入 build/plan/explore/general |
-| **工具数量** | 14+ 内置工具 | 16 个 Tool + 4 个 Handler | 保留 Handler(按模式启用),新增至 20+ 工具 |
+| **Agent 类型** | build/plan/general/explore/scout/compaction/title/summary (8个, scout 为外部文档/依赖研究的只读子代理) | 单一 Agent | 引入 build/plan/explore/general |
+| **工具数量** | 13 个核心工具(官方对齐) | 16 个 Tool + 4 个 Handler | 保留 Handler(按模式启用),对齐 OpenCode 13 个核心工具 + DocAgent 扩展 |
 | **权限系统** | 三态(allow/deny/ask) + 持久化规则 | ConfirmationLevel(Always/EditOnly/Never) | 升级为三态权限 |
 | **Skill 系统** | .opencode/skill/*/SKILL.md | 无 | 实现 Skill 加载 |
-| **LSP 集成** | 有(lsp_definition 等) | 无 | 实现 LSP 客户端 |
+| **LSP 集成** | 有(单一 lsp 工具,operation 参数路由) | 无 | 实现 LSP 客户端(实验性) |
 | **子 Agent** | 有(task 工具) | 无 | 实现 Agent 嵌套 |
 | **上下文压缩** | SessionCompaction | 无 | 实现压缩机制 |
 | **规则文件** | AGENTS.md/CLAUDE.md/CONTEXT.md | 无 | 实现 AGENTS.md |
@@ -88,19 +89,21 @@ System Prompt
 
 | 工具类别 | OpenCode | DocAgent 现状 | 改造方向 |
 |---------|----------|---------------|----------|
-| **文件读取** | read(行号、行范围、二进制保护) | read, read_lines | 改造 read 增加行号,合并 read_lines |
-| **文件编辑** | edit(oldString/newString 精确替换,FileTime 锁) | write(整体覆盖) | **新增 edit 工具** |
-| **文件写入** | write | write | 保留 |
-| **文件搜索** | glob(模式匹配) | list, search | **新增 glob 工具** |
-| **内容搜索** | grep(ripgrep,正则) | search(简单匹配) | **新增 grep 工具** |
-| **命令执行** | bash(AST 解析,权限扫描) | bash(Git Bash) | 改造 bash 增强权限 |
-| **任务管理** | todowrite, todoread | scratchpad(草稿本) | **新增 todowrite 工具** |
+| **文件读取** | read(行号、行范围、二进制保护) | read, read_file_lines | 改造 read 增加行号,合并 read_lines(通过 start_line/end_line 参数实现) |
+| **文件编辑** | edit(oldString/newString 精确替换,FileTime 锁) | write_text_file(整体覆盖) | **新增 edit 工具** |
+| **补丁应用** | apply_patch(补丁文件应用) | 无 | **新增 apply_patch 工具**(edit 权限类别) |
+| **文件写入** | write | write_text_file | 保留 |
+| **文件搜索** | glob(模式匹配) | list_directory, search_files | **新增 glob 工具**(基于 ignore crate) |
+| **内容搜索** | grep(ripgrep,正则) | search_files(简单匹配) | **新增 grep 工具**(基于 ignore crate,支持 .gitignore) |
+| **命令执行** | bash(AST 解析,权限扫描) | run_command(Git Bash) | 改造 bash 增强权限 |
+| **任务管理** | todowrite | update_notes(草稿本) | **新增 todowrite 工具** |
 | **子 Agent** | task | 无 | **新增 task 工具** |
 | **网页抓取** | webfetch | 无 | **新增 webfetch 工具** |
-| **网络搜索** | websearch | 无 | **新增 websearch 工具** |
-| **LSP** | lsp_definition, lsp_references | 无 | **新增 LSP 工具**(阶段5) |
+| **网络搜索** | websearch | 无 | **新增 websearch 工具**(MCP 协议,Exa AI) |
+| **用户提问** | question | 无 | **新增 question 工具**(独立权限类别) |
+| **LSP** | lsp(单一工具,operation 路由 8 种操作) | 无 | **新增 lsp 工具**(阶段5,实验性) |
 | **代码搜索** | sourcecode, codesearch | 无 | **新增 sourcecode 工具** |
-| **脚本执行** | 无(用 bash) | write_script, bash | 保留(DocAgent 特色) |
+| **脚本执行** | 无(用 bash) | write_script, run_command | 保留(DocAgent 特色) |
 | **文档处理** | 无 | 4 个 Handler | **保留,按 Document 模式动态启用** |
 
 ---
@@ -113,7 +116,7 @@ System Prompt
 改造范围
 ├── 后端 Rust (src-tauri/src/)
 │   ├── services/agent/         系统提示词重构、Agent 模式(Plan/Build/Document)、执行循环增强
-│   ├── services/tool/          工具链重构(新增 edit/glob/grep/todowrite/task/webfetch 等)
+│   ├── services/tool/          工具链重构(新增 edit/glob/grep/todowrite/task/webfetch/apply_patch/question 等)
 │   ├── services/permission/    [新] 权限系统(三态决策 + 持久化规则)
 │   ├── services/skill/         [新] Skill 加载系统
 │   ├── services/lsp/           [新] LSP 客户端
@@ -158,13 +161,15 @@ System Prompt
 3. 实现 AGENTS.md 加载机制(项目级 + 全局级规则文件)
 4. 新增核心编程工具:
    - `edit`:基于 oldString/newString 的精确文件编辑(带 FileTime 锁)
-   - `glob`:文件模式匹配工具(基于 globset crate)
-   - `grep`:内容搜索工具(基于 ripgrep crate)
+   - `glob`:文件模式匹配工具(基于 ignore crate,支持 .gitignore)
+   - `grep`:内容搜索工具(基于 ignore crate + regex,支持 .gitignore)
+   - `apply_patch`:应用补丁文件修改代码(edit 权限类别)
+   - `question`:向用户提问,收集偏好或澄清需求(独立权限类别)
 5. 改造现有工具:
-   - `read`:增加行号显示、二进制文件保护
+   - `read`:增加行号显示、二进制文件保护,合并 read_lines(通过 start_line/end_line 参数实现)
    - `bash`:增强命令解析和权限控制
 6. 在 executor 中预留"按 Agent 模式动态过滤工具列表"的钩子(实际过滤逻辑在阶段 2 实现)
-7. 更新 Cargo.toml 和 package.json 依赖(新增 edit/glob/grep 所需,保留 Sidecar 依赖)
+7. 更新 Cargo.toml 和 package.json 依赖(新增 edit/glob/grep/apply_patch 所需,保留 Sidecar 依赖)
 
 **交付物**:可运行的编程 Agent 原型,具备文件读写、编辑、搜索、命令执行能力;文档 Handler 保留但默认不启用(等待阶段 2 的模式过滤机制)
 
@@ -178,7 +183,7 @@ System Prompt
 
 **主要任务**:
 1. 实现三态权限系统(allow/deny/ask):
-   - 权限类型:edit, read, bash, webfetch, task, external_directory, doom_loop, document 等
+   - 权限类型:edit, read(DocAgent 扩展,OpenCode 原生不管控 read 权限), bash, webfetch, task, external_directory, doom_loop, document 等
    - 用户回复:once / always / reject
    - 权限规则持久化(数据库 permission 表)
 2. 实现 Plan/Build/Document 三态模式切换(仅前端按钮,不提供 LLM 工具):
@@ -238,8 +243,8 @@ System Prompt
 2. 实现 WebFetch 工具:
    - 抓取网页内容并转为 markdown
    - 支持 URL 过滤和内容截断
-3. 实现 WebSearch 工具:
-   - 网络搜索(可选接入搜索 API)
+3. 实现 WebSearch 工具(MCP 协议,Exa AI,JSON-RPC 2.0):
+   - 网络搜索(基于 MCP 协议接入 Exa AI)
    - 返回搜索结果摘要
 4. 改造 AgentExecutor 支持递归调用:
    - 子 Agent 执行器复用主执行器逻辑
@@ -261,11 +266,16 @@ System Prompt
    - 基于 lsp-types crate 实现 LSP 协议
    - 支持 LSP 服务器自动启动(按文件类型)
    - 常见语言服务器配置(TypeScript/Python/Rust/Go/Java)
-2. 实现 LSP 工具:
-   - `lsp_definition`:跳转到定义
-   - `lsp_references`:查找引用
-   - `lsp_diagnostics`:获取诊断信息(错误、警告)
-   - `lsp_rename`:符号重命名(可选)
+2. 实现 LSP 工具(实验性,参照 OpenCode `OPENCODE_EXPERIMENTAL_LSP_TOOL`):
+   - 单一 `lsp` 工具,通过 `operation` 参数路由 8 种操作:
+     - `definition`:跳转到定义
+     - `references`:查找引用
+     - `hover`:悬停信息
+     - `diagnostics`:获取诊断信息(错误、警告)
+     - `document_symbol`:文档符号列表
+     - `workspace_symbol`:工作区符号搜索
+     - `implementation`:跳转到实现
+     - `call_hierarchy`:调用层次
 3. 集成到 edit 工具:
    - 编辑文件后自动触发 LSP 诊断
    - 将诊断错误反馈给 LLM
@@ -328,12 +338,14 @@ System Prompt
 
 | 模块 | 技术选型 | 说明 |
 |------|----------|------|
-| **glob 工具** | `globset` crate | 高性能文件模式匹配 |
-| **grep 工具** | `grep` crate (ripgrep 核心) | 高性能正则搜索 |
+| **glob 工具** | `ignore` crate(ripgrep 封装) | 高性能文件模式匹配,支持 .gitignore |
+| **grep 工具** | `ignore` crate(ripgrep 封装) + `regex` | 高性能正则搜索,支持 .gitignore |
 | **edit 工具** | 自实现 + `similar` crate | 精确字符串替换 + 差异计算 |
-| **LSP 客户端** | `lsp-types` + `tokio` | LSP 协议实现 |
+| **apply_patch 工具** | 自实现 | 应用补丁文件修改代码(edit 权限类别) |
+| **LSP 客户端** | `lsp-types` + `tokio` | LSP 协议实现(单一 lsp 工具,operation 路由) |
 | **tree-sitter** | `tree-sitter` crate | 代码语法分析(用于 sourcecode 工具) |
 | **网页抓取** | `reqwest` + `scraper` | HTTP 请求 + HTML 解析 |
+| **网络搜索** | MCP 协议(Exa AI,JSON-RPC 2.0) | websearch 工具实现 |
 | **权限规则存储** | SQLite `permission_rules` 表 | 持久化权限规则 |
 | **Skill 加载** | `serde_yaml` + `walkdir` | frontmatter 解析 + 目录扫描 |
 
@@ -485,43 +497,96 @@ System Prompt
 
 ```rust
 pub struct AppState {
-    pub db: Arc<Database>,
-    pub config: Arc<Mutex<ConfigManager>>,
-    pub active_agents: Arc<Mutex<HashMap<String, bool>>>,
-    pub confirm_channels: Arc<Mutex<HashMap<String, oneshot::Sender<ConfirmDecision>>>>,
-    pub doc_service: Arc<DocumentService>,           // [移除] 阶段1
-    pub llm_router: Arc<RwLock<Arc<LlmRouter>>>,
-    pub tool_registry: Arc<ToolRegistry>,
-    pub handler_registry: Arc<Mutex<HandlerRegistry>>, // [移除] 阶段1
-    pub fs_watcher: Arc<FsWatcherService>,
-    pub network_monitor: Arc<NetworkMonitor>,
-    pub scratchpad_states: SharedScratchpadStates>,
+    pub db: Arc<Database>,                            // [保留]
+    pub config: Arc<Mutex<ConfigManager>>,            // [保留]
+    pub active_agents: Arc<Mutex<HashMap<String, bool>>>, // [保留]
+    pub confirm_channels: Arc<Mutex<HashMap<String, oneshot::Sender<ConfirmDecision>>>>, // [保留] 阶段2升级为权限系统
+    pub doc_service: Arc<DocumentService>,           // [保留] v1.1: Document 模式下使用
+    pub llm_router: Arc<RwLock<Arc<LlmRouter>>>,     // [保留]
+    pub tool_registry: Arc<ToolRegistry>,            // [保留]
+    pub handler_registry: Arc<Mutex<HandlerRegistry>>, // [保留] v1.1: Document 模式下使用(阶段1保留)
+    pub fs_watcher: Arc<FsWatcherService>,           // [保留]
+    pub network_monitor: Arc<NetworkMonitor>,        // [保留]
+    pub scratchpad_states: SharedScratchpadStates,   // [保留] 阶段3整合进 TodoWrite
     // [新增] 阶段2: permission_registry: Arc<PermissionRegistry>
     // [新增] 阶段3: skill_service: Arc<SkillService>
     // [新增] 阶段5: lsp_manager: Arc<LspManager>
 }
 ```
 
-### 10.2 现有工具清单(16 个)
+### 10.2 目标工具清单(对齐 OpenCode 13 个核心工具)
 
-| 工具名 | 类别 | 改造处置 |
-|--------|------|----------|
-| list | filesystem | 保留 |
-| search | filesystem | 保留(后续可被 grep 替代) |
-| read | filesystem | 改造(增加行号) |
-| file_info | filesystem | 保留 |
-| exists | filesystem | 保留 |
-| remove | filesystem | 保留 |
-| mkdir | filesystem | 保留 |
-| write | filesystem | 保留 |
-| rename | filesystem | 保留 |
-| copy | filesystem | 保留 |
-| remove_dir | filesystem | 保留 |
-| hash | filesystem | 保留 |
-| read_lines | filesystem | 保留(可与 read 合并) |
-| scratchpad | notes | 保留(阶段3整合进 TodoWrite) |
-| write_script | code | 保留(DocAgent 特色) |
-| bash | code | 改造(增强权限) |
+| 工具名 | 权限类别 | 用途 |
+|--------|---------|------|
+| bash | bash | 执行 shell 命令 |
+| edit | edit | 精确字符串替换修改文件 |
+| write | edit | 创建新文件或覆盖现有文件 |
+| read | read | 读取文件内容(支持行号范围 start_line/end_line) |
+| grep | grep | 基于 ignore crate 的正则搜索(支持 .gitignore) |
+| glob | glob | 基于 ignore crate 的文件模式匹配(支持 .gitignore) |
+| lsp | lsp | LSP 代码智能(单一工具,operation 参数路由 8 种操作,实验性) |
+| apply_patch | edit | 应用补丁文件修改代码 |
+| skill | skill | 加载 Skill |
+| todowrite | todowrite | 管理待办列表 |
+| webfetch | webfetch | 获取网页内容 |
+| websearch | websearch | 网络搜索(MCP 协议,Exa AI,JSON-RPC 2.0) |
+| question | question | 向用户提问(收集偏好或澄清需求) |
+
+> **DocAgent 扩展工具**(不在 OpenCode 13 个核心工具内,DocAgent 特色保留):
+> - `write_script`:将智能体生成的脚本写入系统临时目录(DocAgent 特色)
+> - `task`:子 Agent 委托工具(阶段4 实现)
+> - `sourcecode`:代码语义搜索(阶段3 实现,基于 tree-sitter)
+> - 文档 Handler(`docx`/`xlsx`/`pptx`/`pdf`):仅 Document 模式下动态启用
+
+> **命名规则说明**：
+> - DocAgent 原有工具：复合词保留下划线（如 `file_info`/`read_lines`/`remove_dir`/`write_script`），单词无下划线（如 `list`/`read`/`bash`）
+> - 从 OpenCode 引入的工具：沿用 OpenCode 原名，不适用下划线规则（如 `todowrite`/`webfetch`/`websearch`/`apply_patch`/`question`），因为这些工具名在 OpenCode 生态中已约定俗成。原 docx_handler 改名为 docx ，其他 handler 同理。
+
+### 工具重命名映射表
+
+以下工具在改造过程中进行重命名、合并或新增（当前代码使用旧名，改造后使用新名）：
+
+**A. DocAgent 原有工具重命名**
+
+| 当前代码名(旧) | 目标新名 | 类型 | 说明 |
+|---------------|---------|------|------|
+| list_directory | list | 重命名 | 单词化 |
+| search_files | search | 重命名 | 单词化 |
+| read_file | read | 重命名 | 单词化（注：当前代码已是 read，无需改） |
+| file_exists | exists | 重命名 | 单词化 |
+| delete_file | remove | 重命名 | 单词化 |
+| create_directory | mkdir | 重命名 | 单词化 |
+| write_text_file | write | 重命名 | 单词化 |
+| rename_file | rename | 重命名 | 单词化 |
+| copy_file | copy | 重命名 | 单词化 |
+| delete_directory | remove_dir | 重命名 | 复合词保留下划线 |
+| get_file_hash | hash | 重命名 | 单词化 |
+| update_notes | scratchpad | 重命名 | 统一为 scratchpad |
+| run_command | bash | 重命名 | 单词化（增强权限） |
+
+**B. 工具合并**
+
+| 当前代码名(旧) | 目标新名 | 类型 | 说明 |
+|---------------|---------|------|------|
+| read_file_lines | read | 合并 | 合并到 read,通过 start_line/end_line 参数实现行号范围读取 |
+| lsp_definition / lsp_references / lsp_diagnostics / lsp_hover | lsp | 合并 | 合并为单一 lsp 工具,通过 operation 参数路由 8 种操作(实验性) |
+
+**C. 新增工具(OpenCode 引入,沿用原名)**
+
+| 工具名 | 权限类别 | 类型 | 说明 |
+|--------|---------|------|------|
+| edit | edit | 新增 | 基于 oldString/newString 的精确文件编辑(带 FileTime 锁) |
+| glob | glob | 新增 | 基于 ignore crate 的文件模式匹配(支持 .gitignore) |
+| grep | grep | 新增 | 基于 ignore crate 的正则搜索(支持 .gitignore) |
+| apply_patch | edit | 新增 | 应用补丁文件修改代码 |
+| skill | skill | 新增 | 加载 Skill |
+| todowrite | todowrite | 新增 | 管理待办列表(替代 Scratchpad) |
+| webfetch | webfetch | 新增 | 获取网页内容 |
+| websearch | websearch | 新增 | 网络搜索(MCP 协议,Exa AI) |
+| question | question | 新增 | 向用户提问(独立权限类别) |
+| task | task | 新增 | 子 Agent 委托(阶段4) |
+
+> **不变的工具**：`read`、`file_info`、`write_script`、`bash`（注：bash 是 run_command 的新名）、`scratchpad`（是 update_notes 的新名,阶段3整合进 TodoWrite）
 
 ### 10.3 现有 Handler 清单(4 个,保留并按 Document 模式启用)
 
@@ -539,4 +604,4 @@ pub struct AppState {
 - `list_tools`:保留,返回值按当前 Agent 模式过滤
 - `start_agent`:增加 mode 参数(阶段2,支持 plan/build/document)
 - `confirm_operation`:升级为权限审批(阶段2)
-- 新增命令:`list_skills`, `load_skill`, `lsp_*` 等
+- 新增命令:`list_skills`, `load_skill`, `lsp` 等

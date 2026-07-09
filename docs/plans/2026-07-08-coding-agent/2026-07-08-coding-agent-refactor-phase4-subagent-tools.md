@@ -225,6 +225,30 @@ impl SubAgentExecutor {
         }
     }
 
+    /// 列出指定配置下可用的工具定义列表(用于测试和调试)
+    pub fn list_tools_for_config(&self, config: &SubAgentConfig) -> Vec<ToolDefinition> {
+        let document_handler_names = ["docx", "xlsx", "pptx", "pdf"];
+        let mode = config.agent_mode.as_str();
+        let is_document_mode = mode == "document";
+
+        self.tool_registry.list_tool_definitions()
+            .into_iter()
+            .filter(|t| {
+                if !is_document_mode && document_handler_names.contains(&t.name.as_str()) {
+                    return false;
+                }
+                true
+            })
+            .filter(|t| {
+                if config.allowed_tools.is_empty() {
+                    true
+                } else {
+                    config.allowed_tools.contains(&t.name)
+                }
+            })
+            .collect()
+    }
+
     /// 执行子 Agent
     /// 1. 初始化子 Agent 上下文(继承父 Agent 配置)
     /// 2. 构建子任务消息
@@ -1277,6 +1301,8 @@ impl WebFetcher {
 
 ### T4.09:实现 WebFetch 工具
 
+> **命名规则说明**：`webfetch`/`websearch` 工具沿用 OpenCode 原名，不适用"复合词保留下划线"规则。OpenCode 生态中这些工具名已约定俗成。
+
 **文件**:
 - 创建:`src-tauri/src/services/tool/builtin/webfetch.rs`
 - 修改:`src-tauri/src/services/tool/builtin.rs`(注册 WebFetchTool)
@@ -1461,30 +1487,27 @@ async fn execute_tool(&self, tool_name: &str, params: Value, ...) -> ... {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WebSearchConfig {
-    /// 是否启用网络搜索
     pub enabled: bool,
-    /// 搜索引擎类型: "google" | "bing" | "duckduckgo" | "serpapi" | "tavily"
-    pub search_engine: String,
-    /// API Key(部分搜索引擎需要)
+    /// 搜索后端类型: "mcp" (MCP 协议,参照 OpenCode Exa AI) | "tavily" (Tavily API) | "serpapi" (SerpAPI)
+    pub backend: String,
+    /// MCP 服务端点(当 backend="mcp" 时使用,默认 Exa AI 托管服务)
+    pub mcp_endpoint: String,
+    /// API Key(当 backend="tavily" 或 "serpapi" 时使用)
     #[serde(skip_serializing)]
     pub api_key: String,
-    /// 每次搜索返回的结果数
     pub max_results: usize,
-    /// 搜索超时时间(秒)
     pub timeout_seconds: u64,
-    /// 是否包含搜索结果摘要
-    pub include_snippet: bool,
 }
 
 impl Default for WebSearchConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            search_engine: "duckduckgo".to_string(), // 默认使用 DuckDuckGo(无需 API Key)
+            backend: "mcp".to_string(),
+            mcp_endpoint: "https://mcp.exa.ai".to_string(), // Exa AI 托管 MCP 服务
             api_key: String::new(),
             max_results: 5,
-            timeout_seconds: 15,
-            include_snippet: true,
+            timeout_seconds: 30,
         }
     }
 }
@@ -1502,8 +1525,8 @@ impl Default for WebSearchConfig {
 
 **实施内容**:
 ```rust
-//! Web 搜索器:支持多种搜索引擎
-//! 默认使用 DuckDuckGo(无需 API Key),也支持 Google/Bing(需 API Key)
+//! Web 搜索器:支持多种搜索后端
+//! 默认使用 MCP 协议(Exa AI 托管服务),也支持 Tavily/SerpAPI(需 API Key)
 
 use crate::config::app_settings::WebSearchConfig;
 use reqwest::Client;
@@ -1568,14 +1591,11 @@ impl WebSearcher {
 
         let start = std::time::Instant::now();
 
-        let results = match self.config.search_engine.as_str() {
-            "duckduckgo" => self.search_duckduckgo(query).await?,
-            "tavily" => self.search_tavily(query).await?,
-            "serpapi" => self.search_serpapi(query).await?,
-            _ => return Err(format!(
-                "不支持的搜索引擎: {}",
-                self.config.search_engine
-            )),
+        let results = match self.config.backend.as_str() {
+            "mcp" => self.search_via_mcp(query).await,
+            "tavily" => self.search_tavily(query).await,
+            "serpapi" => self.search_serpapi(query).await,
+            _ => self.search_via_mcp(query).await, // 默认 MCP
         };
 
         let duration_ms = start.elapsed().as_millis() as u64;
@@ -1589,58 +1609,47 @@ impl WebSearcher {
         })
     }
 
-    /// DuckDuckGo 搜索(使用 HTML 解析,无需 API Key)
-    async fn search_duckduckgo(&self, query: &str) -> Result<Vec<SearchResultItem>, String> {
-        let url = format!(
-            "https://html.duckduckgo.com/html/?q={}",
-            urlencoding::encode(query)
-        );
+    /// 通过 MCP 协议搜索(参照 OpenCode Exa AI 实现)
+    async fn search_via_mcp(&self, query: &str) -> Result<Vec<SearchResult>, CommandError> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(self.config.timeout_seconds))
+            .build()?;
 
-        let response = self.client
-            .get(&url)
+        // MCP 协议: JSON-RPC 2.0 格式
+        let request = json!({
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "params": {
+                "name": "web_search",
+                "arguments": {
+                    "query": query,
+                    "max_results": self.config.max_results
+                }
+            },
+            "id": 1
+        });
+
+        let response = client
+            .post(&self.config.mcp_endpoint)
+            .json(&request)
             .send()
             .await
-            .map_err(|e| format!("DuckDuckGo 请求失败: {}", e))?;
+            .map_err(|e| CommandError::network_error(format!("MCP 搜索请求失败: {}", e)))?;
 
-        let html = response
-            .text()
-            .await
-            .map_err(|e| format!("读取响应失败: {}", e))?;
+        let result: serde_json::Value = response.json().await
+            .map_err(|e| CommandError::parse_error(format!("解析 MCP 响应失败: {}", e)))?;
 
-        // 解析 HTML 提取结果(简化实现,实际应使用 select 或 scraper 库)
-        let mut results = Vec::new();
-        
-        // 使用简单的字符串匹配提取结果
-        // 实际实现应使用 scraper 或 select 库解析 HTML
-        for segment in html.split("result__body") {
-            if results.len() >= self.config.max_results {
-                break;
-            }
-
-            // 提取标题和 URL(简化实现)
-            if let Some(url_start) = segment.find("href=\"") {
-                let url_end = segment[url_start + 6..].find("\"").map(|i| url_start + 6 + i);
-                if let Some(url_end) = url_end {
-                    let result_url = &segment[url_start + 6..url_end];
-                    
-                    // 提取标题(在 URL 后的文本中)
-                    let title_start = segment[url_end..].find(">").map(|i| url_end + i + 1);
-                    if let Some(title_start) = title_start {
-                        let title_end = segment[title_start..].find("<").map(|i| title_start + i);
-                        if let Some(title_end) = title_end {
-                            let title = &segment[title_start..title_end];
-                            
-                            results.push(SearchResultItem {
-                                title: title.to_string(),
-                                url: result_url.to_string(),
-                                snippet: String::new(), // DuckDuckGo HTML 版摘要提取较复杂
-                                display_url: None,
-                            });
-                        }
-                    }
-                }
-            }
-        }
+        // 解析 MCP 响应格式
+        let results = result["result"]["content"]
+            .as_array()
+            .ok_or_else(|| CommandError::parse_error("MCP 响应格式错误"))?
+            .iter()
+            .map(|item| SearchResult {
+                title: item["title"].as_str().unwrap_or("").to_string(),
+                url: item["url"].as_str().unwrap_or("").to_string(),
+                snippet: item["snippet"].as_str().unwrap_or("").to_string(),
+            })
+            .collect();
 
         Ok(results)
     }
@@ -1776,7 +1785,7 @@ impl Tool for WebSearchTool {
     }
 
     fn description(&self) -> &str {
-        "执行网络搜索,返回相关结果列表(标题、URL、摘要)。支持 DuckDuckGo(默认,无需 API Key)、Tavily、SerpAPI。用于主动发现信息,而非被动等待用户提供。"
+        "执行网络搜索,返回相关结果列表(标题、URL、摘要)。支持 MCP 协议(默认,Exa AI 托管服务)、Tavily、SerpAPI。用于主动发现信息,而非被动等待用户提供。"
     }
 
     fn parameters(&self) -> Value {
@@ -2209,12 +2218,61 @@ register_builtin_tools(
 
 - `task`: 委托子任务给子 Agent(支持批量并行)
 - `webfetch`: 获取 URL 内容并转换为 Markdown
-- `websearch`: 执行网络搜索(DuckDuckGo/Tavily/SerpAPI)
+- `websearch`: 执行网络搜索(MCP/Tavily/SerpAPI)
 ```
 
 **验证**:
 - `cargo build -p docagent_lib` 成功
 - 应用启动后,工具列表包含 task/webfetch/websearch
+
+---
+
+### T4.19: 新增 question 工具(向用户提问)
+
+**参照 OpenCode**: OpenCode 内置 question 工具,允许 Agent 在执行中向用户提问。
+
+**工具定义**:
+- 工具名: `question`
+- 功能: 向用户提问,获取澄清信息或决策输入
+- 权限: 默认 allow(无需确认)
+
+**参数 Schema**:
+```json
+{
+  "type": "object",
+  "properties": {
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "header": {"type": "string", "description": "短标签(最多12字符)"},
+          "question": {"type": "string", "description": "完整问题文本"},
+          "options": {
+            "type": "array",
+            "items": {"type": "object", "properties": {"label": {"type": "string"}, "description": {"type": "string"}}},
+            "description": "选项列表(2-4个)"
+          },
+          "multiSelect": {"type": "boolean", "description": "是否允许多选"}
+        },
+        "required": ["header", "question", "options"]
+      },
+      "description": "问题列表(1-4个问题)"
+    }
+  },
+  "required": ["questions"]
+}
+```
+
+**实现要点**:
+1. Agent 调用 question 工具时,通过 Tauri 事件发射 `agent:question` 事件到前端
+2. 前端显示问题对话框,用户可在多个问题间导航
+3. 用户提交后,通过 oneshot channel 返回答案
+4. 超时: 5 分钟自动返回空结果
+
+**与 confirm 的区别**:
+- confirm: 二元确认(是/否),用于高风险操作授权
+- question: 开放式提问,用于获取澄清信息或决策输入
 
 ---
 
@@ -2231,10 +2289,11 @@ register_builtin_tools(
 | 配置项 | 位置 | 默认值 | 说明 |
 |--------|------|--------|------|
 | `webSearch.enabled` | `WebSearchConfig` | `true` | 是否启用网络搜索 |
-| `webSearch.searchEngine` | `WebSearchConfig` | `"duckduckgo"` | 搜索引擎类型 |
-| `webSearch.apiKey` | `WebSearchConfig` | `""` | 搜索引擎 API Key |
+| `webSearch.backend` | `WebSearchConfig` | `"mcp"` | 搜索后端类型(mcp/tavily/serpapi) |
+| `webSearch.mcpEndpoint` | `WebSearchConfig` | `"https://mcp.exa.ai"` | MCP 服务端点 |
+| `webSearch.apiKey` | `WebSearchConfig` | `""` | API Key(tavily/serpapi 使用) |
 | `webSearch.maxResults` | `WebSearchConfig` | `5` | 每次搜索结果数 |
-| `webSearch.timeoutSeconds` | `WebSearchConfig` | `15` | 搜索超时时间 |
+| `webSearch.timeoutSeconds` | `WebSearchConfig` | `30` | 搜索超时时间 |
 
 ### 5.2 Tauri CSP 变更
 
@@ -2288,7 +2347,7 @@ register_builtin_tools(
 - **html2md crate**:https://docs.rs/html2md
 - **reqwest crate**:https://docs.rs/reqwest
 - **Tauri CSP 配置**:https://tauri.app/v1/guides/security/csp/
-- **DuckDuckGo API**:https://duckduckgo.com/api
+- **Exa AI MCP 服务**:https://mcp.exa.ai
 
 ### 7.3 相关文档
 
@@ -2321,6 +2380,7 @@ register_builtin_tools(
 | T4.16 | 前端子 Agent 展示 | 待实施 | - | |
 | T4.17 | 编写集成测试 | 待实施 | - | |
 | T4.18 | 更新文档与工具注册 | 待实施 | - | |
+| T4.19 | 新增 question 工具(向用户提问) | 待实施 | - | |
 
 ---
 
@@ -2345,8 +2405,8 @@ register_builtin_tools(
    - 回滚:恢复原始 CSP,WebFetch 仅支持白名单域名
 
 5. **搜索引擎 API 限额**:Tavily/SerpAPI 有调用次数限制
-   - 缓解:默认使用 DuckDuckGo(免费);配置缓存
-   - 回滚:切换到 DuckDuckGo
+   - 缓解:默认使用 MCP(Exa AI 托管服务);配置缓存
+   - 回滚:切换到 MCP 后端
 
 6. **v1.1 新增 - 子 Agent 模式过滤失效**:子 Agent 未按父 Agent 的 AgentMode 过滤工具列表,导致 Build 模式下子 Agent 仍能看到文档 Handler
    - 缓解:SubAgentExecutor 的工具构建逻辑先按 mode 过滤,再按 allowed_tools 过滤;集成测试覆盖 Build/Document 两种模式的工具可见性
