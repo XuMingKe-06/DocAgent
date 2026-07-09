@@ -2572,6 +2572,11 @@ impl Default for AgentModeManager {
 - 过滤是"按需可见性控制",而非"启用/禁用",Handler 代码本身不做任何改动
 - 这保证了阶段 1 的"保留 Handler"设计与阶段 2 的"按模式过滤"设计的无缝衔接
 
+> **LSP 工具过滤策略说明**(阶段 5 相关):
+> 阶段 5 的 LSP 工具为只读代码理解工具,在 Plan/Build/Document 三种模式下均可用,**不参与模式过滤**。
+> 本任务的过滤逻辑仅针对文档 Handler(`docx`/`xlsx`/`pptx`/`pdf`),LSP 工具(`lsp`)不需要在此处特殊处理。
+> 阶段 5 实施 LSP 工具时,工具注册在 `tool_registry` 中,会自动出现在所有模式的 `tool_definitions` 里。
+
 **实施步骤**:
 
 #### 1. 定义文档 Handler 名称常量
@@ -2841,16 +2846,21 @@ pub fn layer_agent_mode(mode: &AgentMode) -> String {
 
 在 `build_system_prompt_with_task` 方法中注入此层:
 
+> **接口对齐说明**:本方法签名必须与 overview 4.4.2 节统一接口定义一致。
+> Phase 1 已增加 `agents_md_content` 参数,本阶段增加 `agent_mode` 参数。
+> **必须保留 `author_info` 参数**(传 `None` 即可),不得移除。
+
 ```rust
 pub fn build_system_prompt_with_task(
     workspace_path: &str,
     task_type: &TaskType,
     tool_count: usize,
     handler_count: usize,
-    budget: &TokenBudgetManager,
-    agents_md: Option<&str>,
+    token_budget: &TokenBudgetManager,
+    author_info: Option<&AuthorInfo>,   // 保留参数(Phase 1 已有,不得移除)
     env_info: &EnvironmentInfo,
-    agent_mode: &AgentMode,  // [新增] 参数
+    agents_md_content: Option<&str>,    // Phase 1 新增
+    agent_mode: &AgentMode,             // [本阶段新增] 参数
 ) -> String {
     let mut prompt = String::new();
 
@@ -2862,12 +2872,12 @@ pub fn build_system_prompt_with_task(
     prompt.push_str(&layer_rules());
     prompt.push_str("\n\n");
 
-    // Layer 2: 上下文层
-    prompt.push_str(&layer_context(workspace_path, tool_count, handler_count, env_info));
+    // Layer 2: 上下文层(必须传递完整 5 个参数,见 overview 4.4.3)
+    prompt.push_str(&layer_context(workspace_path, tool_count, handler_count, author_info, env_info));
     prompt.push_str("\n\n");
 
     // Layer 2.5: AGENTS.md 规则(阶段1实现)
-    if let Some(md) = agents_md {
+    if let Some(md) = agents_md_content {
         prompt.push_str(md);
         prompt.push_str("\n\n");
     }
@@ -2949,11 +2959,12 @@ let agent_mode_manager = Arc::new(crate::services::agent::AgentModeManager::new(
 log::info!("权限系统已初始化");
 
 // 注册内置工具时传入 mode_manager
-crate::services::tool::builtin::register_builtin_tools(
-    &tool_registry,
-    workspace_root.clone(),
+// 注意:返回值 SharedScratchpadStates 必须接收,用于与 ScratchpadTool 共享状态
+// 签名参照 overview 4.4.1 节统一接口定义(Phase 2 阶段:渐进式扩展,仅增加 agent_mode_manager 参数)
+let scratchpad_states = crate::services::tool::builtin::register_builtin_tools(
+    &mut tool_registry,
     git_bash_path.clone(),
-    Arc::clone(&agent_mode_manager),
+    Arc::clone(&agent_mode_manager),  // [本阶段新增]
 );
 ```
 

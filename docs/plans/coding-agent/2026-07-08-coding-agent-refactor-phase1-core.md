@@ -687,6 +687,9 @@ Example: Clients are marked as failed in the `connectToServer` function in src/s
 
 修改 `build_system_prompt_with_task` 方法(第 765-808 行),按多段式架构(基础 prompt + 环境信息 + AGENTS.md + Agent 特定 prompt)组装:
 
+> **接口对齐说明**:本方法签名必须与 overview 4.4.2 节统一接口定义一致。
+> 本阶段实现基础签名 + `agents_md_content` 参数,`agent_mode` 参数暂用默认值 `AgentMode::Build`(阶段 2 实现)。
+
 ```rust
 pub fn build_system_prompt_with_task(
     workspace_path: &str,
@@ -698,6 +701,8 @@ pub fn build_system_prompt_with_task(
     env_info: &EnvironmentInfo,
     // AGENTS.md 内容(由 T1.07 实现)
     agents_md_content: Option<&str>,
+    // Agent 模式(阶段 2 实现,本阶段使用默认值)
+    #[allow(unused_variables)] agent_mode: &AgentMode,
 ) -> String {
     // 段 1:基础 prompt(系统内置统一核心提示词,不按 Provider 区分)
     // 含身份与语气风格、主动性与遵循约定、工具使用策略、任务执行、代码引用与脚本执行、防幻觉、错误处理
@@ -724,6 +729,7 @@ pub fn build_system_prompt_with_task(
     // 段 4:Agent 特定 prompt(build/plan/document 模式特定指令,阶段 2 实现)
     // 本阶段(build 模式)基础 prompt 已涵盖所有必要内容,Agent 特定 prompt 暂为空
     // 阶段 2 实现 plan/document 模式时,在此追加模式特定指令
+    // 阶段 2 实施时:parts.push(Self::layer_agent_mode(agent_mode));
 
     // Token 预算控制:跳过规范层和示例层(已不再需要文档设计规范)
     let _ = token_budget;
@@ -798,9 +804,10 @@ pub fn build_system_prompt(workspace_path: &str) -> String {
         0,
         0,
         &TokenBudgetManager::default_context(),
-        None,
+        None,  // author_info
         &env_info,
         None,  // agents_md_content
+        &AgentMode::Build,  // agent_mode(阶段 1 默认 Build)
     )
 }
 ```

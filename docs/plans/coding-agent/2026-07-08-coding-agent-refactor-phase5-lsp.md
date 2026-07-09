@@ -2877,26 +2877,35 @@ async fn test_symbol_kind_name_conversion() {
 **实施内容**:
 
 **在 register_builtin_tools 中注册 LSP 工具**:
+
+> **接口对齐说明**:本方法签名必须与 overview 4.4.1 节统一接口定义一致。
+> 本阶段增加 `lsp_manager`、`lsp_router`、`lsp_cache` 参数(从 Option 改为实际值)。
+
 ```rust
+// Phase 5 阶段签名(最终形态:在 Phase 4 基础上增加 lsp_manager、lsp_router、lsp_cache 参数)
 pub fn register_builtin_tools(
     registry: &mut ToolRegistry,
-    // ... 现有参数
-    lsp_manager: Arc<LspServerManager>,
-    lsp_router: Arc<LanguageRouter>,
-    lsp_cache: Arc<LspResultCache>,
+    git_bash_path: String,
+    agent_mode_manager: Arc<AgentModeManager>,       // Phase 2 引入
+    db: Arc<Database>,                                // Phase 3 引入
+    sub_executor: Arc<SubAgentExecutor>,              // Phase 4 引入
+    web_search_config: WebSearchConfig,                // Phase 4 引入
+    lsp_manager: Arc<LspServerManager>,                // [本阶段新增]
+    lsp_router: Arc<LanguageRouter>,                   // [本阶段新增]
+    lsp_cache: Arc<LspResultCache>,                    // [本阶段新增]
 ) -> SharedScratchpadStates {
     // ... 现有工具注册
-    
+
     // 阶段 5 新增 LSP 工具(单一工具,operation 参数路由)
     // 仅在实验性开关开启时注册
-    if lsp_config.experimental_enabled {
+    if lsp_manager.config().experimental_enabled {
         registry.register(Box::new(LspTool::new(
             lsp_manager.clone(),
             lsp_router.clone(),
             lsp_cache.clone(),
         )));
     }
-    
+
     // ...
 }
 ```
@@ -2937,6 +2946,19 @@ if lsp_config.health_check_interval_seconds > 0 {
         }
     });
 }
+
+// 调用 register_builtin_tools 时传入 LSP 参数(对齐 overview 4.4.1 统一签名,Phase 5 阶段)
+let scratchpad_states = register_builtin_tools(
+    &mut tool_registry,
+    git_bash_path,
+    agent_mode_manager.clone(),
+    db.clone(),
+    sub_executor.clone(),           // Phase 4 引入
+    web_search_config.clone(),       // Phase 4 引入
+    lsp_manager.clone(),            // [本阶段新增]
+    lsp_router.clone(),             // [本阶段新增]
+    lsp_cache.clone(),              // [本阶段新增]
+);
 ```
 
 **更新 CLAUDE.md**:

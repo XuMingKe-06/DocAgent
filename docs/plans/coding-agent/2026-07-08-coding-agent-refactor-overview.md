@@ -369,6 +369,92 @@ System Prompt
 | `tauri.conf.json` 中的 sidecar 配置 | 打包 Sidecar |
 | `package.json` 中的 sidecar:build 脚本 | 构建 Sidecar |
 
+### 4.4 统一接口定义(跨阶段共用)
+
+> v1.3 新增:为避免各阶段对同一接口的修改互相冲突,本节定义跨阶段共用的统一接口签名。各阶段文档在修改这些接口时,必须以本节为准。
+
+#### 4.4.1 `register_builtin_tools` 统一签名
+
+`register_builtin_tools` 函数随阶段推进逐步增加参数。为避免各阶段签名冲突,采用"渐进式签名扩展"策略:每阶段只增加该阶段引入的参数,不提前引入后续阶段的参数类型(避免类型不存在的编译错误)。最终签名(Phase 5 完成后)如下所示。
+
+**最终签名(Phase 5 完成后)**:
+```rust
+pub fn register_builtin_tools(
+    registry: &mut ToolRegistry,
+    git_bash_path: String,
+    // Phase 2 新增:Agent 模式管理器(用于模式相关工具的行为控制)
+    agent_mode_manager: Arc<AgentModeManager>,
+    // Phase 3 新增:数据库连接(用于 TodoWriteTool 持久化任务列表)
+    db: Arc<Database>,
+    // Phase 4 新增:子 Agent 执行器和网络搜索配置
+    sub_executor: Arc<SubAgentExecutor>,
+    web_search_config: WebSearchConfig,
+    // Phase 5 新增:LSP 相关组件
+    lsp_manager: Arc<LspServerManager>,
+    lsp_router: Arc<LanguageRouter>,
+    lsp_cache: Arc<LspResultCache>,
+) -> SharedScratchpadStates
+```
+
+**各阶段调用方式**:
+
+各阶段采用"渐进式签名扩展"原则,每阶段只增加该阶段引入的参数,不提前引入后续阶段的参数类型(避免类型不存在的编译错误):
+
+- **Phase 1**:签名保持原始形态 `(registry, git_bash_path) -> SharedScratchpadStates`
+- **Phase 2**:签名扩展为 `(registry, git_bash_path, agent_mode_manager) -> SharedScratchpadStates`
+- **Phase 3**:签名扩展为 `(registry, git_bash_path, agent_mode_manager, db) -> SharedScratchpadStates`
+- **Phase 4**:签名扩展为 `(registry, git_bash_path, agent_mode_manager, db, sub_executor, web_search_config) -> SharedScratchpadStates`
+- **Phase 5**:签名扩展为最终形态(上述完整签名)
+
+**注意**:
+- `workspace_root` 不作为 `register_builtin_tools` 的参数(工作区路径由 executor 在运行时注入,不在工具注册时传递)
+- 返回值 `SharedScratchpadStates` 必须被调用方接收,用于与 `ScratchpadTool` 共享状态
+- 各阶段实施时只需修改签名为该阶段的形态,不需要提前引入后续阶段的参数
+
+#### 4.4.2 `build_system_prompt_with_task` 统一签名
+
+**最终签名(Phase 2 完成后)**:
+```rust
+pub fn build_system_prompt_with_task(
+    workspace_path: &str,
+    task_type: &TaskType,
+    tool_count: usize,
+    handler_count: usize,
+    token_budget: &TokenBudgetManager,
+    author_info: Option<&AuthorInfo>,       // 保留(传 None 即可,Document 模式下使用)
+    env_info: &EnvironmentInfo,
+    agents_md_content: Option<&str>,        // Phase 1 新增:AGENTS.md 内容
+    agent_mode: &AgentMode,                 // Phase 2 新增:Agent 模式
+) -> String
+```
+
+**各阶段实施要求**:
+- **Phase 1 T1.06**:实现基础签名 + `agents_md_content` 参数,`agent_mode` 参数暂用默认值 `AgentMode::Build`
+- **Phase 2 T2.14**:增加 `agent_mode` 参数,必须保留 `author_info` 参数(传 `None`),不得移除
+- **Phase 3 及以后**:不再修改此签名,仅修改方法内部的 prompt 组装逻辑
+
+#### 4.4.3 `layer_context` 统一签名
+
+**最终签名(保持与现有代码一致)**:
+```rust
+fn layer_context(
+    workspace_path: &str,
+    tool_count: usize,
+    handler_count: usize,
+    author_info: Option<&AuthorInfo>,  // 保留参数,编程 Agent 场景传 None
+    env_info: &EnvironmentInfo,
+) -> String
+```
+
+**要求**:所有阶段调用 `layer_context` 时必须传递完整的 5 个参数,`author_info` 在非 Document 模式下传 `None`。
+
+#### 4.4.4 `build_system_prompt` 方法形态
+
+**Phase 3 重构说明**:
+- Phase 1/2:`build_system_prompt` 为 `AgentContext` 的关联函数(静态方法),签名 `pub fn build_system_prompt(workspace_path: &str) -> String`
+- Phase 3:改为实例方法 `pub fn build_system_prompt(&self, session_id: &str, mode: &str) -> String`,需要给 `AgentContext` 添加 `db: Option<Arc<Database>>` 字段以读取 TodoList
+- Phase 3 实施时必须在 `AgentContext` 结构体中新增 `db` 字段,并在 `new` 方法中初始化
+
 ---
 
 ## 五、风险与应对

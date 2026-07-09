@@ -1354,6 +1354,42 @@ impl Tool for TodoWriteTool {
 }
 ```
 
+**步骤 3:在 register_builtin_tools 中注册 TodoWriteTool**
+
+> **接口对齐说明**:本阶段需要修改 `register_builtin_tools` 签名,增加 `db` 参数。
+> 完整签名见 overview 4.4.1 节统一接口定义。
+
+修改 `src-tauri/src/services/tool/builtin.rs` 中的 `register_builtin_tools`:
+
+```rust
+// Phase 3 阶段签名(渐进式扩展:在 Phase 2 基础上增加 db 参数)
+pub fn register_builtin_tools(
+    registry: &mut ToolRegistry,
+    git_bash_path: String,
+    agent_mode_manager: Arc<AgentModeManager>,       // Phase 2 引入
+    db: Arc<Database>,                                // [本阶段新增]
+) -> SharedScratchpadStates {
+    // ... 现有工具注册 ...
+
+    // [本阶段新增] TodoWrite 工具
+    registry.register(Box::new(TodoWriteTool::new(db.clone())));
+
+    // ... 其他工具 ...
+}
+```
+
+在 `lib.rs` 中调用时传入 `db` 参数:
+
+```rust
+// 签名参照 overview 4.4.1 节统一接口定义(Phase 3 阶段:渐进式扩展,增加 db 参数)
+let scratchpad_states = register_builtin_tools(
+    &mut tool_registry,
+    git_bash_path,
+    agent_mode_manager.clone(),
+    db.clone(),                   // [本阶段新增]
+);
+```
+
 **验证**:
 - `cargo build -p docagent_lib` 成功
 - 单元测试:create -> update -> list -> clear 流程
@@ -1368,15 +1404,55 @@ impl Tool for TodoWriteTool {
 
 **实施内容**:
 
-**在 AgentContext 中添加 TodoList 读取**:
+> **架构变更说明**(参照 overview 4.4.4):
+> 本任务将 `build_system_prompt` 从关联函数(静态方法)改为实例方法,需要在 `AgentContext` 结构体中新增 `db` 字段。
+> 现有 `AgentContext`(见 [context.rs:186](file:///d:/DeskTop/DocAgent/src-tauri/src/services/agent/context.rs#L186))没有 `db` 字段,本任务需要添加。
+
+**步骤 1:在 AgentContext 结构体中新增 db 字段**
+
+修改 `src-tauri/src/services/agent/context.rs` 中的 `AgentContext` 结构体:
+
+```rust
+pub struct AgentContext {
+    // ... 现有字段保持不变 ...
+
+    // [新增] 数据库连接(用于读取 TodoList、SessionSummary 等)
+    // 为 Option 类型,测试场景下可为 None
+    pub db: Option<std::sync::Arc<crate::db::Database>>,
+}
+```
+
+在 `new` 和 `new_default` 方法中初始化:
+
+```rust
+impl AgentContext {
+    pub fn new(session_id: String, system_prompt: String, context_window: usize) -> Self {
+        Self {
+            // ... 现有字段初始化保持不变 ...
+            db: None,  // 默认 None,由 executor 在初始化时注入
+        }
+    }
+
+    /// 设置数据库连接(由 executor 在初始化时注入)
+    pub fn set_db(&mut self, db: std::sync::Arc<crate::db::Database>) {
+        self.db = Some(db);
+    }
+}
+```
+
+**步骤 2:在 AgentContext 中添加 TodoList 读取**
+
 ```rust
 impl AgentContext {
     /// 构建系统提示词时注入 TodoList 摘要
+    /// 注意:此方法从静态方法改为实例方法(参照 overview 4.4.4)
     pub fn build_system_prompt(&self, session_id: &str, mode: &str) -> String {
         let mut prompt = String::new();
-        
-        // 基础提示词...
-        
+
+        // 基础提示词...(调用 build_system_prompt_with_task 静态方法构建基础部分)
+        // let base = Self::build_system_prompt_with_task(...);
+        // prompt.push_str(&base);
+
         // 注入 TodoList 摘要(如果有)
         if let Some(db) = &self.db {
             if let Ok(conn) = db.conn() {
@@ -1387,7 +1463,7 @@ impl AgentContext {
                 }
             }
         }
-        
+
         prompt
     }
 }
@@ -2102,7 +2178,12 @@ pub struct SearchQuery {
     pub max_results: usize,
 }
 
-/// 搜索结果
+/// 代码搜索结果(SourceCode 工具专用)
+///
+/// 命名说明:此 `SearchResult` 与 Phase 4 的 `SearchResultItem`(WebSearch 工具)是不同的类型:
+/// - `SearchResult`(本类型):代码符号搜索结果,包含 file_path/symbol/line_content
+/// - `SearchResultItem`(Phase 4):网络搜索结果,包含 title/url/snippet
+/// 两者属于不同模块(`services/code/search.rs` vs `services/web/searcher.rs`),不会冲突
 #[derive(Debug, Clone)]
 pub struct SearchResult {
     pub file_path: PathBuf,
@@ -2468,6 +2549,18 @@ impl Tool for SourceCodeTool {
 
 // 引入需要的类型
 use crate::services::code::parser::{ProgrammingLanguage, SymbolType};
+```
+
+**步骤 2:在 register_builtin_tools 中注册 SourceCodeTool**
+
+> **接口对齐说明**:`register_builtin_tools` 签名已在 T3.12 中扩展为包含 `db` 参数(见 overview 4.4.1)。
+> SourceCodeTool 不需要额外参数(使用 workspace_root 由 executor 注入),直接在现有签名内注册即可。
+
+修改 `src-tauri/src/services/tool/builtin.rs` 中的 `register_builtin_tools`:
+
+```rust
+// 在 register_builtin_tools 函数中添加(T3.12 已修改签名,此处仅新增注册)
+registry.register(Box::new(SourceCodeTool::new()));
 ```
 
 **验证**:

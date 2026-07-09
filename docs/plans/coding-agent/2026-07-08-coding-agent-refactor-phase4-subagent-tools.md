@@ -1319,6 +1319,13 @@ use crate::models::tool::ToolResult;
 use serde_json::{json, Value};
 use std::sync::Mutex;
 
+/// WebFetch 工具:获取 URL 内容并转换为 Markdown
+///
+/// 设计说明:`new()` 不接收参数,因为 WebFetch 工具的配置(超时、UA 等)使用默认值。
+/// 与 WebSearchTool 的 `new(config)` 不同,WebFetch 不需要搜索引擎配置。
+/// 这是合理的设计差异,因为两个工具的职责不同:
+/// - WebFetch:仅获取指定 URL 内容,无需外部配置
+/// - WebSearch:需要配置搜索引擎后端(MCP/Tavily/SerpAPI)和 API Key
 pub struct WebFetchTool {
     /// Web 内容获取器(Mutex 保护,因为内部有可变状态)
     fetcher: Mutex<WebFetcher>,
@@ -1610,7 +1617,7 @@ impl WebSearcher {
     }
 
     /// 通过 MCP 协议搜索(参照 OpenCode Exa AI 实现)
-    async fn search_via_mcp(&self, query: &str) -> Result<Vec<SearchResult>, CommandError> {
+    async fn search_via_mcp(&self, query: &str) -> Result<Vec<SearchResultItem>, CommandError> {
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(self.config.timeout_seconds))
             .build()?;
@@ -1644,7 +1651,7 @@ impl WebSearcher {
             .as_array()
             .ok_or_else(|| CommandError::parse_error("MCP 响应格式错误"))?
             .iter()
-            .map(|item| SearchResult {
+            .map(|item| SearchResultItem {
                 title: item["title"].as_str().unwrap_or("").to_string(),
                 url: item["url"].as_str().unwrap_or("").to_string(),
                 snippet: item["snippet"].as_str().unwrap_or("").to_string(),
@@ -2174,22 +2181,28 @@ async fn test_sub_agent_tool_filtering_by_mode() {
 **实施内容**:
 
 **在 register_builtin_tools 中注册新工具**:
+
+> **接口对齐说明**:本方法签名必须与 overview 4.4.1 节统一接口定义一致。
+> 本阶段增加 `sub_executor` 和 `web_search_config` 参数(从 Option 改为实际值)。
+
 ```rust
 // 在 builtin.rs 的 register_builtin_tools 函数中添加
+// Phase 4 阶段签名(渐进式扩展:在 Phase 3 基础上增加 sub_executor 和 web_search_config 参数)
 pub fn register_builtin_tools(
     registry: &mut ToolRegistry,
     git_bash_path: String,
-    db: Arc<Database>,
-    sub_executor: Arc<SubAgentExecutor>,
-    web_search_config: WebSearchConfig,
+    agent_mode_manager: Arc<AgentModeManager>,       // Phase 2 引入
+    db: Arc<Database>,                                // Phase 3 引入
+    sub_executor: Arc<SubAgentExecutor>,              // [本阶段新增]
+    web_search_config: WebSearchConfig,                // [本阶段新增]
 ) -> SharedScratchpadStates {
     // ... 现有工具注册
-    
+
     // 阶段 4 新增工具
     registry.register(Box::new(TaskTool::new(sub_executor)));
     registry.register(Box::new(WebFetchTool::new()));
     registry.register(Box::new(WebSearchTool::new(web_search_config)));
-    
+
     // ... 其他工具
 }
 ```
@@ -2204,13 +2217,14 @@ let sub_executor = Arc::new(SubAgentExecutor::new(
     session_whitelist.clone(),
 ));
 
-// 注册工具时传入 sub_executor
-register_builtin_tools(
+// 注册工具时传入 sub_executor(对齐 overview 4.4.1 统一签名,Phase 4 阶段)
+let scratchpad_states = register_builtin_tools(
     &mut tool_registry,
     git_bash_path,
+    agent_mode_manager.clone(),
     db.clone(),
-    sub_executor.clone(),
-    web_search_config,
+    sub_executor,                 // [本阶段新增]
+    web_search_config,            // [本阶段新增]
 );
 ```
 
