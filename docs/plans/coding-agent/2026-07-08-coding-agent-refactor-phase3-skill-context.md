@@ -42,7 +42,7 @@ OpenCode 通过 Skill 系统、TodoWrite 工具、SessionCompaction(上下文压
 
 - **渐进式增强**:Skill/TodoWrite/Compaction/SourceCode 互相独立,可分步实施
 - **权限系统复用**:Skill 工具受 `PermissionType::Skill` 控制
-- **Agent 模式感知**:Plan 模式下 TodoWrite 可用,SourceCode 可用,Skill 加载受限(只读 Skill)
+- **Agent 模式感知**:Plan 模式下 TodoWrite 可用,SourceCode 可用,Skill 可全部加载（只读约束由 Plan 模式的 check_permission 保证）
 - **最小侵入**:尽量复用现有 AgentContext、ToolRegistry 架构
 
 ---
@@ -761,55 +761,22 @@ impl AgentContext {
 
 ---
 
-### T3.08:Skill 权限过滤与模式感知
+### T3.08:Skill 权限过滤（已移除 Plan 模式 read_only 检查）
+
+> **变更说明**:`compaction-skill-refinement` spec 移除了 Plan 模式下对 Skill `read_only` 字段的权限检查。原计划在 executor.rs 中检查 `read_only` 字段并拒绝加载非只读 Skill 的代码已被移除。移除后 Plan 模式下所有 Skill 均可加载，Plan 模式的只读约束由 `check_permission` 中的 `is_modification()` 检查保证（edit/bash/write 等修改类工具在 Plan 模式下被拒绝）。
 
 **文件**:
-- 修改:`src-tauri/src/services/skill/tool.rs`
-- 修改:`src-tauri/src/services/agent/executor.rs`
+- 不再需要修改（原 T3.08 代码块已从 executor.rs 移除）
 
-**实施内容**:
-
-**在 SkillTool 的 execute 方法中添加权限检查**:
-```rust
-async fn execute(
-    &self,
-    params: Value,
-    workspace_root: &str,
-) -> Result<ToolResult, crate::errors::CommandError> {
-    // 权限检查由 AgentExecutor 统一处理(PermissionType::Skill)
-    // SkillTool 本身只需处理业务逻辑
-    
-    let action = params.get("action")
-        .and_then(|v| v.as_str())
-        .unwrap_or("list");
-
-    // 检查 Agent 模式(从 params 中获取,或从上下文获取)
-    // Plan 模式下只能加载 read_only Skill
-    // 此检查在 AgentExecutor 层实现,通过 PermissionType::Skill 规则配置
-    
-    // ... 业务逻辑(见 T3.06)
-}
-```
-
-**在 AgentExecutor 中添加 Skill 权限检查**:
-```rust
-// 在 execute_tool 方法中,针对 SkillTool 添加特殊权限检查
-async fn execute_tool(&self, tool_name: &str, params: Value, ...) -> ... {
-    // 通用权限检查
-    let permission_result = self.check_permission(
-        PermissionType::Skill,
-        tool_name,
-        &params,
-        session_id,
-    ).await?;
-    
-    // ... 执行工具
-}
-```
+**实施说明**:
+- Skill 加载本身是只读操作（仅读取 markdown 内容），不需要在 Plan 模式下限制
+- Plan 模式的只读约束由 `check_permission` 统一处理，通过 `is_modification()` 拒绝修改类工具
+- SkillTool 的 `execute` 方法仅处理业务逻辑，权限检查由 AgentExecutor 统一管理（`PermissionType::Skill`）
 
 **验证**:
-- Plan 模式下,加载非 read_only Skill 时被拒绝
-- Build 模式下,所有 Skill 可正常加载
+- Plan 模式下所有 Skill 均可被加载（不再检查 `read_only` 字段）
+- Plan 模式下 edit/bash/write 等修改类工具仍被 `check_permission` 的 `is_modification()` 检查拒绝
+- Build/Document 模式下 Skill 加载行为不变（原本就允许所有 Skill）
 - v1.1 新增:Document 模式下,所有 Skill 可正常加载(同 Build 模式)
 - v1.1 新增:`modes: ["document"]` 的 Skill 仅在 Document 模式下可见
 
@@ -1631,9 +1598,12 @@ impl ContextCompactor {
     pub async fn compact(
         &self,
         messages: &[ChatMessage],
-        llm_provider: &Arc<dyn LlmProvider>,
+        llm_provider: &dyn LlmProvider,
     ) -> Result<CompactionResult, crate::errors::CommandError> {
-        if messages.len() <= self.config.keep_recent_messages {
+        let keep_recent = self.config.keep_recent_messages;
+
+        // 若消息数不超过保留数,不压缩
+        if messages.len() <= keep_recent {
             return Ok(CompactionResult {
                 messages: messages.to_vec(),
                 compaction_summary: String::new(),
@@ -1643,41 +1613,51 @@ impl ContextCompactor {
             });
         }
 
-        // 分割消息:旧消息(待压缩) + 最近消息(保留)
-        let split_point = messages.len() - self.config.keep_recent_messages;
+        // 分割消息:old_messages + recent_messages
+        let split_point = messages.len() - keep_recent;
         let old_messages = &messages[..split_point];
-        let recent_messages = &messages[split_point..];
+        let mut recent_messages: Vec<ChatMessage> = messages[split_point..].to_vec();
 
-        // 步骤 1:对旧消息生成摘要
-        let compaction_summary = self.generate_summary(old_messages, llm_provider).await?;
-
-        // 步骤 2:对最近消息中的旧工具输出做 prune
-        let mut compacted_recent = recent_messages.to_vec();
+        // 对旧消息的工具输出做 prune(减少摘要请求的 token 消耗)
+        let mut old_messages_pruned: Vec<ChatMessage> = old_messages.to_vec();
         if self.config.compact_tool_outputs {
-            for msg in &mut compacted_recent {
+            for msg in &mut old_messages_pruned {
                 self.prune_tool_output(msg);
             }
         }
 
-        // 构建压缩后的消息列表(摘要 + 最近消息)
-        let mut result_messages = Vec::new();
-        
-        // 添加压缩摘要作为系统消息
-        if !compaction_summary.is_empty() {
-            result_messages.push(ChatMessage {
-                role: MessageRole::System,
-                content: format!("[上下文压缩摘要]\n{}\n[/上下文压缩摘要]", compaction_summary),
-                ..Default::default()
-            });
+        // 对旧消息生成摘要
+        let summary = self
+            .generate_summary(&old_messages_pruned, llm_provider)
+            .await?;
+
+        // 对 recent_messages 中的工具输出做 prune
+        if self.config.compact_tool_outputs {
+            for msg in &mut recent_messages {
+                self.prune_tool_output(msg);
+            }
         }
-        
-        result_messages.extend(compacted_recent);
+
+        // 构建结果:摘要 system 消息 + recent_messages
+        let summary_system_msg = ChatMessage {
+            role: "system".to_string(),
+            content: format!("[Context Compaction Summary]\n{}", summary),
+            content_parts: None,
+            tool_calls: None,
+            tool_call_id: None,
+            reasoning_content: None,
+            attachments: None,
+        };
+
+        let mut result_messages = Vec::with_capacity(recent_messages.len() + 1);
+        result_messages.push(summary_system_msg);
+        result_messages.extend(recent_messages);
 
         Ok(CompactionResult {
             messages: result_messages,
-            compaction_summary,
-            tokens_before: 0, // 由调用方计算
-            tokens_after: 0,  // 由调用方计算
+            compaction_summary: summary,
+            tokens_before: 0,
+            tokens_after: 0,
             compacted: true,
         })
     }
@@ -1686,34 +1666,46 @@ impl ContextCompactor {
     async fn generate_summary(
         &self,
         messages: &[ChatMessage],
-        llm_provider: &Arc<dyn LlmProvider>,
+        llm_provider: &dyn LlmProvider,
     ) -> Result<String, crate::errors::CommandError> {
-        // 构建摘要请求
-        let mut summary_prompt = String::from(
-            "请总结以下对话历史,提取继续工作所需的关键信息:\n\
-             1. 用户的核心需求\n\
-             2. 已完成的工作\n\
-             3. 未完成的任务\n\
-             4. 关键决策和原因\n\
-             5. 重要的文件路径、配置、错误信息\n\
-             6. 当前遇到的障碍\n\n\
-             对话历史:\n"
-        );
+        // 摘要请求的系统提示词(英文,提取关键信息)
+        let system_prompt =
+            "You are a conversation summarization assistant. Carefully read the following conversation history and extract the following key information:\n\n\
+1. The user's core requirements and goals\n\
+2. Completed work and results\n\
+3. Unfinished tasks and pending items\n\
+4. Key decisions and rationale\n\
+5. File paths and important data involved\n\
+6. Obstacles encountered and solutions\n\n\
+Requirements:\n\
+- Output a concise structured summary in English\n\
+- Preserve all key file paths, function names, variable names and other technical details\n\
+- Preserve important code snippets and data\n\
+- Do not omit any key information to facilitate subsequent conversation reference";
 
-        for msg in messages {
-            summary_prompt.push_str(&format!("[{}] {}\n", msg.role.as_str(), msg.content));
-        }
+        // 构建摘要请求消息:系统提示 + 旧消息
+        let mut summary_messages = Vec::with_capacity(messages.len() + 1);
+        summary_messages.push(ChatMessage {
+            role: "system".to_string(),
+            content: system_prompt.to_string(),
+            content_parts: None,
+            tool_calls: None,
+            tool_call_id: None,
+            reasoning_content: None,
+            attachments: None,
+        });
+        summary_messages.extend(messages.iter().cloned());
 
         // 调用 LLM 生成摘要
-        let summary_messages = vec![ChatMessage {
-            role: MessageRole::User,
-            content: summary_prompt,
-            ..Default::default()
-        }];
+        let response = llm_provider.chat(&summary_messages, &[]).await?;
 
-        let response = llm_provider.chat(&summary_messages, None, None).await?;
-        
-        Ok(response.content)
+        let summary = response
+            .choices
+            .first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default();
+
+        Ok(summary)
     }
 
     /// 对工具输出做 prune(截断过长的内容)
@@ -1740,24 +1732,25 @@ impl ContextCompactor {
 
 ---
 
-### T3.17:集成 Compaction 到 AgentExecutor
+### T3.17:集成 Compaction 到 AgentExecutor（使用 compact_messages 方法）
 
 **文件**:
 - 修改:`src-tauri/src/services/agent/executor.rs`
+- 修改:`src-tauri/src/services/llm/router.rs`
 
 **实施内容**:
 
-在 AgentExecutor 的迭代循环中,每轮迭代前检查是否需要压缩:
+在 AgentExecutor 的迭代循环中,每轮迭代前通过 router 的 `compact_messages` 方法检查是否需要压缩:
 
 ```rust
 impl AgentExecutor {
     /// 执行单轮迭代
-    async fn execute_iteration(&self, session_id: &str, ...) -> ... {
+    async fn execute_iteration(&self, session_id: &str, ctx: &AgentContext, ...) -> ... {
         // 获取当前上下文消息
-        let mut messages = self.context.get_messages(session_id).await?;
+        let all_messages = self.context.get_messages(session_id).await?;
         
         // 计算当前 token 数
-        let current_tokens = self.estimate_tokens(&messages);
+        let current_tokens = self.estimate_tokens(&all_messages);
         let context_window = self.get_context_window();
         
         // 检查是否需要压缩
@@ -1770,37 +1763,45 @@ impl AgentExecutor {
                 );
                 
                 // 发射压缩开始事件
-                self.emit_event(session_id, "agent:compaction_start", json!({
-                    "tokensBefore": current_tokens,
-                })).ok();
+                self.emitter.emit_compaction_start(...).ok();
                 
-                // 执行压缩
-                let llm_provider = self.llm_router.get_provider().await?;
-                let result = compactor.compact(&messages, &llm_provider).await?;
+                // 解析 preferred_provider_id(与 chat_stream 的 provider 解析模式一致)
+                let preferred = if ctx.preferred_provider_id.is_empty() {
+                    None
+                } else {
+                    Some(ctx.preferred_provider_id.as_str())
+                };
                 
-                // 更新消息列表
-                messages = result.messages;
-                
-                // 更新上下文
-                self.context.replace_messages(session_id, messages.clone()).await?;
-                
-                // 发射压缩完成事件
-                self.emit_event(session_id, "agent:compaction_done", json!({
-                    "tokensBefore": result.tokens_before,
-                    "tokensAfter": result.tokens_after,
-                    "compacted": result.compacted,
-                })).ok();
-                
-                log::info!(
-                    "上下文压缩完成:{} -> {} tokens",
-                    result.tokens_before,
-                    result.tokens_after
-                );
+                // 通过 router.compact_messages 执行压缩
+                // compact_messages 方法签名:
+                // pub async fn compact_messages(
+                //     &self,
+                //     messages: &[ChatMessage],
+                //     compactor: &ContextCompactor,
+                //     preferred_provider_id: Option<&str>,  // 新增参数
+                // ) -> Result<CompactionResult, CommandError>
+                match self.router.compact_messages(
+                    &all_messages, compactor, preferred
+                ).await {
+                    Ok(result) => {
+                        if result.compacted {
+                            // 更新消息列表和上下文
+                            self.context.replace_messages(session_id, result.messages).await?;
+                            
+                            // 发射压缩完成事件
+                            self.emitter.emit_compaction_done(...).ok();
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("上下文压缩失败: {}", e);
+                    }
+                }
             }
         }
         
         // 继续执行 LLM 调用...
     }
+}
     
     /// 估算消息列表的 token 数(简化实现)
     fn estimate_tokens(&self, messages: &[ChatMessage]) -> u64 {
@@ -1862,14 +1863,14 @@ pub struct CompactionDonePayload {
 ```tsx
 // 在 WorkflowTimeline 中添加压缩事件节点
 // 当收到 agent:compaction_done 事件时,展示:
-// "上下文已压缩:12000 -> 4500 tokens"
+// "上下文已压缩:12000 -> 4500 tokens (Context Compaction Summary)"
 
 // 在 WorkflowNode 组件中添加 compaction 类型
 case 'compaction':
   return (
     <div className="workflow-node compaction-node">
       <Icon name="compress" />
-      <span>上下文压缩: {data.tokensBefore} -> {data.tokensAfter} tokens</span>
+      <span>上下文压缩: {data.tokensBefore} -> {data.tokensAfter} tokens [Context Compaction Summary]</span>
     </div>
   );
 ```
@@ -2874,7 +2875,7 @@ fn other_function() {
 | T3.05 | 实现 Skill 注册表 | 待实施 | - | |
 | T3.06 | 实现 Skill 工具 | 待实施 | - | |
 | T3.07 | Skill 清单注入系统提示词 | 待实施 | - | |
-| T3.08 | Skill 权限过滤与模式感知 | 待实施 | - | |
+| T3.08 | Skill 权限过滤（已移除 Plan 模式 read_only 检查） | 已修改 | compaction-skill-refinement | 移除 read_only 检查，Plan 模式由 check_permission 保证只读 |
 | T3.09 | Skill 热重载与文件监听 | 待实施 | - | |
 | T3.10 | 定义 TodoWrite 数据模型 | 待实施 | - | |
 | T3.11 | 实现 TodoWrite 仓库 | 待实施 | - | |
@@ -2882,9 +2883,9 @@ fn other_function() {
 | T3.13 | 集成 TodoWrite 到 AgentContext | 待实施 | - | |
 | T3.14 | 替代 Scratchpad 摘要功能 | 待实施 | - | |
 | T3.15 | 定义 SessionCompaction 配置 | 待实施 | - | |
-| T3.16 | 实现 Compaction 策略 | 待实施 | - | |
-| T3.17 | 集成 Compaction 到 AgentExecutor | 待实施 | - | |
-| T3.18 | Compaction 事件与前端通知 | 待实施 | - | |
+| T3.16 | 实现 Compaction 策略 | 已修改 | compaction-skill-refinement | generate_summary 使用英文提示词，[Context Compaction Summary] 前缀 |
+| T3.17 | 集成 Compaction 到 AgentExecutor（使用 compact_messages 方法） | 已修改 | compaction-skill-refinement | compact_messages 接受 preferred_provider_id 参数 |
+| T3.18 | Compaction 事件与前端通知 | 已修改 | compaction-skill-refinement | 事件前缀改为 [Context Compaction Summary] |
 | T3.19 | 新增 tree-sitter 依赖 | 待实施 | - | |
 | T3.20 | 实现 LanguageParser | 待实施 | - | |
 | T3.21 | 实现 SourceCode 工具 | 待实施 | - | |

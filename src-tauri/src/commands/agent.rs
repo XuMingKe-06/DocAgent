@@ -106,6 +106,7 @@ pub async fn start_agent(
     let session_whitelist = Arc::clone(&state.session_whitelist);
     let doom_loop_detector = Arc::clone(&state.doom_loop_detector);
     let agent_mode_manager = Arc::clone(&state.agent_mode_manager);
+    let skill_registry = Arc::clone(&state.skill_registry);
 
     let max_iterations = options
         .as_ref()
@@ -208,6 +209,7 @@ pub async fn start_agent(
             &session_whitelist,
             &doom_loop_detector,
             &agent_mode_manager,
+            &skill_registry,
         )
         .await;
 
@@ -969,6 +971,7 @@ async fn run_agent(
     session_whitelist: &Arc<crate::services::permission::session_whitelist::SessionWhitelist>,
     doom_loop_detector: &Arc<crate::services::permission::doom_loop::DoomLoopDetector>,
     agent_mode_manager: &Arc<crate::services::agent::AgentModeManager>,
+    skill_registry: &Arc<crate::services::skill::registry::SkillRegistry>,
 ) -> Result<(), CommandError> {
     log::info!(
         "run_agent 开始: session_id={}, workspace={}",
@@ -1023,6 +1026,20 @@ async fn run_agent(
     };
     log::info!("操作确认级别: {:?}", confirmation_level);
 
+    // 从配置中读取上下文压缩配置
+    let compaction_config = {
+        let cfg = tokio::task::block_in_place(|| config.blocking_lock());
+        cfg.load_app_settings()
+            .map(|s| s.general.compaction.clone())
+            .unwrap_or_default()
+    };
+    log::info!(
+        "上下文压缩配置: enabled={}, trigger_threshold={}, keep_recent={}",
+        compaction_config.enabled,
+        compaction_config.trigger_threshold,
+        compaction_config.keep_recent_messages
+    );
+
     // 从当前活跃 Provider 解析上下文窗口大小
     let context_window = {
         let cfg = tokio::task::block_in_place(|| config.blocking_lock());
@@ -1061,6 +1078,10 @@ async fn run_agent(
     // 注入 Scratchpad 共享状态（与 ScratchpadTool 持有同一 Arc）
     // executor 每轮迭代开始时会调用 refresh_scratchpad_summary 读取笔记摘要
     ctx.set_scratchpad_states(scratchpad_states.clone());
+    // 注入 Skill 注册表（executor 在首次 LLM 调用前将 Skill 清单追加到系统提示词）
+    ctx.set_skill_registry(Arc::clone(skill_registry));
+    // T3.13: 注入数据库连接（executor 每轮迭代从数据库读取 TodoList 并追加摘要到系统提示词）
+    ctx.set_db(Arc::clone(db));
 
     // 根据用户首条消息识别任务类型，动态重建系统提示词
     let task_type = crate::services::agent::prompts::task_type::TaskType::from_user_message(prompt);
@@ -1357,7 +1378,8 @@ async fn run_agent(
     .with_persist_fn(persist_fn)
     .with_context_usage_persist_fn(context_usage_persist_fn)
     .with_snapshot_fn(snapshot_fn)
-    .with_confirmation_level(confirmation_level);
+    .with_confirmation_level(confirmation_level)
+    .with_compactor(compaction_config);
 
     match executor.execute(&mut ctx).await {
         Ok(result) => {

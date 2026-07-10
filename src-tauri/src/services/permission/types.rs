@@ -151,6 +151,10 @@ impl PermissionType {
             "question" => Self::Question,
             // v1.1: 文档 Handler 映射到 Document 权限类型
             "docx" | "xlsx" | "pptx" | "pdf" => Self::Document,
+            // T3.08: skill 工具映射到 Skill 权限类型
+            "skill" => Self::Skill,
+            // T3.08: source_code 工具映射到 Read 权限类型(只读搜索)
+            "source_code" => Self::Read,
             _ => Self::Wildcard,
         }
     }

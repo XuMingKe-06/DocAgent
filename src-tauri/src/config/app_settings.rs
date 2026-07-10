@@ -67,6 +67,37 @@ impl Default for AppearanceSettings {
     }
 }
 
+/// SessionCompaction 配置（上下文压缩）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionConfig {
+    /// 是否启用上下文压缩
+    pub enabled: bool,
+    /// 触发压缩的 token 阈值（占上下文窗口的百分比，如 0.8 表示 80%）
+    pub trigger_threshold: f32,
+    /// 压缩后保留的最近消息数
+    pub keep_recent_messages: usize,
+    /// 压缩时保留的系统提示词 token 数
+    pub keep_system_tokens: usize,
+    /// 是否压缩工具输出（旧工具输出会被 prune）
+    pub compact_tool_outputs: bool,
+    /// 工具输出保留的最大字符数（超过则截断）
+    pub tool_output_max_chars: usize,
+}
+
+impl Default for CompactionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            trigger_threshold: 0.8,
+            keep_recent_messages: 10,
+            keep_system_tokens: 4000,
+            compact_tool_outputs: true,
+            tool_output_max_chars: 2000,
+        }
+    }
+}
+
 /// 通用设置
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -81,6 +112,9 @@ pub struct GeneralSettings {
     pub author_company: String,
     #[serde(default)]
     pub confirmation_level: ConfirmationLevel,
+    /// 上下文压缩配置（阶段 3）
+    #[serde(default)]
+    pub compaction: CompactionConfig,
 }
 
 /// 版本快照设置
@@ -274,6 +308,8 @@ pub fn merge_with_defaults(
                 user_settings.general.author_company.clone()
             },
             confirmation_level: user_settings.general.confirmation_level.clone(),
+            // 上下文压缩配置直接保留用户设置（serde 反序列化时已用默认值填充缺失字段）
+            compaction: user_settings.general.compaction.clone(),
         },
         appearance: AppearanceSettings {
             theme_mode: user_settings.appearance.theme_mode.clone(),

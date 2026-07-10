@@ -13,7 +13,12 @@ use sha2::{Digest, Sha256};
 
 use super::registry::ToolRegistry;
 use super::trait_def::Tool;
+use crate::db::Database;
 use crate::models::tool::{ScratchpadEntry, ScratchpadState, ToolResult};
+
+// 子模块声明
+mod sourcecode;
+mod todowrite;
 
 /// Scratchpad 共享状态类型
 /// 全局唯一实例，按 session_id 隔离不同会话的笔记
@@ -41,6 +46,7 @@ pub fn register_builtin_tools(
     registry: &mut ToolRegistry,
     git_bash_path: String,
     _agent_mode_manager: Arc<crate::services::agent::AgentModeManager>,
+    db: Arc<Database>,
 ) -> SharedScratchpadStates {
     log::info!("开始注册内置工具");
     registry.register(Box::new(ListDirectoryTool));
@@ -77,8 +83,16 @@ pub fn register_builtin_tools(
     registry.register(Box::new(WriteScriptTool));
     registry.register(Box::new(RunCommandTool { git_bash_path }));
 
-    log::info!("内置工具注册完成, 共注册 18 个工具");
-    // TODO(Phase 3): 新增 TodoWriteTool(替代 Scratchpad)
+    // TodoWrite 工具：结构化任务管理，按 session_id 隔离并持久化到数据库
+    registry.register(Box::new(todowrite::TodoWriteTool::new(db)));
+
+    // SourceCode 工具：基于 tree-sitter 的代码语义搜索
+    // 支持按符号类型(function/class/struct 等)和名称通配符查询代码符号
+    registry.register(Box::new(
+        sourcecode::SourceCodeTool::new().expect("创建 SourceCodeTool 失败"),
+    ));
+
+    log::info!("内置工具注册完成, 共注册 20 个工具");
     // TODO(Phase 4): 新增 task/webfetch/websearch 工具
     // TODO(Phase 5): 新增 lsp 工具(实验性)
     scratchpad_states
@@ -919,6 +933,11 @@ impl Tool for ReadFileTool {
 mod tests {
     use super::*;
 
+    /// 创建内存数据库供测试使用
+    fn test_db() -> Arc<Database> {
+        Arc::new(Database::new(std::path::Path::new(":memory:")).unwrap())
+    }
+
     #[test]
     fn test_resolve_path_absolute() {
         let result = resolve_path("/absolute/path/file.txt", "/workspace");
@@ -948,11 +967,12 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
-        // 验证 18 个工具都已注册（8 个原有 + 4 个阶段三新增 + 1 个 scratchpad + 2 个代码执行工具 + 3 个阶段 1 新增 edit/glob/grep）
+        // 验证 20 个工具都已注册（8 个原有 + 4 个阶段三新增 + 1 个 scratchpad + 2 个代码执行工具 + 3 个阶段 1 新增 edit/glob/grep + 1 个 todowrite + 1 个 source_code）
         let tools = registry.list_tools();
-        assert_eq!(tools.len(), 18);
+        assert_eq!(tools.len(), 20);
 
         // 验证每个工具的基本属性
         let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
@@ -978,6 +998,10 @@ mod tests {
         assert!(tool_names.contains(&"edit"));
         assert!(tool_names.contains(&"glob"));
         assert!(tool_names.contains(&"grep"));
+        // TodoWrite 工具
+        assert!(tool_names.contains(&"todowrite"));
+        // SourceCode 工具
+        assert!(tool_names.contains(&"source_code"));
     }
 
     #[test]
@@ -987,10 +1011,11 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let defs = registry.tool_definitions();
-        assert_eq!(defs.len(), 18);
+        assert_eq!(defs.len(), 20);
 
         // 验证每个定义都有 type 和 function 字段
         for def in &defs {
@@ -1008,6 +1033,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tools = registry.list_tools();
@@ -1033,6 +1059,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tool = registry.get_arc("exists").unwrap();
@@ -1056,6 +1083,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tool = registry.get_arc("read").unwrap();
@@ -1094,6 +1122,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("read").unwrap();
         let result = tool
@@ -1141,6 +1170,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("read").unwrap();
         // 读取第 3-5 行
@@ -1185,6 +1215,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1227,6 +1258,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1268,6 +1300,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1303,6 +1336,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1350,6 +1384,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("glob").unwrap();
         // 用 **/*.rs 查找所有 .rs 文件
@@ -1402,6 +1437,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("glob").unwrap();
         let result = tool
@@ -1447,6 +1483,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("grep").unwrap();
         // 搜索 "fn " 模式
@@ -1493,6 +1530,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("grep").unwrap();
         // 只搜索 .rs 文件
@@ -1535,6 +1573,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("grep").unwrap();
         // 大小写不敏感搜索 "foobar"
@@ -1574,6 +1613,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("grep").unwrap();
         // 搜索 "target"，前后各 1 行上下文
@@ -1613,6 +1653,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tool = registry.get_arc("mkdir").unwrap();
@@ -1635,6 +1676,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tool = registry.get_arc("write").unwrap();
@@ -1658,6 +1700,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tool = registry.get_arc("remove").unwrap();
@@ -1680,6 +1723,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tool = registry.get_arc("search").unwrap();
@@ -1701,6 +1745,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tool = registry.get_arc("file_info").unwrap();
@@ -1725,6 +1770,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         // 创建临时工作区目录
@@ -1791,6 +1837,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         // 创建临时工作区目录
@@ -1840,6 +1887,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         // 创建临时工作区目录
@@ -1889,6 +1937,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tool = registry.get_arc("scratchpad").unwrap();
@@ -1930,6 +1979,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -1973,6 +2023,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2015,6 +2066,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2067,6 +2119,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2090,6 +2143,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2113,6 +2167,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2135,6 +2190,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2378,6 +2434,7 @@ mod tests {
             &mut registry,
             String::new(),
             Arc::new(crate::services::agent::AgentModeManager::new()),
+            test_db(),
         );
 
         let tool = registry.get_arc("write").unwrap();

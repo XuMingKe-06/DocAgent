@@ -4,14 +4,15 @@ use std::time::Duration;
 
 use futures::FutureExt;
 use serde_json::json;
-use tauri::Runtime;
+use tauri::{Emitter, Runtime};
 
+use super::compaction::ContextCompactor;
 use super::context::AgentContext;
-use crate::config::app_settings::ConfirmationLevel;
+use crate::config::app_settings::{CompactionConfig, ConfirmationLevel};
 use crate::errors::CommandError;
 use crate::events::emitter::AgentEmitter;
 use crate::events::types::*;
-use crate::models::llm::{ChatMessage, ChatUsage, LlmToolCall};
+use crate::models::llm::{ChatMessage, ChatUsage, ContentPart, LlmToolCall};
 use crate::services::handler::registry::HandlerRegistry;
 use crate::services::llm::router::LlmRouter;
 use crate::services::permission::{
@@ -190,6 +191,8 @@ pub struct AgentExecutor<R: Runtime> {
     snapshot_fn: Option<SnapshotFn>,
     /// 操作确认级别，决定哪些操作需要用户手动确认
     confirmation_level: ConfirmationLevel,
+    /// 上下文压缩器（可选，从配置初始化；为 None 时不执行压缩）
+    compactor: Option<ContextCompactor>,
 }
 
 impl<R: Runtime> AgentExecutor<R> {
@@ -229,6 +232,7 @@ impl<R: Runtime> AgentExecutor<R> {
             context_usage_persist_fn: None,
             snapshot_fn: None,
             confirmation_level: ConfirmationLevel::default(),
+            compactor: None,
         }
     }
 
@@ -268,6 +272,15 @@ impl<R: Runtime> AgentExecutor<R> {
         self
     }
 
+    /// 设置上下文压缩器
+    /// 当 config.enabled 为 true 时创建压缩器，否则保持 None
+    pub fn with_compactor(mut self, config: CompactionConfig) -> Self {
+        if config.enabled {
+            self.compactor = Some(ContextCompactor::new(config));
+        }
+        self
+    }
+
     /// 检查是否应该停止
     fn check_stopped(&self, session_id: &str) -> bool {
         (self.should_stop)(session_id)
@@ -276,6 +289,37 @@ impl<R: Runtime> AgentExecutor<R> {
     /// 获取当前 Provider 的 max_tokens 配置
     async fn get_current_max_tokens(&self) -> u32 {
         self.router.get_default_max_tokens().await
+    }
+
+    /// 估算消息列表的 token 数（简化：字符数 / 3）
+    /// 包含 content、content_parts 文本、tool_calls 参数和 reasoning_content
+    fn estimate_tokens(&self, messages: &[ChatMessage]) -> u64 {
+        let total_chars: usize = messages
+            .iter()
+            .map(|m| {
+                let mut len = m.content.len();
+                // 多模态消息的文本部分
+                if let Some(parts) = &m.content_parts {
+                    for part in parts {
+                        if let ContentPart::Text { text } = part {
+                            len += text.len();
+                        }
+                    }
+                }
+                // 工具调用的名称和参数
+                if let Some(calls) = &m.tool_calls {
+                    for c in calls {
+                        len += c.name.len() + c.arguments.len();
+                    }
+                }
+                // 推理内容（DeepSeek R1 等模型）
+                if let Some(rc) = &m.reasoning_content {
+                    len += rc.len();
+                }
+                len
+            })
+            .sum();
+        (total_chars / 3) as u64
     }
 
     /// 检查并处理停止逻辑，如果需要停止则返回 Some(ExecutionResult)
@@ -872,9 +916,32 @@ impl<R: Runtime> AgentExecutor<R> {
 
         log::info!("Agent 开始执行, session_id={}", ctx.session_id);
 
+        // 如果注入了 skill_registry，按当前 AgentMode 追加 Skill 清单到系统提示词
+        // 此处不修改 build_system_prompt_with_task 的签名，而是在 executor 层追加
+        if let Some(skill_registry) = &ctx.skill_registry {
+            let mode = self.agent_mode_manager.get_mode(&ctx.session_id).await;
+            let mode_str = match mode {
+                super::AgentMode::Plan => "plan",
+                super::AgentMode::Build => "build",
+                super::AgentMode::Document => "document",
+            };
+            let skill_summary = skill_registry.build_summary_for_prompt(mode_str);
+            if !skill_summary.is_empty() {
+                ctx.system_prompt.push_str(&skill_summary);
+                log::info!(
+                    "已注入 Skill 清单到系统提示词, session_id={}, mode={}",
+                    ctx.session_id,
+                    mode_str
+                );
+            }
+        }
+
+        // 保存基础系统提示词（含 Skill 清单，不含动态 TodoList 摘要）
+        // 每轮迭代从此基础重建 system_prompt，追加最新的 TodoList 摘要
+        // 避免 TodoList 摘要在多轮迭代中重复追加
+        let base_system_prompt = ctx.system_prompt.clone();
+
         // Phase 2: 按 AgentMode 动态过滤工具列表（Document 模式加入文档 Handler）
-        // TODO(Phase 2): 实现三态权限系统(allow/deny/ask)替换 ConfirmationLevel
-        // TODO(Phase 2): 实现 Doom loop 检测(连续 3 次相同工具调用无错误)
         let tool_defs_json = self.build_tool_definitions(&ctx.session_id).await;
         let tools: Vec<crate::models::llm::ToolDefinition> = tool_defs_json
             .iter()
@@ -928,6 +995,112 @@ impl<R: Runtime> AgentExecutor<R> {
             // get_messages_for_iteration 会将摘要作为独立 user 消息追加到末尾
             // 设计依据：Anthropic Effective Context Engineering 的 Structured Note-taking 模式
             ctx.refresh_scratchpad_summary();
+
+            // T3.13: 每轮迭代刷新 system_prompt 中的 TodoList 摘要
+            // 从数据库读取当前会话的 TodoList，若有任务则追加摘要到 system_prompt
+            // 每轮迭代从 base_system_prompt 重建，避免 TodoList 摘要重复追加
+            // TodoList 状态可能在上一轮被 TodoWrite 工具更新，需每轮读取最新状态
+            let mut prompt = base_system_prompt.clone();
+            if let Some(db) = &ctx.db {
+                if let Ok(conn) = db.conn() {
+                    if let Ok(todo_list) =
+                        crate::db::todo_repo::get_todo_list(&conn, &ctx.session_id)
+                    {
+                        if let Some(summary) = todo_list.build_summary() {
+                            prompt.push_str(&summary);
+                        }
+                    }
+                }
+            }
+            ctx.system_prompt = prompt;
+
+            // 上下文压缩检查：当 token 数接近上下文窗口阈值时触发
+            // 压缩将旧消息汇总为摘要 system 消息，保留最近 N 条消息
+            if let Some(compactor) = &self.compactor {
+                let all_messages = ctx.get_messages();
+                let current_tokens = self.estimate_tokens(&all_messages);
+                let context_window = ctx.context_window() as u64;
+
+                if compactor.should_compact(current_tokens, context_window) {
+                    log::info!(
+                        "上下文压缩触发: {} tokens >= {}, session_id={}",
+                        current_tokens,
+                        context_window,
+                        ctx.session_id
+                    );
+
+                    // 发射压缩开始事件
+                    let _ = self.emitter.app_handle_ref().emit(
+                        AGENT_COMPACTION_START,
+                        CompactionStartPayload {
+                            session_id: ctx.session_id.clone(),
+                            tokens_before: current_tokens,
+                        },
+                    );
+
+                    let preferred = if ctx.preferred_provider_id.is_empty() {
+                        None
+                    } else {
+                        Some(ctx.preferred_provider_id.as_str())
+                    };
+                    match self
+                        .router
+                        .compact_messages(&all_messages, compactor, preferred)
+                        .await
+                    {
+                        Ok(result) => {
+                            if result.compacted {
+                                let tokens_after = self.estimate_tokens(&result.messages);
+                                log::info!(
+                                    "上下文压缩完成, session_id={}, 消息数 {} -> {}, 估算 token {} -> {}",
+                                    ctx.session_id,
+                                    all_messages.len(),
+                                    result.messages.len(),
+                                    current_tokens,
+                                    tokens_after
+                                );
+
+                                // 更新上下文消息为压缩后的消息
+                                // result.messages = [摘要 system 消息, ...最近消息]
+                                // 下次 get_messages_for_iteration 会产生 [原始 system_prompt, 摘要, ...最近消息]
+                                ctx.messages = result.messages;
+                                // 标记为已持久化：压缩是运行时优化，数据库保留完整历史
+                                ctx.mark_persisted();
+
+                                // 发射压缩完成事件
+                                let _ = self.emitter.app_handle_ref().emit(
+                                    AGENT_COMPACTION_DONE,
+                                    CompactionDonePayload {
+                                        session_id: ctx.session_id.clone(),
+                                        tokens_before: current_tokens,
+                                        tokens_after,
+                                        compacted: true,
+                                        error: None,
+                                    },
+                                );
+                            }
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "上下文压缩失败,继续使用原始消息, session_id={}, 错误: {}",
+                                ctx.session_id,
+                                e.message
+                            );
+                            // 压缩失败不中断流程，继续使用原消息
+                            let _ = self.emitter.app_handle_ref().emit(
+                                AGENT_COMPACTION_DONE,
+                                CompactionDonePayload {
+                                    session_id: ctx.session_id.clone(),
+                                    tokens_before: current_tokens,
+                                    tokens_after: current_tokens,
+                                    compacted: false,
+                                    error: Some(e.message.clone()),
+                                },
+                            );
+                        }
+                    }
+                }
+            }
 
             let messages = ctx.get_messages_for_iteration(current_iteration);
 
@@ -1853,6 +2026,7 @@ impl<R: Runtime> AgentExecutor<R> {
                             | "validator"
                             | "write_script"
                             | "bash"
+                            | "source_code"
                     );
                     if needs_workspace_root && !ctx.workspace_path.is_empty() {
                         safe_params["workspace_root"] = json!(ctx.workspace_path);
@@ -1864,6 +2038,12 @@ impl<R: Runtime> AgentExecutor<R> {
                     if tool_call.name == "scratchpad" {
                         safe_params["_session_id"] = json!(ctx.session_id);
                         safe_params["_iteration"] = json!(current_iteration);
+                    }
+
+                    // T3.13: 为 todowrite 工具注入 _session_id
+                    // _session_id 用于按会话隔离任务列表，不暴露给 LLM
+                    if tool_call.name == "todowrite" {
+                        safe_params["_session_id"] = json!(ctx.session_id);
                     }
 
                     // 在文件修改/删除操作前自动创建版本快照

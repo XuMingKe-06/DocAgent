@@ -122,6 +122,29 @@ fn create_tables(conn: &Connection) -> Result<(), CommandError> {
         );",
     )?;
 
+    // todo_lists Todo 列表表(按 session_id 隔离)
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS todo_lists (
+            session_id        TEXT        NOT NULL PRIMARY KEY,
+            items_json        TEXT        NOT NULL DEFAULT '[]',
+            updated_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );",
+    )?;
+
+    // skill_overrides Skill 覆盖配置表(用户可禁用/启用 Skill)
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS skill_overrides (
+            id                TEXT        NOT NULL PRIMARY KEY,
+            skill_name        TEXT        NOT NULL,
+            workspace_id      TEXT        NOT NULL DEFAULT '',
+            enabled           INTEGER     NOT NULL DEFAULT 1,
+            custom_config     TEXT        DEFAULT NULL,
+            created_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            updated_at        TEXT        NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            UNIQUE(skill_name, workspace_id)
+        );",
+    )?;
+
     log::info!("数据表创建完成");
     Ok(())
 }

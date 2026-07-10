@@ -15,6 +15,10 @@ pub const AGENT_ERROR: &str = "agent:error";
 pub const AGENT_STOPPED: &str = "agent:stopped";
 pub const AGENT_CONTEXT_UPDATE: &str = "agent:context_update";
 pub const AGENT_NETWORK_RETRY: &str = "agent:network_retry";
+/// 上下文压缩开始事件
+pub const AGENT_COMPACTION_START: &str = "agent:compaction_start";
+/// 上下文压缩完成事件
+pub const AGENT_COMPACTION_DONE: &str = "agent:compaction_done";
 
 // ================================================================
 // 系统事件名常量
@@ -136,6 +140,31 @@ pub struct NetworkRetryPayload {
     pub attempt: u32,
     pub max_attempts: u32,
     pub reason: String,
+}
+
+/// 上下文压缩开始事件 Payload
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionStartPayload {
+    pub session_id: String,
+    /// 压缩前 token 数
+    pub tokens_before: u64,
+}
+
+/// 上下文压缩完成事件 Payload
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CompactionDonePayload {
+    pub session_id: String,
+    /// 压缩前 token 数
+    pub tokens_before: u64,
+    /// 压缩后 token 数
+    pub tokens_after: u64,
+    /// 是否实际执行了压缩
+    pub compacted: bool,
+    /// 压缩失败时的错误信息
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// Agent 执行中断

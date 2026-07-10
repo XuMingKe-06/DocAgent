@@ -5,7 +5,9 @@ pub mod llm;
 pub mod message;
 pub mod permission;
 pub mod session;
+pub mod skill;
 pub mod template;
+pub mod todo;
 pub mod tool;
 pub mod workspace;
 
@@ -16,6 +18,8 @@ pub use llm::*;
 pub use message::*;
 pub use permission::*;
 pub use session::*;
+pub use skill::*;
 pub use template::*;
+pub use todo::*;
 pub use tool::*;
 pub use workspace::*;

@@ -680,6 +680,50 @@ impl LlmRouter {
         }
     }
 
+    /// 执行上下文压缩
+    /// 优先使用 preferred_provider_id 指定的 Provider，为 None 时回退到默认 Provider
+    /// 持有 providers 读锁直到压缩完成（与 chat() 方法的锁持有模式一致）
+    pub async fn compact_messages(
+        &self,
+        messages: &[ChatMessage],
+        compactor: &crate::services::agent::compaction::ContextCompactor,
+        preferred_provider_id: Option<&str>,
+    ) -> Result<crate::services::agent::compaction::CompactionResult, CommandError> {
+        // 解析 Provider ID：优先使用 preferred_provider_id，为 None 或不存在时回退到 default_id
+        let provider_id = {
+            let providers = self.providers.read().await;
+            if let Some(id) = preferred_provider_id {
+                if providers.contains_key(id) {
+                    id.to_string()
+                } else {
+                    log::warn!("指定的 Provider {} 不存在，回退到默认 Provider", id);
+                    self.default_id
+                        .clone()
+                        .ok_or_else(|| CommandError::llm(1002, "未配置 LLM Provider".to_string()))?
+                }
+            } else {
+                self.default_id
+                    .clone()
+                    .ok_or_else(|| CommandError::llm(1002, "未配置 LLM Provider".to_string()))?
+            }
+        };
+
+        // 检查 Provider 可用性
+        if !self.is_provider_available(&provider_id) {
+            return Err(CommandError::llm(
+                crate::errors::LLM_PROVIDER_UNAVAILABLE,
+                format!("Provider {} 不可用", provider_id),
+            ));
+        }
+
+        let providers = self.providers.read().await;
+        let provider = providers
+            .get(&provider_id)
+            .ok_or_else(|| CommandError::llm(1002, format!("Provider 不存在: {}", provider_id)))?;
+
+        compactor.compact(messages, provider.as_ref()).await
+    }
+
     /// 测试指定 Provider 的连接
     pub async fn test_connection(
         &self,

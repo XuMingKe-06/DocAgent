@@ -160,6 +160,12 @@
     "expandError": "Show details",
     "collapseError": "Hide details"
   },
+  "compactionNode": {
+    "compressing": "Compressing context ({{tokens}} tokens)...",
+    "completed": "Context compacted: {{before}} -> {{after}} tokens",
+    "failed": "Context compaction failed",
+    "failedWithError": "Context compaction failed: {{error}}"
+  },
   "fileTree": {
     "sectionTitle": "Workspace Files",
     "searchPlaceholder": "Search files...",

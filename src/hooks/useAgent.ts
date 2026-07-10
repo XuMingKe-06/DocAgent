@@ -12,6 +12,8 @@ import {
   onAgentError,
   onAgentStopped,
   onAgentNetworkRetry,
+  onAgentCompactionStart,
+  onAgentCompactionDone,
   type ThinkingPayload,
   type DeepThinkingPayload,
   type ToolCallPayload,
@@ -92,6 +94,8 @@ export function useAgent(): UseAgentReturn {
   const seenToolCallIdsRef = useRef<Set<string>>(new Set());
   // 追踪最后一次 tool_call 的 iteration，用于忽略同一迭代中 tool_call 之后的残余 content 事件
   const lastToolCallIterationRef = useRef<number | null>(null);
+  // 追踪当前压缩节点 ID，compaction_start 创建节点，compaction_done 更新该节点
+  const compactionNodeIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -260,6 +264,57 @@ export function useAgent(): UseAgentReturn {
           setIsLoading(false);
           setIsStopped(true);
         }),
+        onAgentCompactionStart((payload) => {
+          // 后台会话：路由到缓存
+          if (payload.sessionId !== sessionIdRef.current) {
+            routeBackgroundEvent(payload.sessionId, {
+              type: "compaction_start",
+              tokensBefore: payload.tokensBefore,
+            });
+            return;
+          }
+          // 当前会话：创建压缩节点，状态为 running
+          const nodeId = useWorkflowStore.getState().addNode("compaction", {
+            tokensBefore: payload.tokensBefore,
+          }, "running");
+          compactionNodeIdRef.current = nodeId;
+        }),
+        onAgentCompactionDone((payload) => {
+          // 后台会话：路由到缓存
+          if (payload.sessionId !== sessionIdRef.current) {
+            routeBackgroundEvent(payload.sessionId, {
+              type: "compaction_done",
+              tokensBefore: payload.tokensBefore,
+              tokensAfter: payload.tokensAfter,
+              compacted: payload.compacted,
+              ...(payload.error ? { error: payload.error } : {}),
+            });
+            return;
+          }
+          // 当前会话：更新压缩节点结果
+          const isFailed = !payload.compacted || !!payload.error;
+          const existingNodeId = compactionNodeIdRef.current;
+          if (existingNodeId) {
+            useWorkflowStore.getState().updateNode(existingNodeId, {
+              status: isFailed ? "failed" : "completed",
+              data: {
+                tokensBefore: payload.tokensBefore,
+                tokensAfter: payload.tokensAfter,
+                compacted: payload.compacted,
+                ...(payload.error ? { error: payload.error } : {}),
+              },
+            });
+            compactionNodeIdRef.current = null;
+          } else {
+            // 未找到压缩开始节点，直接创建一个已完成节点
+            useWorkflowStore.getState().addNode("compaction", {
+              tokensBefore: payload.tokensBefore,
+              tokensAfter: payload.tokensAfter,
+              compacted: payload.compacted,
+              ...(payload.error ? { error: payload.error } : {}),
+            }, isFailed ? "failed" : "completed");
+          }
+        }),
       ]);
 
       if (cancelled) {
@@ -298,6 +353,7 @@ export function useAgent(): UseAgentReturn {
       lastDeepThinkingStepRef.current = 0;
       seenToolCallIdsRef.current.clear();
       lastToolCallIterationRef.current = null;
+      compactionNodeIdRef.current = null;
 
       // 从附件 store 获取当前待发送的附件
       const currentAttachments = useAttachmentStore.getState().attachments;
@@ -398,6 +454,7 @@ export function useAgent(): UseAgentReturn {
     lastDeepThinkingStepRef.current = 0;
     seenToolCallIdsRef.current.clear();
     lastToolCallIterationRef.current = null;
+    compactionNodeIdRef.current = null;
   }, []);
 
   const setSessionIdExternal = useCallback((id: string) => {

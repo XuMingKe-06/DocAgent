@@ -60,9 +60,10 @@ pub struct AppState {
     /// Scratchpad 共享状态：智能体草稿本，按 session_id 隔离
     /// 由 ScratchpadTool 写入，由 AgentContext 在每轮迭代时读取摘要
     pub scratchpad_states: crate::services::tool::builtin::SharedScratchpadStates,
+    /// Skill 注册表：管理已加载的 Skill，在 Agent 启动时注入 AgentContext
+    pub skill_registry: Arc<crate::services::skill::registry::SkillRegistry>,
 }
 
-// TODO(Phase 3): skill_service: Arc<SkillService>
 // TODO(Phase 5): lsp_manager: Arc<LspManager>
 
 /// 从系统 PATH 中查找 Python 可执行文件（开发模式兜底）
@@ -382,7 +383,43 @@ pub fn run() {
                 &mut tool_registry,
                 git_bash_path,
                 Arc::clone(&agent_mode_manager),
+                Arc::clone(&db_arc),
             );
+
+            // 初始化 Skill 注册表
+            // 全局目录: ~/.agent/skills/，项目目录: .agent/skills/（当前工作目录下）
+            let global_skill_dir = {
+                #[cfg(target_os = "windows")]
+                {
+                    std::env::var_os("USERPROFILE")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|| std::path::PathBuf::from("."))
+                        .join(".agent")
+                        .join("skills")
+                }
+                #[cfg(not(target_os = "windows"))]
+                {
+                    std::env::var_os("HOME")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|| std::path::PathBuf::from("."))
+                        .join(".agent")
+                        .join("skills")
+                }
+            };
+            let project_skill_dir = std::path::PathBuf::from(".agent").join("skills");
+            let skill_loader = crate::services::skill::loader::SkillLoader::new(
+                global_skill_dir.clone(),
+                Some(project_skill_dir.clone()),
+                Vec::new(),
+            );
+            let skill_registry = Arc::new(crate::services::skill::registry::SkillRegistry::new(
+                skill_loader,
+            ));
+            // 加载 Skill（失败时不阻断启动，仅记录警告）
+            match skill_registry.reload() {
+                Ok(count) => log::info!("已加载 {} 个 Skill", count),
+                Err(e) => log::warn!("加载 Skill 失败: {}", e.message),
+            }
 
             log::info!("DocAgent 应用初始化完成");
 
@@ -413,6 +450,7 @@ pub fn run() {
                 fs_watcher: Arc::new(fs_watcher),
                 network_monitor: Arc::new(network_monitor),
                 scratchpad_states,
+                skill_registry,
             };
 
             app.manage(state);
@@ -434,6 +472,20 @@ pub fn run() {
                         }
                     }
                 }
+            });
+
+            // 启动 Skill 目录监听，实现热重载
+            // 监听全局目录(~/.agent/skills/)和项目目录(.agent/skills/)，
+            // 当 SKILL.md 文件变更时自动触发 SkillRegistry 重载
+            let fs_watcher_for_skill = app.state::<AppState>().fs_watcher.clone();
+            let skill_registry_for_watcher = app.state::<AppState>().skill_registry.clone();
+            tauri::async_runtime::spawn(async move {
+                fs_watcher_for_skill
+                    .watch_skill_directories(
+                        vec![global_skill_dir, project_skill_dir],
+                        skill_registry_for_watcher,
+                    )
+                    .await;
             });
 
             // 启动定期 Provider 健康检查（每 5 分钟执行一次）

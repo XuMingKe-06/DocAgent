@@ -97,6 +97,26 @@ export interface NetworkRetryPayload {
   reason: string;
 }
 
+/** 上下文压缩开始事件 */
+export interface CompactionStartPayload {
+  sessionId: string;
+  /** 压缩前 token 数 */
+  tokensBefore: number;
+}
+
+/** 上下文压缩完成事件 */
+export interface CompactionDonePayload {
+  sessionId: string;
+  /** 压缩前 token 数 */
+  tokensBefore: number;
+  /** 压缩后 token 数 */
+  tokensAfter: number;
+  /** 是否实际执行了压缩 */
+  compacted: boolean;
+  /** 压缩失败时的错误信息 */
+  error?: string;
+}
+
 // ================================================================
 // 系统事件 Payload 类型
 // ================================================================
@@ -244,6 +264,24 @@ export function onAgentNetworkRetry(
   handler: (payload: NetworkRetryPayload) => void,
 ): Promise<UnlistenFn> {
   return listen<NetworkRetryPayload>("agent:network_retry", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** 监听上下文压缩开始事件 */
+export function onAgentCompactionStart(
+  handler: (payload: CompactionStartPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<CompactionStartPayload>("agent:compaction_start", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** 监听上下文压缩完成事件 */
+export function onAgentCompactionDone(
+  handler: (payload: CompactionDonePayload) => void,
+): Promise<UnlistenFn> {
+  return listen<CompactionDonePayload>("agent:compaction_done", (event) => {
     handler(event.payload);
   });
 }

@@ -34,6 +34,8 @@ export interface SessionCacheEntry {
   bgThinkingNodeId: string | null;
   /** 后台流式状态：被 tool_call 关闭的 streaming 节点 ID（用于修复内容截断） */
   bgLastClosedStreamingNodeId: string | null;
+  /** 后台流式状态：当前压缩节点 ID（compaction_start 创建，compaction_done 更新） */
+  bgCompactionNodeId: string | null;
   /** 最后访问时间，用于 LRU 淘汰 */
   lastAccessedAt: number;
 }
@@ -50,7 +52,9 @@ export type BackgroundAgentEvent =
   | { type: "context_update"; contextUsage: ContextUsageInfo }
   | { type: "done"; summary: string; totalSteps: number; durationMs: number }
   | { type: "error"; code: number; message: string; recoverable: boolean }
-  | { type: "stopped"; completedSteps: number; reason: string };
+  | { type: "stopped"; completedSteps: number; reason: string }
+  | { type: "compaction_start"; tokensBefore: number }
+  | { type: "compaction_done"; tokensBefore: number; tokensAfter: number; compacted: boolean; error?: string };
 
 interface WorkflowState {
   nodes: WorkflowNode[];
@@ -354,6 +358,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       bgStreamingNodeId: cache.get(sessionId)?.bgStreamingNodeId ?? null,
       bgThinkingNodeId: cache.get(sessionId)?.bgThinkingNodeId ?? null,
       bgLastClosedStreamingNodeId: cache.get(sessionId)?.bgLastClosedStreamingNodeId ?? null,
+      bgCompactionNodeId: cache.get(sessionId)?.bgCompactionNodeId ?? null,
       lastAccessedAt: Date.now(),
     });
 
@@ -417,6 +422,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     let bgStreamingNodeId = entry.bgStreamingNodeId;
     let bgThinkingNodeId = entry.bgThinkingNodeId;
     let bgLastClosedStreamingNodeId = entry.bgLastClosedStreamingNodeId;
+    let bgCompactionNodeId = entry.bgCompactionNodeId;
     let deepThinkingContent = entry.deepThinkingContent;
     let lastDeepThinkingStep = entry.lastDeepThinkingStep;
     let seenToolCallIds = [...entry.seenToolCallIds];
@@ -712,6 +718,62 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         bgLastClosedStreamingNodeId = null;
         break;
       }
+      case "compaction_start": {
+        // 创建压缩节点，状态为 running，等待 compaction_done 更新
+        const nodeId = `bg_node_${++bgNodeCounter}`;
+        nodes.push({
+          id: nodeId,
+          type: "compaction",
+          status: "running",
+          timestamp: now,
+          data: {
+            tokensBefore: event.tokensBefore,
+          },
+          isExpanded: true,
+        });
+        bgCompactionNodeId = nodeId;
+        break;
+      }
+      case "compaction_done": {
+        // 更新压缩节点结果
+        if (bgCompactionNodeId) {
+          const isFailed = !event.compacted || !!event.error;
+          nodes = nodes.map((n) =>
+            n.id === bgCompactionNodeId
+              ? {
+                  ...n,
+                  status: isFailed ? ("failed" as NodeStatus) : ("completed" as NodeStatus),
+                  data: {
+                    ...n.data,
+                    tokensBefore: event.tokensBefore,
+                    tokensAfter: event.tokensAfter,
+                    compacted: event.compacted,
+                    ...(event.error ? { error: event.error } : {}),
+                  },
+                }
+              : n
+          );
+          bgCompactionNodeId = null;
+        } else {
+          // 未找到压缩开始节点（可能缓存被清理过），直接创建一个已完成节点
+          const nodeId = `bg_node_${++bgNodeCounter}`;
+          const isFailed = !event.compacted || !!event.error;
+          nodes.push({
+            id: nodeId,
+            type: "compaction",
+            status: isFailed ? ("failed" as NodeStatus) : ("completed" as NodeStatus),
+            timestamp: now,
+            data: {
+              tokensBefore: event.tokensBefore,
+              tokensAfter: event.tokensAfter,
+              compacted: event.compacted,
+              ...(event.error ? { error: event.error } : {}),
+            },
+            isExpanded: true,
+          });
+        }
+        break;
+      }
     }
 
     cache.set(sessionId, {
@@ -723,6 +785,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
       bgStreamingNodeId,
       bgThinkingNodeId,
       bgLastClosedStreamingNodeId,
+      bgCompactionNodeId,
       deepThinkingContent,
       lastDeepThinkingStep,
       seenToolCallIds,

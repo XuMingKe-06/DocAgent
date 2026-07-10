@@ -3,8 +3,10 @@ pub mod message_repo;
 pub mod permission_repo;
 pub mod session_repo;
 pub mod session_summary_repo;
+pub mod skill_repo;
 pub mod snapshot_repo;
 pub mod template_repo;
+pub mod todo_repo;
 pub mod user_preference_repo;
 
 use crate::errors::CommandError;

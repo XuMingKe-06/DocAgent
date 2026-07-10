@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use crate::events::types::{
     FileChangePayload, WorkspaceDirectoryDeletedPayload, FILE_CHANGE, WORKSPACE_DIRECTORY_DELETED,
 };
+use crate::services::skill::registry::SkillRegistry;
 
 /// 文件系统监听服务，监听活动工作区目录变更并发射事件到前端
 pub struct FsWatcherService<R: Runtime> {
@@ -18,6 +19,8 @@ pub struct FsWatcherService<R: Runtime> {
     workspace_watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
     /// 父目录的监听器（非递归，仅用于检测工作区根目录被删除）
     parent_watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
+    /// Skill 目录的监听器（递归监听，用于检测 SKILL.md 文件变更触发热重载）
+    skill_watcher: Arc<Mutex<Option<RecommendedWatcher>>>,
     /// 当前正在监听的工作区 ID、路径和名称
     active_watch: Arc<Mutex<Option<(String, PathBuf, String)>>>,
     /// 标记是否已经发射过目录删除事件，防止重复发射
@@ -31,6 +34,7 @@ impl<R: Runtime> FsWatcherService<R> {
             app_handle,
             workspace_watcher: Arc::new(Mutex::new(None)),
             parent_watcher: Arc::new(Mutex::new(None)),
+            skill_watcher: Arc::new(Mutex::new(None)),
             active_watch: Arc::new(Mutex::new(None)),
             deletion_emitted: Arc::new(AtomicBool::new(false)),
         }
@@ -287,6 +291,96 @@ impl<R: Runtime> FsWatcherService<R> {
         }
         self.deletion_emitted.store(false, Ordering::SeqCst);
         log::info!("FsWatcher: 已停止监听");
+    }
+
+    /// 监听 Skill 目录的文件变更
+    /// 当 SKILL.md 文件被创建/修改/删除时，触发 SkillRegistry 热重载
+    ///
+    /// # 参数
+    /// - `dirs`: 待监听的 Skill 目录列表（全局、项目、配置目录等）
+    /// - `skill_registry`: Skill 注册表的 Arc 引用，用于触发重载
+    ///
+    /// 一个 RecommendedWatcher 实例可同时监听多个目录，因此只创建一个 watcher
+    pub async fn watch_skill_directories(
+        &self,
+        dirs: Vec<PathBuf>,
+        skill_registry: Arc<SkillRegistry>,
+    ) {
+        let registry = Arc::clone(&skill_registry);
+
+        // Skill 目录事件回调：仅当 SKILL.md 文件变更时触发重载
+        let callback = move |res: Result<Event, notify::Error>| {
+            match res {
+                Ok(event) => {
+                    // 仅处理创建/修改/删除事件，忽略其他事件（如访问、关闭等）
+                    match event.kind {
+                        EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => (),
+                        _ => return,
+                    }
+
+                    // 检查变更路径是否包含 SKILL.md 文件
+                    // 一个事件可能携带多个路径，任一匹配即触发重载
+                    let should_reload = event.paths.iter().any(|p| {
+                        p.file_name()
+                            .map(|n| n == std::ffi::OsStr::new("SKILL.md"))
+                            .unwrap_or(false)
+                    });
+
+                    if !should_reload {
+                        return;
+                    }
+
+                    log::info!("FsWatcher(skill): 检测到 SKILL.md 文件变更，触发热重载");
+                    match registry.reload_if_changed() {
+                        Ok(count) => {
+                            log::info!("FsWatcher(skill): Skill 重载完成，共 {} 个 Skill", count)
+                        }
+                        Err(e) => {
+                            log::warn!("FsWatcher(skill): Skill 重载失败: {}", e.message)
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::debug!("FsWatcher(skill): 监听错误: {:?}", e);
+                }
+            }
+        };
+
+        // 创建 watcher（使用 2 秒轮询间隔，与工作区监听器保持一致）
+        let mut watcher = match RecommendedWatcher::new(
+            callback,
+            notify::Config::default().with_poll_interval(Duration::from_secs(2)),
+        ) {
+            Ok(w) => w,
+            Err(e) => {
+                log::warn!("FsWatcher(skill): 创建监听器失败: {:?}", e);
+                return;
+            }
+        };
+
+        // 对每个目录调用 watch（一个 watcher 可监听多个目录）
+        let mut watched_count = 0;
+        for dir in &dirs {
+            if !dir.exists() || !dir.is_dir() {
+                log::debug!("FsWatcher(skill): 跳过不存在的目录: {}", dir.display());
+                continue;
+            }
+            match watcher.watch(dir, RecursiveMode::Recursive) {
+                Ok(()) => {
+                    log::info!("FsWatcher(skill): 已监听 Skill 目录: {}", dir.display());
+                    watched_count += 1;
+                }
+                Err(e) => {
+                    log::warn!("FsWatcher(skill): 监听目录失败 {}: {:?}", dir.display(), e);
+                }
+            }
+        }
+
+        // 仅在至少监听了一个目录时保存 watcher
+        if watched_count > 0 {
+            let mut guard = self.skill_watcher.lock().await;
+            *guard = Some(watcher);
+        }
     }
 
     /// 获取当前监听的工作区信息 (id, path, name)

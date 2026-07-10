@@ -2,7 +2,7 @@ export type NodeStatus = "pending" | "running" | "completed" | "failed" | "cance
 
 export type ExecutionStatus = "idle" | "running" | "stopping" | "paused" | "completed" | "failed" | "cancelled";
 
-export type WorkflowNodeType = "user" | "thinking" | "content" | "tool" | "confirm" | "error";
+export type WorkflowNodeType = "user" | "thinking" | "content" | "tool" | "confirm" | "error" | "compaction";
 
 export interface Attachment {
   id: string;
@@ -61,6 +61,18 @@ export interface ErrorNodeData {
   module: string;
 }
 
+/** 上下文压缩节点数据 */
+export interface CompactionNodeData {
+  /** 压缩前 token 数 */
+  tokensBefore: number;
+  /** 压缩后 token 数（compaction_done 事件到达后填充） */
+  tokensAfter?: number;
+  /** 是否实际执行了压缩（compaction_done 事件到达后填充） */
+  compacted?: boolean;
+  /** 压缩失败时的错误信息 */
+  error?: string;
+}
+
 export interface NodeDataMap {
   user: UserNodeData;
   thinking: ThinkingNodeData;
@@ -68,6 +80,7 @@ export interface NodeDataMap {
   tool: ToolNodeData;
   confirm: ConfirmNodeData;
   error: ErrorNodeData;
+  compaction: CompactionNodeData;
 }
 
 export interface WorkflowNode<T extends WorkflowNodeType = WorkflowNodeType> {

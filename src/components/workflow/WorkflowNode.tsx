@@ -6,6 +6,7 @@ import { ContentNode } from "./ContentNode";
 import { ToolNode } from "./ToolNode";
 import { ConfirmNode } from "./ConfirmNode";
 import { ErrorNode } from "./ErrorNode";
+import { CompactionNode } from "./CompactionNode";
 
 interface WorkflowNodeRendererProps {
   node: WorkflowNode;
@@ -29,6 +30,8 @@ export function WorkflowNodeRenderer({ node, onRetry }: WorkflowNodeRendererProp
       return <ConfirmNode node={node as WorkflowNode<"confirm">} />;
     case "error":
       return <ErrorNode node={node as WorkflowNode<"error">} onToggle={() => toggleNode(node.id)} onRetry={onRetry} />;
+    case "compaction":
+      return <CompactionNode node={node as WorkflowNode<"compaction">} />;
     default:
       return null;
   }

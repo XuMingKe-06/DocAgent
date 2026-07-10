@@ -1,6 +1,10 @@
+use std::sync::Arc;
+
 use super::prompts::task_type::TaskType;
 use super::prompts::token_budget::TokenBudgetManager;
+use crate::db::Database;
 use crate::models::llm::{ChatMessage, ChatUsage, LlmToolCall};
+use crate::services::skill::registry::SkillRegistry;
 use crate::services::tool::builtin::{format_scratchpad_summary, SharedScratchpadStates};
 
 // Phase 2: AgentMode 统一由 mod.rs 定义（含 serde 派生），context.rs re-export 保持兼容
@@ -225,6 +229,10 @@ pub struct AgentContext {
     /// 用户首选的 Provider ID，优先于默认 Provider 使用
     /// 为空字符串时表示未指定，由 LlmRouter 自行选择默认 Provider
     pub preferred_provider_id: String,
+    /// Skill 注册表（可选，用于注入 Skill 清单到系统提示词）
+    pub skill_registry: Option<Arc<SkillRegistry>>,
+    /// 数据库连接（可选，用于读取 TodoList 等持久化数据）
+    pub db: Option<Arc<Database>>,
 }
 
 impl AgentContext {
@@ -249,6 +257,8 @@ impl AgentContext {
             )),
             scratchpad_summary: None,
             preferred_provider_id: String::new(),
+            skill_registry: None,
+            db: None,
         }
     }
 
@@ -261,6 +271,18 @@ impl AgentContext {
     /// 此方法将 AgentContext 的 scratchpad_states 替换为与 ScratchpadTool 共享的同一 Arc
     pub fn set_scratchpad_states(&mut self, states: SharedScratchpadStates) {
         self.scratchpad_states = states;
+    }
+
+    /// 设置 Skill 注册表（由 executor 在初始化时注入）
+    /// 注入后，executor 会在首次 LLM 调用前将 Skill 清单追加到系统提示词
+    pub fn set_skill_registry(&mut self, registry: Arc<SkillRegistry>) {
+        self.skill_registry = Some(registry);
+    }
+
+    /// 设置数据库连接（由 executor 在初始化时注入）
+    /// 注入后，executor 每轮迭代从数据库读取 TodoList 并追加摘要到系统提示词
+    pub fn set_db(&mut self, db: Arc<Database>) {
+        self.db = Some(db);
     }
 
     /// 刷新 Scratchpad 摘要（由 executor 在每轮迭代开始时调用）
@@ -689,23 +711,10 @@ impl AgentContext {
             all.push(compressed_msg);
         }
 
-        // Scratchpad 笔记摘要作为独立 system 消息追加到末尾
-        // 使用 system 角色而非 user 角色，严格区分用户消息与系统消息
-        // 智能体通过 scratchpad 工具自主维护笔记，属于智能体的"工作记忆"
-        // 放在末尾确保前缀（system prompt + 对话历史）在各迭代间字节级一致，最大化缓存命中率
-        // 仅当 agent 已通过 scratchpad 工具写入笔记时注入，无笔记则不追加任何消息
+        // T3.14: Scratchpad 摘要不再自动注入 get_messages_for_iteration
+        // 任务管理由 TodoWrite 接管，TodoList 摘要在 executor 层注入 system_prompt
+        // ScratchpadTool 保留为草稿本工具，Agent 仍可主动调用，但不再自动注入摘要
         let _ = current_iteration;
-        if let Some(summary) = &self.scratchpad_summary {
-            all.push(ChatMessage {
-                role: "system".to_string(),
-                content: summary.clone(),
-                content_parts: None,
-                tool_calls: None,
-                tool_call_id: None,
-                reasoning_content: None,
-                attachments: None,
-            });
-        }
 
         all
     }
@@ -822,7 +831,7 @@ impl AgentContext {
             None, // author_info
             &env_info,
             None,              // agents_md_content
-            &AgentMode::Build, // agent_mode（阶段 1 默认 Build）
+            &AgentMode::Build, // agent_mode（build_system_prompt 使用默认 Build）
         )
     }
 
@@ -835,7 +844,7 @@ impl AgentContext {
     /// author_info: 可选作者信息（编程 Agent 传 None，Document 模式下使用）
     /// env_info: 执行环境信息
     /// agents_md_content: AGENTS.md 自定义规则内容（T1.07 实现）
-    /// agent_mode: Agent 模式（阶段 2 实现，本阶段使用默认值 Build）
+    /// agent_mode: Agent 模式（run_agent 传入实际模式，build_system_prompt 使用默认 Build）
     #[allow(clippy::too_many_arguments)]
     pub fn build_system_prompt_with_task(
         workspace_path: &str,
@@ -847,7 +856,7 @@ impl AgentContext {
         env_info: &EnvironmentInfo,
         // AGENTS.md 内容（由 T1.07 实现）
         agents_md_content: Option<&str>,
-        // Agent 模式（阶段 2 实现，本阶段使用默认值）
+        // Agent 模式（由调用方传入）
         agent_mode: &AgentMode,
     ) -> String {
         // 段 1：基础 prompt（系统内置统一核心提示词，不按 Provider 区分）
@@ -1613,7 +1622,8 @@ mod tests {
     }
 
     /// 测试 Scratchpad 笔记摘要注入（取代原 iteration_context 外部硬编码注入）
-    /// 验证 agent 通过 scratchpad 工具自主记录的笔记会被格式化为摘要并注入消息列表末尾
+    /// T3.14: Scratchpad 摘要不再自动注入 get_messages_for_iteration
+    /// 验证即使 scratchpad_summary 有值，也不会追加为 system 消息
     #[test]
     fn test_scratchpad_summary_injection() {
         let mut ctx = AgentContext::new_default("session-1".to_string(), "你是助手".to_string());
@@ -1646,26 +1656,19 @@ mod tests {
             });
         }
 
-        // 刷新摘要（由 executor 在每轮迭代开始时调用）
+        // 刷新摘要（scratchpad_summary 字段保留，但不再注入消息列表）
         ctx.refresh_scratchpad_summary();
         assert!(ctx.scratchpad_summary.is_some());
 
-        // 再次获取消息，应在末尾追加 scratchpad 摘要 system 消息
+        // T3.14: get_messages_for_iteration 不再追加 scratchpad 摘要 system 消息
+        // 最后一条消息应为对话历史中的最后一条（assistant 消息）
         let messages = ctx.get_messages_for_iteration(3);
         let last_msg = messages.last().expect("消息列表不应为空");
+        assert_eq!(last_msg.role, "assistant");
+        assert_eq!(last_msg.content, "你好！");
 
-        assert_eq!(last_msg.role, "system");
-        assert!(last_msg.content.contains("<scratchpad>"));
-        assert!(last_msg.content.contains("你的任务笔记"));
-        assert!(last_msg.content.contains("已列出工作区文件"));
-        assert!(last_msg.content.contains("已读取报告.docx"));
-        assert!(last_msg.content.contains("scratchpad"));
-
-        // 确认不再注入旧的 iteration_context 元数据
-        assert!(!last_msg.content.contains("<iteration_context>"));
-        assert!(!last_msg.content.contains("迭代轮次"));
-        assert!(!last_msg.content.contains("剩余"));
-        assert!(!last_msg.content.contains("不要重复已完成的步骤"));
+        // 确认不再注入 scratchpad 摘要
+        assert!(!messages.iter().any(|m| m.content.contains("<scratchpad>")));
     }
 
     /// 测试任务类型更新

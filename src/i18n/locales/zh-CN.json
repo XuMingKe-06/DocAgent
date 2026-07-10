@@ -160,6 +160,12 @@
     "expandError": "展开详情",
     "collapseError": "收起详情"
   },
+  "compactionNode": {
+    "compressing": "正在压缩上下文 ({{tokens}} tokens)...",
+    "completed": "上下文压缩完成: {{before}} -> {{after}} tokens",
+    "failed": "上下文压缩失败",
+    "failedWithError": "上下文压缩失败: {{error}}"
+  },
   "fileTree": {
     "sectionTitle": "工作区文件",
     "searchPlaceholder": "搜索文件...",
