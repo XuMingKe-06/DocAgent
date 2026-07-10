@@ -243,7 +243,8 @@
       "appearance": "Appearance",
       "shortcuts": "Shortcuts",
       "general": "General",
-      "help": "Help"
+      "help": "Help",
+      "lsp": "LSP Language Servers"
     },
     "general": {
       "sectionTitle": "General Settings",
@@ -592,6 +593,31 @@
       "faqA5": "Click the workspace selector in the top bar to switch workspaces, or add, switch and manage workspaces in Settings > Workspace Management. Each workspace's files and configuration are independent.",
       "faqQ6": "How to use Prompt templates?",
       "faqA6": "You can create and manage commonly used Prompt templates in Settings > Prompt Templates, with support for variable placeholders. You can quickly insert template content through the template picker in the input box."
+    },
+    "lsp": {
+      "title": "LSP Language Server Status",
+      "description": "View and manage language server processes",
+      "refresh": "Refresh",
+      "restart": "Restart",
+      "stopAll": "Stop All",
+      "language": "Language",
+      "status": "Status",
+      "command": "Command",
+      "pid": "PID",
+      "serverName": "Server",
+      "workspaceRoot": "Workspace Root",
+      "startedAt": "Started At",
+      "noServers": "No registered language servers",
+      "statusRunning": "Running",
+      "statusStopped": "Stopped",
+      "statusStarting": "Starting",
+      "statusError": "Error",
+      "loadError": "Failed to load LSP status",
+      "restartSuccess": "Language server restarted",
+      "restartError": "Restart failed",
+      "stopAllSuccess": "All language servers stopped",
+      "stopAllError": "Stop failed",
+      "experimental": "Experimental"
     }
   },
   "history": {

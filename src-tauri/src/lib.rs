@@ -68,9 +68,9 @@ pub struct AppState {
     pub scratchpad_states: crate::services::tool::builtin::SharedScratchpadStates,
     /// Skill 注册表：管理已加载的 Skill，在 Agent 启动时注入 AgentContext
     pub skill_registry: Arc<crate::services::skill::registry::SkillRegistry>,
+    /// LSP 服务器管理器（阶段 5）：管理 LSP 语言服务器进程
+    pub lsp_manager: Arc<crate::services::lsp::manager::LspServerManager>,
 }
-
-// TODO(Phase 5): lsp_manager: Arc<LspManager>
 
 /// 从系统 PATH 中查找 Python 可执行文件（开发模式兜底）
 ///
@@ -372,6 +372,12 @@ pub fn run() {
                 .map(|s| (s.git_bash_path, s.web_search))
                 .unwrap_or_default();
 
+            // 阶段 5: 读取 LSP 配置
+            let lsp_config = config_manager
+                .load_app_settings()
+                .map(|s| s.lsp)
+                .unwrap_or_default();
+
             // Phase 2: 初始化权限系统组件
             // 先创建 db_arc，permission_registry 需要 Arc<Database>
             let db_arc = Arc::new(database);
@@ -389,6 +395,63 @@ pub fn run() {
                 Arc::new(tokio::sync::Mutex::new(HashMap::new()));
 
             let mut tool_registry = crate::services::tool::registry::ToolRegistry::new();
+
+            // 阶段 5: 初始化 LSP 组件
+            // 优先使用当前活动工作区路径作为 LSP 根目录(便于 rust-analyzer 找到 Cargo.toml 等)
+            // 若无活动工作区或路径不存在,回退到应用数据目录
+            let lsp_workspace_root = {
+                let mut root = app_data_dir.clone();
+                if let Ok(ws_config) = config_manager.load_workspaces() {
+                    if let Ok(settings) = config_manager.load_app_settings() {
+                        let active_id = &settings.workspace.default_workspace_id;
+                        if !active_id.is_empty() {
+                            if let Some(ws) =
+                                ws_config.workspaces.iter().find(|w| w.id == *active_id)
+                            {
+                                let ws_path = std::path::PathBuf::from(&ws.path);
+                                if ws_path.exists() {
+                                    root = ws_path;
+                                    log::info!("LSP 工作区根目录设为活动工作区: {}", ws.path);
+                                } else {
+                                    log::warn!(
+                                        "活动工作区路径不存在,回退到应用数据目录: {}",
+                                        ws.path
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                root
+            };
+            let lsp_manager = Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                lsp_workspace_root,
+                std::time::Duration::from_secs(lsp_config.request_timeout_seconds),
+            ));
+            let lsp_router = Arc::new(crate::services::lsp::router::LanguageRouter::new());
+            let lsp_cache = Arc::new(crate::services::lsp::cache::LspResultCache::new(
+                lsp_config.cache.ttl_seconds,
+                lsp_config.cache.max_entries,
+            ));
+
+            // 注册 LSP 服务器配置（仅在 lsp.enabled = true 时）
+            if lsp_config.enabled {
+                for server_config in &lsp_config.servers {
+                    if server_config.enabled {
+                        let config = crate::models::lsp::LspServerConfig {
+                            language: server_config.language.clone(),
+                            command: server_config.command.clone(),
+                            root_patterns: server_config.root_patterns.clone(),
+                            initialization_options: server_config.initialization_options.clone(),
+                        };
+                        tauri::async_runtime::block_on(async {
+                            lsp_manager.register_config(config).await;
+                        });
+                        log::info!("已注册 LSP 服务器配置: language={}", server_config.language);
+                    }
+                }
+            }
+
             // 阶段 4: register_builtin_tools 注册 Task/WebFetch/WebSearch/Question 工具
             // TaskTool 采用延迟注入模式：先注册不含 sub_executor 的实例，后续通过 set_sub_executor 注入
             let registration = crate::services::tool::builtin::register_builtin_tools(
@@ -398,6 +461,10 @@ pub fn run() {
                 web_search_config,
                 question_channels.clone(),
                 Some(app.handle().clone()),
+                Arc::clone(&lsp_manager),
+                Arc::clone(&lsp_router),
+                Arc::clone(&lsp_cache),
+                lsp_config.experimental_enabled,
             );
             let scratchpad_states = registration.scratchpad_states;
             let task_tool = registration.task_tool;
@@ -489,6 +556,7 @@ pub fn run() {
                 network_monitor: Arc::new(network_monitor),
                 scratchpad_states,
                 skill_registry,
+                lsp_manager,
             };
 
             app.manage(state);
@@ -562,6 +630,23 @@ pub fn run() {
                     }
                 }
             });
+
+            // 阶段 5: 启动 LSP 定期健康检查（间隔 > 0 时启动）
+            let lsp_manager_for_health = Arc::clone(&app.state::<AppState>().lsp_manager);
+            let lsp_health_interval = lsp_config.health_check_interval_seconds;
+            if lsp_health_interval > 0 {
+                tauri::async_runtime::spawn(async move {
+                    let mut interval =
+                        tokio::time::interval(std::time::Duration::from_secs(lsp_health_interval));
+                    interval.tick().await; // 跳过首次立即触发
+                    loop {
+                        interval.tick().await;
+                        if let Err(e) = lsp_manager_for_health.health_check().await {
+                            log::warn!("LSP 健康检查失败: {}", e.message);
+                        }
+                    }
+                });
+            }
 
             // 启动定期工作区目录存在性检查（每 10 秒执行一次）
             // 作为父目录监听器的兜底机制，当父目录监听器失效时仍能检测到目录删除
@@ -681,6 +766,10 @@ pub fn run() {
             // 日志命令
             commands::log::get_log_path,
             commands::log::open_directory,
+            // LSP 命令
+            commands::lsp::lsp_get_status,
+            commands::lsp::lsp_restart_server,
+            commands::lsp::lsp_stop_all,
             // 更新命令
             #[cfg(desktop)]
             commands::update::check_update,

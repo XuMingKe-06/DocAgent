@@ -8,8 +8,6 @@ src-tauri/target/
 *.pdb
 */tests/
 !docs/tests/
-!src-tauri/tests/
-!sidecar/tests/
 
 # 依赖
 node_modules

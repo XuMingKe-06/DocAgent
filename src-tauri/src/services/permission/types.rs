@@ -155,6 +155,8 @@ impl PermissionType {
             "skill" => Self::Skill,
             // T3.08: source_code 工具映射到 Read 权限类型(只读搜索)
             "source_code" => Self::Read,
+            // T5.09: lsp 工具映射到 Lsp 权限类型(只读代码理解工具)
+            "lsp" => Self::Lsp,
             _ => Self::Wildcard,
         }
     }

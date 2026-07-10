@@ -32,6 +32,7 @@ import type {
   PermissionRule,
   AddPermissionRuleParams,
   UpdatePermissionRuleParams,
+  LspServerInfo,
 } from "../types";
 
 // ================================================================
@@ -616,5 +617,28 @@ export async function updatePermissionRule(ruleId: string, params: UpdatePermiss
 /** 删除权限规则 */
 export async function deletePermissionRule(ruleId: string): Promise<void> {
   const result = await safeInvoke(() => invoke("delete_permission_rule", { ruleId }), { context: "deletePermissionRule" });
+  if (!result.ok) throw result.error.raw;
+}
+
+// ================================================================
+// LSP 命令
+// ================================================================
+
+/** 获取所有 LSP 服务器状态 */
+export async function lspGetStatus(): Promise<LspServerInfo[]> {
+  const result = await safeInvoke(() => invoke<LspServerInfo[]>("lsp_get_status"), { context: "lspGetStatus" });
+  if (!result.ok) throw result.error.raw;
+  return result.data;
+}
+
+/** 重启指定语言的 LSP 服务器 */
+export async function lspRestartServer(language: string): Promise<void> {
+  const result = await safeInvoke(() => invoke("lsp_restart_server", { language }), { context: "lspRestartServer" });
+  if (!result.ok) throw result.error.raw;
+}
+
+/** 停止所有 LSP 服务器 */
+export async function lspStopAll(): Promise<void> {
+  const result = await safeInvoke(() => invoke("lsp_stop_all"), { context: "lspStopAll" });
   if (!result.ok) throw result.error.raw;
 }

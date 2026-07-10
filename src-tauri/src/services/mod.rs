@@ -5,6 +5,7 @@ pub mod document;
 pub mod fs_watcher;
 pub mod handler;
 pub mod llm;
+pub mod lsp;
 pub mod network_monitor;
 pub mod permission;
 pub mod skill;

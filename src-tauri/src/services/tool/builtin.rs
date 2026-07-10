@@ -17,6 +17,7 @@ use crate::db::Database;
 use crate::models::tool::{ScratchpadEntry, ScratchpadState, ToolResult};
 
 // 子模块声明
+pub mod lsp_tools;
 pub mod question;
 mod sourcecode;
 pub mod task;
@@ -58,6 +59,11 @@ pub struct BuiltinToolsRegistration {
 /// web_search_config: WebSearch 配置（从 AppSettings 读取）
 /// question_channels: Question 工具答案通道（与 submit_question_answer 命令共享）
 /// app_handle: Tauri AppHandle（用于 QuestionTool 发射事件）
+/// lsp_manager: LSP 服务器管理器（阶段 5）
+/// lsp_router: LSP 语言路由器（阶段 5）
+/// lsp_cache: LSP 结果缓存（阶段 5）
+/// lsp_experimental_enabled: 是否启用 LSP 实验性工具（阶段 5）
+#[allow(clippy::too_many_arguments)]
 pub fn register_builtin_tools(
     registry: &mut ToolRegistry,
     git_bash_path: String,
@@ -65,6 +71,10 @@ pub fn register_builtin_tools(
     web_search_config: crate::config::app_settings::WebSearchConfig,
     question_channels: question::QuestionChannels,
     app_handle: Option<tauri::AppHandle<tauri::Wry>>,
+    lsp_manager: Arc<crate::services::lsp::manager::LspServerManager>,
+    lsp_router: Arc<crate::services::lsp::router::LanguageRouter>,
+    lsp_cache: Arc<crate::services::lsp::cache::LspResultCache>,
+    lsp_experimental_enabled: bool,
 ) -> BuiltinToolsRegistration {
     log::info!("开始注册内置工具");
     registry.register(Box::new(ListDirectoryTool));
@@ -123,7 +133,20 @@ pub fn register_builtin_tools(
     )));
 
     log::info!("内置工具注册完成, 共注册 24 个工具");
-    // TODO(Phase 5): 新增 lsp 工具(实验性)
+
+    // 阶段 5: 注册 LSP 工具(实验性,仅在 lsp_experimental_enabled = true 时注册)
+    // LSP 工具为单一工具,通过 operation 参数路由 8 种操作
+    if lsp_experimental_enabled {
+        registry.register(Box::new(
+            crate::services::tool::builtin::lsp_tools::LspTool::new(
+                lsp_manager,
+                lsp_router,
+                lsp_cache,
+            ),
+        ));
+        log::info!("已注册 LSP 工具(实验性)");
+    }
+
     BuiltinToolsRegistration {
         scratchpad_states,
         task_tool,
@@ -1002,6 +1025,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         // 验证 24 个工具都已注册（8 个原有 + 4 个阶段三新增 + 1 个 scratchpad + 2 个代码执行工具 + 3 个阶段 1 新增 edit/glob/grep + 1 个 todowrite + 1 个 source_code + 4 个阶段 4 新增 task/webfetch/websearch/question）
@@ -1053,6 +1083,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let defs = registry.tool_definitions();
@@ -1077,6 +1114,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tools = registry.list_tools();
@@ -1107,6 +1151,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tool = registry.get_arc("exists").unwrap();
@@ -1133,6 +1184,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tool = registry.get_arc("read").unwrap();
@@ -1174,6 +1232,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("read").unwrap();
         let result = tool
@@ -1224,6 +1289,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("read").unwrap();
         // 读取第 3-5 行
@@ -1271,6 +1343,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1316,6 +1395,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1360,6 +1446,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1398,6 +1491,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1448,6 +1548,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("glob").unwrap();
         // 用 **/*.rs 查找所有 .rs 文件
@@ -1503,6 +1610,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("glob").unwrap();
         let result = tool
@@ -1551,6 +1665,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("grep").unwrap();
         // 搜索 "fn " 模式
@@ -1600,6 +1721,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("grep").unwrap();
         // 只搜索 .rs 文件
@@ -1645,6 +1773,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("grep").unwrap();
         // 大小写不敏感搜索 "foobar"
@@ -1687,6 +1822,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("grep").unwrap();
         // 搜索 "target"，前后各 1 行上下文
@@ -1729,6 +1871,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tool = registry.get_arc("mkdir").unwrap();
@@ -1754,6 +1903,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tool = registry.get_arc("write").unwrap();
@@ -1780,6 +1936,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tool = registry.get_arc("remove").unwrap();
@@ -1805,6 +1968,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tool = registry.get_arc("search").unwrap();
@@ -1829,6 +1999,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tool = registry.get_arc("file_info").unwrap();
@@ -1856,6 +2033,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         // 创建临时工作区目录
@@ -1925,6 +2109,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         // 创建临时工作区目录
@@ -1977,6 +2168,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         // 创建临时工作区目录
@@ -2029,6 +2227,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tool = registry.get_arc("scratchpad").unwrap();
@@ -2073,6 +2278,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2119,6 +2331,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2164,6 +2383,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2219,6 +2445,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2245,6 +2478,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2271,6 +2511,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2296,6 +2543,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2542,6 +2796,13 @@ mod tests {
             crate::config::app_settings::WebSearchConfig::default(),
             std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             None,
+            std::sync::Arc::new(crate::services::lsp::manager::LspServerManager::new(
+                std::path::PathBuf::from("/tmp"),
+                std::time::Duration::from_secs(30),
+            )),
+            std::sync::Arc::new(crate::services::lsp::router::LanguageRouter::new()),
+            std::sync::Arc::new(crate::services::lsp::cache::LspResultCache::new(300, 500)),
+            false,
         );
 
         let tool = registry.get_arc("write").unwrap();
