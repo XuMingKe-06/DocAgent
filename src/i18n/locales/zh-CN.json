@@ -166,6 +166,21 @@
     "failed": "上下文压缩失败",
     "failedWithError": "上下文压缩失败: {{error}}"
   },
+  "subAgentNode": {
+    "running": "子 Agent 执行中: {{task}}",
+    "completed": "子 Agent 完成: {{task}}",
+    "failed": "子 Agent 失败: {{task}}",
+    "cancelled": "子 Agent 已取消: {{task}}",
+    "iterations": "迭代 {{count}} 次",
+    "toolCalls": "工具调用 {{count}} 次",
+    "error": "错误: {{message}}"
+  },
+  "questionNode": {
+    "title": "Agent 提问",
+    "submit": "提交回答",
+    "answered": "已回答",
+    "selectRequired": "请选择至少一个选项"
+  },
   "fileTree": {
     "sectionTitle": "工作区文件",
     "searchPlaceholder": "搜索文件...",

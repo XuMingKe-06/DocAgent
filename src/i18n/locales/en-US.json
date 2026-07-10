@@ -166,6 +166,21 @@
     "failed": "Context compaction failed",
     "failedWithError": "Context compaction failed: {{error}}"
   },
+  "subAgentNode": {
+    "running": "Sub-agent running: {{task}}",
+    "completed": "Sub-agent completed: {{task}}",
+    "failed": "Sub-agent failed: {{task}}",
+    "cancelled": "Sub-agent cancelled: {{task}}",
+    "iterations": "{{count}} iterations",
+    "toolCalls": "{{count}} tool calls",
+    "error": "Error: {{message}}"
+  },
+  "questionNode": {
+    "title": "Agent Question",
+    "submit": "Submit Answer",
+    "answered": "Answered",
+    "selectRequired": "Please select at least one option"
+  },
   "fileTree": {
     "sectionTitle": "Workspace Files",
     "searchPlaceholder": "Search files...",

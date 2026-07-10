@@ -2,7 +2,7 @@ export type NodeStatus = "pending" | "running" | "completed" | "failed" | "cance
 
 export type ExecutionStatus = "idle" | "running" | "stopping" | "paused" | "completed" | "failed" | "cancelled";
 
-export type WorkflowNodeType = "user" | "thinking" | "content" | "tool" | "confirm" | "error" | "compaction";
+export type WorkflowNodeType = "user" | "thinking" | "content" | "tool" | "confirm" | "error" | "compaction" | "sub_agent" | "question";
 
 export interface Attachment {
   id: string;
@@ -73,6 +73,43 @@ export interface CompactionNodeData {
   error?: string;
 }
 
+/** 子 Agent 节点数据 */
+export interface SubAgentNodeData {
+  /** 子 Agent 唯一标识 */
+  agentId: string;
+  /** 任务描述 */
+  taskDescription: string;
+  /** 状态: "running" | "completed" | "failed" | "cancelled" */
+  status: string;
+  /** 当前迭代次数 */
+  iteration: number;
+  /** 工具调用记录 */
+  toolCalls: Array<{ toolName: string; arguments: Record<string, unknown> }>;
+  /** 附加消息（错误信息或结果摘要） */
+  message?: string;
+}
+
+/** 提问节点数据 */
+export interface QuestionNodeData {
+  /** 提问唯一标识，提交回答时使用 */
+  questionId: string;
+  /** 问题列表 */
+  questions: Array<{
+    /** 短标签 */
+    header: string;
+    /** 完整问题文本 */
+    question: string;
+    /** 选项列表 */
+    options: Array<{ label: string; description: string }>;
+    /** 是否允许多选 */
+    multiSelect: boolean;
+  }>;
+  /** 用户回答（提交后填充） */
+  answers?: Array<{ questionIndex: number; selectedOptions: string[] }>;
+  /** 是否已回答 */
+  answered: boolean;
+}
+
 export interface NodeDataMap {
   user: UserNodeData;
   thinking: ThinkingNodeData;
@@ -81,6 +118,8 @@ export interface NodeDataMap {
   confirm: ConfirmNodeData;
   error: ErrorNodeData;
   compaction: CompactionNodeData;
+  sub_agent: SubAgentNodeData;
+  question: QuestionNodeData;
 }
 
 export interface WorkflowNode<T extends WorkflowNodeType = WorkflowNodeType> {

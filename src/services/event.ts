@@ -118,6 +118,68 @@ export interface CompactionDonePayload {
 }
 
 // ================================================================
+// 子 Agent 与提问事件 Payload 类型
+// ================================================================
+
+/** 子 Agent 状态变更事件 */
+export interface SubAgentStatusPayload {
+  /** 父会话 ID */
+  parentSessionId: string;
+  /** 子 Agent 唯一标识 */
+  agentId: string;
+  /** 状态: "running" | "completed" | "failed" | "cancelled" */
+  status: string;
+  /** 附加消息（错误信息或结果摘要） */
+  message?: string;
+  /** 当前迭代次数 */
+  iteration: number;
+}
+
+/** 子 Agent 工具调用事件 */
+export interface SubAgentToolCallPayload {
+  /** 父会话 ID */
+  parentSessionId: string;
+  /** 子 Agent 唯一标识 */
+  agentId: string;
+  /** 工具名称 */
+  toolName: string;
+  /** 工具调用参数 */
+  arguments: Record<string, unknown>;
+  /** 当前迭代次数 */
+  iteration: number;
+}
+
+/** 提问选项 */
+export interface QuestionOption {
+  /** 选项标签 */
+  label: string;
+  /** 选项描述 */
+  description: string;
+}
+
+/** 单个提问项 */
+export interface QuestionItem {
+  /** 短标签（最多12字符） */
+  header: string;
+  /** 完整问题文本 */
+  question: string;
+  /** 2-4 个选项 */
+  options: QuestionOption[];
+  /** 是否允许多选 */
+  multiSelect: boolean;
+}
+
+/** 向用户提问事件 */
+export interface QuestionPayload {
+  /** 会话 ID */
+  sessionId: string;
+  /** 提问唯一标识，提交回答时使用 */
+  questionId: string;
+  /** 问题列表 */
+  questions: QuestionItem[];
+}
+
+// ================================================================
 // 系统事件 Payload 类型
 // ================================================================
 
@@ -282,6 +344,33 @@ export function onAgentCompactionDone(
   handler: (payload: CompactionDonePayload) => void,
 ): Promise<UnlistenFn> {
   return listen<CompactionDonePayload>("agent:compaction_done", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** 监听子 Agent 状态变更事件 */
+export function onSubAgentStatus(
+  handler: (payload: SubAgentStatusPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<SubAgentStatusPayload>("agent:sub_agent_status", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** 监听子 Agent 工具调用事件 */
+export function onSubAgentToolCall(
+  handler: (payload: SubAgentToolCallPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<SubAgentToolCallPayload>("agent:sub_agent_tool_call", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** 监听向用户提问事件 */
+export function onQuestion(
+  handler: (payload: QuestionPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<QuestionPayload>("agent:question", (event) => {
     handler(event.payload);
   });
 }

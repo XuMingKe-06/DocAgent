@@ -19,6 +19,12 @@ pub const AGENT_NETWORK_RETRY: &str = "agent:network_retry";
 pub const AGENT_COMPACTION_START: &str = "agent:compaction_start";
 /// 上下文压缩完成事件
 pub const AGENT_COMPACTION_DONE: &str = "agent:compaction_done";
+/// 子 Agent 状态变更事件（阶段 4）
+pub const AGENT_SUB_AGENT_STATUS: &str = "agent:sub_agent_status";
+/// 子 Agent 工具调用事件（阶段 4）
+pub const AGENT_SUB_AGENT_TOOL_CALL: &str = "agent:sub_agent_tool_call";
+/// 向用户提问事件（阶段 4，T4.19 使用）
+pub const AGENT_QUESTION: &str = "agent:question";
 
 // ================================================================
 // 系统事件名常量
@@ -174,6 +180,79 @@ pub struct StoppedPayload {
     pub session_id: String,
     pub completed_steps: u32,
     pub reason: String,
+}
+
+// ================================================================
+// 子 Agent 事件 Payload 类型（阶段 4）
+// ================================================================
+
+/// 子 Agent 状态变更事件 Payload（阶段 4）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentStatusPayload {
+    /// 父 Agent 会话 ID
+    pub parent_session_id: String,
+    /// 子 Agent ID
+    pub agent_id: String,
+    /// 状态: "running" | "completed" | "failed" | "cancelled"
+    pub status: String,
+    /// 附加消息（如错误信息或结果摘要）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// 当前迭代次数
+    pub iteration: u32,
+}
+
+/// 子 Agent 工具调用事件 Payload（阶段 4）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentToolCallPayload {
+    /// 父 Agent 会话 ID
+    pub parent_session_id: String,
+    /// 子 Agent ID
+    pub agent_id: String,
+    /// 工具名称
+    pub tool_name: String,
+    /// 工具参数
+    pub arguments: serde_json::Value,
+    /// 当前迭代次数
+    pub iteration: u32,
+}
+
+/// 向用户提问事件 Payload（阶段 4，T4.19 使用）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionPayload {
+    /// 会话 ID
+    pub session_id: String,
+    /// 问题 ID（用于关联答案）
+    pub question_id: String,
+    /// 问题列表
+    pub questions: Vec<QuestionItem>,
+}
+
+/// 单个问题项（阶段 4）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionItem {
+    /// 短标签（最多 12 字符）
+    pub header: String,
+    /// 完整问题文本
+    pub question: String,
+    /// 选项列表（2-4 个）
+    pub options: Vec<QuestionOption>,
+    /// 是否允许多选
+    pub multi_select: bool,
+}
+
+/// 问题选项（阶段 4）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct QuestionOption {
+    /// 选项标签
+    pub label: String,
+    /// 选项描述
+    pub description: String,
 }
 
 // ================================================================

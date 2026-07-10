@@ -16,6 +16,7 @@ use crate::services::agent::context::{AgentContext, AgentMode};
 use crate::services::agent::executor::{AgentExecutor, ContextUsagePersistFn};
 use crate::services::attachment::AttachmentService;
 use crate::services::llm::router::LlmRouter;
+use crate::services::tool::builtin::question::QuestionAnswer;
 use crate::AppState;
 
 /// Agent 清理守卫：在 Drop 时自动从 active_agents 移除记录
@@ -856,6 +857,78 @@ pub async fn switch_agent_mode(
         agent_mode
     );
     Ok(())
+}
+
+/// 提交 question 工具的用户答案（阶段 4，T4.19）
+/// 前端用户回答问题后调用此命令，通过 question_id 找到 oneshot Sender 发送答案
+#[tauri::command]
+pub async fn submit_question_answer(
+    question_id: String,
+    answers: Vec<serde_json::Value>,
+    state: State<'_, AppState>,
+) -> Result<(), CommandError> {
+    log::info!(
+        "submit_question_answer 请求: question_id={}, answers_count={}",
+        question_id,
+        answers.len()
+    );
+
+    // 从 question_channels 取出 Sender
+    let sender = {
+        let mut channels = state.question_channels.lock().await;
+        channels.remove(&question_id)
+    };
+
+    match sender {
+        Some(tx) => {
+            // 构造 QuestionAnswer
+            let answer = QuestionAnswer {
+                question_id: question_id.clone(),
+                answers: answers
+                    .iter()
+                    .filter_map(|a| {
+                        Some(
+                            crate::services::tool::builtin::question::QuestionItemAnswer {
+                                question_index: a.get("questionIndex")?.as_u64()? as usize,
+                                selected_options: a
+                                    .get("selectedOptions")?
+                                    .as_array()?
+                                    .iter()
+                                    .filter_map(|o| o.as_str().map(|s| s.to_string()))
+                                    .collect(),
+                            },
+                        )
+                    })
+                    .collect(),
+            };
+
+            if tx.send(answer).is_err() {
+                log::warn!(
+                    "submit_question_answer: 接收端已关闭, question_id={}",
+                    question_id
+                );
+                return Err(CommandError::agent(
+                    AGENT_SESSION_NOT_FOUND,
+                    "Agent 执行已结束，无法提交答案".to_string(),
+                ));
+            }
+            log::info!(
+                "submit_question_answer: 答案已发送, question_id={}",
+                question_id
+            );
+            Ok(())
+        }
+        None => {
+            log::error!(
+                "submit_question_answer 失败: 未找到问题通道, question_id={}",
+                question_id
+            );
+            Err(CommandError::agent(
+                AGENT_SESSION_NOT_FOUND,
+                format!("未找到问题通道: {}", question_id),
+            ))
+        }
+    }
 }
 
 /// 将消息列表持久化到数据库

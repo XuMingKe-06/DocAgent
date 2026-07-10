@@ -42,6 +42,9 @@ pub struct AppState {
     /// 权限审批通道（Phase 2 三态权限系统，once/always/reject）
     pub permission_channels:
         Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionDecision>>>>,
+    /// Question 工具答案通道（阶段 4，按 question_id 隔离）
+    /// QuestionTool 创建 oneshot::Sender 存入，前端通过 submit_question_answer 命令回复
+    pub question_channels: crate::services::tool::builtin::question::QuestionChannels,
     /// 权限注册表（默认规则 + 用户规则合并）
     pub permission_registry: Arc<crate::services::permission::registry::PermissionRegistry>,
     /// 会话级白名单（always 规则缓存）
@@ -53,6 +56,9 @@ pub struct AppState {
     pub doc_service: Arc<crate::services::document::DocumentService>,
     pub llm_router: Arc<tokio::sync::RwLock<Arc<crate::services::llm::router::LlmRouter>>>,
     pub tool_registry: Arc<crate::services::tool::registry::ToolRegistry>,
+    /// 子 Agent 执行器（阶段 4）：由 TaskTool 委托执行子任务
+    /// 通过延迟注入模式在 setup 中初始化并注入到 TaskTool
+    pub sub_executor: Arc<crate::services::agent::sub_executor::SubAgentExecutor>,
     pub handler_registry:
         Arc<tokio::sync::Mutex<crate::services::handler::registry::HandlerRegistry>>,
     pub fs_watcher: Arc<crate::services::fs_watcher::FsWatcherService<tauri::Wry>>,
@@ -360,10 +366,10 @@ pub fn run() {
             );
 
             // 初始化 Tool 注册表并注册内置工具
-            // 读取 Git Bash 路径配置（命令超时由 LLM 自主决定）
-            let git_bash_path = config_manager
+            // 读取 Git Bash 路径配置（命令超时由 LLM 自主决定）+ WebSearch 配置（阶段 4）
+            let (git_bash_path, web_search_config) = config_manager
                 .load_app_settings()
-                .map(|s| s.git_bash_path)
+                .map(|s| (s.git_bash_path, s.web_search))
                 .unwrap_or_default();
 
             // Phase 2: 初始化权限系统组件
@@ -378,13 +384,43 @@ pub fn run() {
                 Arc::new(crate::services::permission::doom_loop::DoomLoopDetector::new());
             let agent_mode_manager = Arc::new(crate::services::agent::AgentModeManager::new());
 
+            // 阶段 4: 创建 question_channels（QuestionTool 与 submit_question_answer 命令共享）
+            let question_channels: crate::services::tool::builtin::question::QuestionChannels =
+                Arc::new(tokio::sync::Mutex::new(HashMap::new()));
+
             let mut tool_registry = crate::services::tool::registry::ToolRegistry::new();
-            let scratchpad_states = crate::services::tool::builtin::register_builtin_tools(
+            // 阶段 4: register_builtin_tools 注册 Task/WebFetch/WebSearch/Question 工具
+            // TaskTool 采用延迟注入模式：先注册不含 sub_executor 的实例，后续通过 set_sub_executor 注入
+            let registration = crate::services::tool::builtin::register_builtin_tools(
                 &mut tool_registry,
                 git_bash_path,
-                Arc::clone(&agent_mode_manager),
                 Arc::clone(&db_arc),
+                web_search_config,
+                question_channels.clone(),
+                Some(app.handle().clone()),
             );
+            let scratchpad_states = registration.scratchpad_states;
+            let task_tool = registration.task_tool;
+
+            // 阶段 4: 初始化 SubAgentExecutor（需要 tool_registry，故在工具注册后创建）
+            // 共享 llm_router、tool_registry、permission_registry、session_whitelist、app_handle
+            let tool_registry_arc = Arc::new(tool_registry);
+            let sub_executor =
+                Arc::new(crate::services::agent::sub_executor::SubAgentExecutor::new(
+                    Arc::clone(&llm_router_arc),
+                    Arc::clone(&tool_registry_arc),
+                    Arc::clone(&permission_registry),
+                    Arc::clone(&session_whitelist),
+                    Some(app.handle().clone()),
+                ));
+            // 延迟注入 SubAgentExecutor 到 TaskTool（setup 为同步上下文，使用 block_on 调用 async setter）
+            // 使用 trait 对象 Arc<dyn SubAgentExecTrait> 避免 SubAgentExecutor 的 Drop glue 在 cdylib 模式下的符号导出问题
+            tauri::async_runtime::block_on(async {
+                task_tool
+                    .set_sub_executor(Arc::clone(&sub_executor)
+                        as Arc<dyn crate::services::agent::SubAgentExecTrait>)
+                    .await;
+            });
 
             // 初始化 Skill 注册表
             // 全局目录: ~/.agent/skills/，项目目录: .agent/skills/（当前工作目录下）
@@ -439,13 +475,15 @@ pub fn run() {
                 active_agents: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 confirm_channels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 permission_channels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+                question_channels,
                 permission_registry,
                 session_whitelist,
                 doom_loop_detector,
                 agent_mode_manager,
                 doc_service: doc_service_for_handlers,
                 llm_router: llm_router_arc,
-                tool_registry: Arc::new(tool_registry),
+                tool_registry: tool_registry_arc,
+                sub_executor,
                 handler_registry: Arc::new(tokio::sync::Mutex::new(handler_registry)),
                 fs_watcher: Arc::new(fs_watcher),
                 network_monitor: Arc::new(network_monitor),
@@ -628,6 +666,7 @@ pub fn run() {
             commands::agent::switch_agent_mode,
             commands::agent::get_context_usage,
             commands::agent::is_agent_running,
+            commands::agent::submit_question_answer,
             // 模板命令
             commands::template::list_templates,
             commands::template::get_template,

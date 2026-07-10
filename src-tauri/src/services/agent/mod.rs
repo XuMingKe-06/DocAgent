@@ -2,6 +2,7 @@ pub mod compaction;
 pub mod context;
 pub mod executor;
 pub mod prompts;
+pub mod sub_executor;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -98,4 +99,15 @@ impl Default for AgentModeManager {
     fn default() -> Self {
         Self::new()
     }
+}
+
+pub use sub_executor::{SubAgentExecTrait, SubAgentExecutor};
+
+/// 文档 Handler 名称列表（仅在 Document 模式下暴露给 LLM）
+/// executor.rs 和 sub_executor.rs 共享此常量，避免重复定义导致维护不一致
+pub const DOCUMENT_HANDLER_NAMES: &[&str] = &["docx", "xlsx", "pptx", "pdf"];
+
+/// 判断工具名是否为文档 Handler
+pub fn is_document_handler(name: &str) -> bool {
+    DOCUMENT_HANDLER_NAMES.contains(&name)
 }

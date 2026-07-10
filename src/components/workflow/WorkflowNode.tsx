@@ -7,6 +7,8 @@ import { ToolNode } from "./ToolNode";
 import { ConfirmNode } from "./ConfirmNode";
 import { ErrorNode } from "./ErrorNode";
 import { CompactionNode } from "./CompactionNode";
+import { SubAgentNode } from "./SubAgentNode";
+import { QuestionNode } from "./QuestionNode";
 
 interface WorkflowNodeRendererProps {
   node: WorkflowNode;
@@ -32,6 +34,10 @@ export function WorkflowNodeRenderer({ node, onRetry }: WorkflowNodeRendererProp
       return <ErrorNode node={node as WorkflowNode<"error">} onToggle={() => toggleNode(node.id)} onRetry={onRetry} />;
     case "compaction":
       return <CompactionNode node={node as WorkflowNode<"compaction">} />;
+    case "sub_agent":
+      return <SubAgentNode node={node as WorkflowNode<"sub_agent">} />;
+    case "question":
+      return <QuestionNode node={node as WorkflowNode<"question">} />;
     default:
       return null;
   }

@@ -68,6 +68,13 @@ tree-sitter-javascript = "0.21"
 tree-sitter-typescript = "0.21"
 tree-sitter-go = "0.21"
 tree-sitter-java = "0.21"
+# 阶段 4 新增:WebFetch 工具依赖
+# HTML 转 Markdown(用于 WebFetch 工具将抓取的网页转换为 Markdown 文本)
+html2md = "0.2"
+# URL 解析(用于 URL 验证器,校验和解析用户输入的 URL)
+url = "2.5"
+# URL 编码(用于 SerpAPI 查询参数编码)
+urlencoding = "2"
 
 [dev-dependencies]
 # 测试用临时文件

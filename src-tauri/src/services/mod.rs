@@ -9,3 +9,4 @@ pub mod network_monitor;
 pub mod permission;
 pub mod skill;
 pub mod tool;
+pub mod web;

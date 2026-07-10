@@ -8,6 +8,7 @@ use tauri::{Emitter, Runtime};
 
 use super::compaction::ContextCompactor;
 use super::context::AgentContext;
+use super::is_document_handler;
 use crate::config::app_settings::{CompactionConfig, ConfirmationLevel};
 use crate::errors::CommandError;
 use crate::events::emitter::AgentEmitter;
@@ -30,13 +31,7 @@ const CONFIRM_TIMEOUT_SECS: u64 = 300;
 /// 始终需要确认的高风险 Handler 列表
 const HIGH_RISK_HANDLERS: &[&str] = &["remove"];
 
-/// 文档 Handler 名称列表（仅在 Document 模式下暴露给 LLM）
-const DOCUMENT_HANDLER_NAMES: &[&str] = &["docx", "xlsx", "pptx", "pdf"];
-
-/// 判断工具名是否为文档 Handler
-fn is_document_handler(name: &str) -> bool {
-    DOCUMENT_HANDLER_NAMES.contains(&name)
-}
+// DOCUMENT_HANDLER_NAMES 和 is_document_handler 已提取到 mod.rs 共享，通过 super:: 引用
 
 /// 判断 Shell 命令是否为高风险命令（需要用户确认）
 /// 检测破坏性命令模式：rm/del/rmdir/mkfs/format/shutdown 等

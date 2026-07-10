@@ -17,8 +17,12 @@ use crate::db::Database;
 use crate::models::tool::{ScratchpadEntry, ScratchpadState, ToolResult};
 
 // 子模块声明
+pub mod question;
 mod sourcecode;
+pub mod task;
 mod todowrite;
+pub mod webfetch;
+pub mod websearch;
 
 /// Scratchpad 共享状态类型
 /// 全局唯一实例，按 session_id 隔离不同会话的笔记
@@ -38,16 +42,30 @@ fn resolve_path(path: &str, workspace_root: &str) -> String {
     root.join(path).to_string_lossy().to_string()
 }
 
+/// 内置工具注册结果
+/// 包含 Scratchpad 共享状态和 TaskTool 引用（用于延迟注入 SubAgentExecutor）
+pub struct BuiltinToolsRegistration {
+    /// Scratchpad 共享状态
+    pub scratchpad_states: SharedScratchpadStates,
+    /// TaskTool 引用（用于延迟注入 SubAgentExecutor）
+    pub task_tool: task::TaskTool,
+}
+
 /// 注册所有内置工具
-/// 返回 Scratchpad 共享状态 Arc，供 AgentContext 在每轮迭代时读取笔记摘要
+/// 返回 BuiltinToolsRegistration，包含 Scratchpad 共享状态和 TaskTool（用于延迟注入 SubAgentExecutor）
 /// git_bash_path: Git Bash 可执行文件路径（空字符串表示从 PATH 自动检测）
-/// _agent_mode_manager: Agent 模式管理器（Phase 2 仅传递，实际过滤在 executor 中实现，T2.13 会使用）
+/// db: 数据库连接
+/// web_search_config: WebSearch 配置（从 AppSettings 读取）
+/// question_channels: Question 工具答案通道（与 submit_question_answer 命令共享）
+/// app_handle: Tauri AppHandle（用于 QuestionTool 发射事件）
 pub fn register_builtin_tools(
     registry: &mut ToolRegistry,
     git_bash_path: String,
-    _agent_mode_manager: Arc<crate::services::agent::AgentModeManager>,
     db: Arc<Database>,
-) -> SharedScratchpadStates {
+    web_search_config: crate::config::app_settings::WebSearchConfig,
+    question_channels: question::QuestionChannels,
+    app_handle: Option<tauri::AppHandle<tauri::Wry>>,
+) -> BuiltinToolsRegistration {
     log::info!("开始注册内置工具");
     registry.register(Box::new(ListDirectoryTool));
     registry.register(Box::new(SearchFilesTool));
@@ -92,10 +110,24 @@ pub fn register_builtin_tools(
         sourcecode::SourceCodeTool::new().expect("创建 SourceCodeTool 失败"),
     ));
 
-    log::info!("内置工具注册完成, 共注册 20 个工具");
-    // TODO(Phase 4): 新增 task/webfetch/websearch 工具
+    // 阶段 4 新增工具：Task（子 Agent 委托）、WebFetch（URL 获取）、WebSearch（网络搜索）、Question（向用户提问）
+    // TaskTool 采用延迟注入模式：先创建不含 sub_executor 的实例并注册，
+    // 后续在 lib.rs 中通过 set_sub_executor 注入 SubAgentExecutor
+    let task_tool = task::TaskTool::new();
+    registry.register(Box::new(task_tool.clone()));
+    registry.register(Box::new(webfetch::WebFetchTool::new()));
+    registry.register(Box::new(websearch::WebSearchTool::new(web_search_config)));
+    registry.register(Box::new(question::QuestionTool::new(
+        question_channels,
+        app_handle,
+    )));
+
+    log::info!("内置工具注册完成, 共注册 24 个工具");
     // TODO(Phase 5): 新增 lsp 工具(实验性)
-    scratchpad_states
+    BuiltinToolsRegistration {
+        scratchpad_states,
+        task_tool,
+    }
 }
 
 // ============================================================
@@ -966,13 +998,15 @@ mod tests {
         let _scratchpad_states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
-        // 验证 20 个工具都已注册（8 个原有 + 4 个阶段三新增 + 1 个 scratchpad + 2 个代码执行工具 + 3 个阶段 1 新增 edit/glob/grep + 1 个 todowrite + 1 个 source_code）
+        // 验证 24 个工具都已注册（8 个原有 + 4 个阶段三新增 + 1 个 scratchpad + 2 个代码执行工具 + 3 个阶段 1 新增 edit/glob/grep + 1 个 todowrite + 1 个 source_code + 4 个阶段 4 新增 task/webfetch/websearch/question）
         let tools = registry.list_tools();
-        assert_eq!(tools.len(), 20);
+        assert_eq!(tools.len(), 24);
 
         // 验证每个工具的基本属性
         let tool_names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
@@ -1002,6 +1036,11 @@ mod tests {
         assert!(tool_names.contains(&"todowrite"));
         // SourceCode 工具
         assert!(tool_names.contains(&"source_code"));
+        // 阶段 4 新增工具
+        assert!(tool_names.contains(&"task"));
+        assert!(tool_names.contains(&"webfetch"));
+        assert!(tool_names.contains(&"websearch"));
+        assert!(tool_names.contains(&"question"));
     }
 
     #[test]
@@ -1010,12 +1049,14 @@ mod tests {
         let _scratchpad_states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let defs = registry.tool_definitions();
-        assert_eq!(defs.len(), 20);
+        assert_eq!(defs.len(), 24);
 
         // 验证每个定义都有 type 和 function 字段
         for def in &defs {
@@ -1032,8 +1073,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tools = registry.list_tools();
@@ -1043,11 +1086,13 @@ mod tests {
             assert_eq!(tool.version, "1.0.0");
             assert!(!tool.name.is_empty());
             assert!(!tool.description.is_empty());
-            // 文件系统工具为 "filesystem"，Scratchpad 笔记工具为 "memory"
+            // 工具类别：filesystem/memory/code（阶段 1-3）、agent/web（阶段 4 新增）
             assert!(
                 tool.category == "filesystem"
                     || tool.category == "memory"
                     || tool.category == "code"
+                    || tool.category == "agent"
+                    || tool.category == "web"
             );
         }
     }
@@ -1058,8 +1103,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tool = registry.get_arc("exists").unwrap();
@@ -1082,8 +1129,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tool = registry.get_arc("read").unwrap();
@@ -1121,8 +1170,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("read").unwrap();
         let result = tool
@@ -1169,8 +1220,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("read").unwrap();
         // 读取第 3-5 行
@@ -1214,8 +1267,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1257,8 +1312,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1299,8 +1356,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1335,8 +1394,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("edit").unwrap();
         let result = tool
@@ -1383,8 +1444,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("glob").unwrap();
         // 用 **/*.rs 查找所有 .rs 文件
@@ -1436,8 +1499,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("glob").unwrap();
         let result = tool
@@ -1482,8 +1547,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("grep").unwrap();
         // 搜索 "fn " 模式
@@ -1529,8 +1596,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("grep").unwrap();
         // 只搜索 .rs 文件
@@ -1572,8 +1641,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("grep").unwrap();
         // 大小写不敏感搜索 "foobar"
@@ -1612,8 +1683,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("grep").unwrap();
         // 搜索 "target"，前后各 1 行上下文
@@ -1652,8 +1725,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tool = registry.get_arc("mkdir").unwrap();
@@ -1675,8 +1750,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tool = registry.get_arc("write").unwrap();
@@ -1699,8 +1776,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tool = registry.get_arc("remove").unwrap();
@@ -1722,8 +1801,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tool = registry.get_arc("search").unwrap();
@@ -1744,8 +1825,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tool = registry.get_arc("file_info").unwrap();
@@ -1769,8 +1852,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         // 创建临时工作区目录
@@ -1836,8 +1921,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         // 创建临时工作区目录
@@ -1886,8 +1973,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         // 创建临时工作区目录
@@ -1936,8 +2025,10 @@ mod tests {
         let _states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tool = registry.get_arc("scratchpad").unwrap();
@@ -1978,8 +2069,10 @@ mod tests {
         let _states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2022,8 +2115,10 @@ mod tests {
         let _states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2065,8 +2160,10 @@ mod tests {
         let _states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2118,8 +2215,10 @@ mod tests {
         let _states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2142,8 +2241,10 @@ mod tests {
         let _states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2166,8 +2267,10 @@ mod tests {
         let _states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2189,8 +2292,10 @@ mod tests {
         let _states = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
         let tool = registry.get_arc("scratchpad").unwrap();
 
@@ -2433,8 +2538,10 @@ mod tests {
         let _ = register_builtin_tools(
             &mut registry,
             String::new(),
-            Arc::new(crate::services::agent::AgentModeManager::new()),
             test_db(),
+            crate::config::app_settings::WebSearchConfig::default(),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            None,
         );
 
         let tool = registry.get_arc("write").unwrap();

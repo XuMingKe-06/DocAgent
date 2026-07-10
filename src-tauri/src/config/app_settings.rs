@@ -220,6 +220,63 @@ impl Default for UpdateSettings {
     }
 }
 
+/// WebSearch 配置（网页搜索，阶段 4）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct WebSearchConfig {
+    /// 是否启用网页搜索
+    pub enabled: bool,
+    /// 搜索后端类型（如 "mcp"）
+    pub backend: String,
+    /// MCP 端点地址
+    pub mcp_endpoint: String,
+    /// API 密钥（序列化时跳过，避免泄露到配置文件；反序列化缺失时使用默认空字符串）
+    #[serde(default, skip_serializing)]
+    pub api_key: String,
+    /// 单次搜索返回的最大结果数
+    pub max_results: usize,
+    /// 请求超时时间（秒）
+    pub timeout_seconds: u64,
+}
+
+/// WebSearch 默认是否启用
+fn default_web_search_enabled() -> bool {
+    true
+}
+
+/// WebSearch 默认后端
+fn default_web_search_backend() -> String {
+    "mcp".to_string()
+}
+
+/// WebSearch 默认 MCP 端点
+fn default_web_search_mcp_endpoint() -> String {
+    "https://mcp.exa.ai".to_string()
+}
+
+/// WebSearch 默认最大结果数
+fn default_web_search_max_results() -> usize {
+    5
+}
+
+/// WebSearch 默认超时时间（秒）
+fn default_web_search_timeout_seconds() -> u64 {
+    30
+}
+
+impl Default for WebSearchConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_web_search_enabled(),
+            backend: default_web_search_backend(),
+            mcp_endpoint: default_web_search_mcp_endpoint(),
+            api_key: String::new(),
+            max_results: default_web_search_max_results(),
+            timeout_seconds: default_web_search_timeout_seconds(),
+        }
+    }
+}
+
 /// 应用设置，包含所有可配置项
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 #[serde(rename_all = "camelCase")]
@@ -248,6 +305,9 @@ pub struct AppSettings {
     /// 用于 bash 工具执行 Shell 命令
     #[serde(default)]
     pub git_bash_path: String,
+    /// WebSearch 配置（阶段 4）
+    #[serde(default)]
+    pub web_search: WebSearchConfig,
 }
 
 /// Sidecar 默认请求超时时间（秒）
@@ -380,5 +440,7 @@ pub fn merge_with_defaults(
         preferred_provider_id: user_settings.preferred_provider_id.clone(),
         // Git Bash 路径直接保留用户设置（空字符串表示自动检测）
         git_bash_path: user_settings.git_bash_path.clone(),
+        // WebSearch 配置直接保留用户设置（serde 反序列化时已用默认值填充缺失字段）
+        web_search: user_settings.web_search.clone(),
     }
 }

@@ -14,6 +14,9 @@ import {
   onAgentNetworkRetry,
   onAgentCompactionStart,
   onAgentCompactionDone,
+  onSubAgentStatus,
+  onSubAgentToolCall,
+  onQuestion,
   type ThinkingPayload,
   type DeepThinkingPayload,
   type ToolCallPayload,
@@ -25,6 +28,7 @@ import {
 import { useWorkflowStore, setCurrentSessionId, type BackgroundAgentEvent } from "../stores/useWorkflowStore";
 import { useAttachmentStore } from "../stores/useAttachmentStore";
 import { useAgentModeStore } from "../stores/useAgentModeStore";
+import type { NodeStatus, SubAgentNodeData } from "../types";
 
 export interface UseAgentReturn {
   isLoading: boolean;
@@ -96,6 +100,8 @@ export function useAgent(): UseAgentReturn {
   const lastToolCallIterationRef = useRef<number | null>(null);
   // 追踪当前压缩节点 ID，compaction_start 创建节点，compaction_done 更新该节点
   const compactionNodeIdRef = useRef<string | null>(null);
+  // 追踪子 Agent agentId → nodeId 映射，用于更新对应的 sub_agent 节点
+  const subAgentNodeIdsRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -315,6 +321,97 @@ export function useAgent(): UseAgentReturn {
             }, isFailed ? "failed" : "completed");
           }
         }),
+        onSubAgentStatus((payload) => {
+          // 后台会话：路由到缓存
+          if (payload.parentSessionId !== sessionIdRef.current) {
+            routeBackgroundEvent(payload.parentSessionId, {
+              type: "sub_agent_status",
+              agentId: payload.agentId,
+              status: payload.status,
+              message: payload.message,
+              iteration: payload.iteration,
+              taskDescription: payload.message ?? "",
+            });
+            return;
+          }
+          // 当前会话：创建或更新 sub_agent 节点
+          const existingNodeId = subAgentNodeIdsRef.current.get(payload.agentId);
+          if (existingNodeId) {
+            // 更新已有节点：保留 taskDescription 和 toolCalls，更新状态相关字段
+            const existingNode = useWorkflowStore.getState().nodes.find((n) => n.id === existingNodeId);
+            const existingData = existingNode?.data as SubAgentNodeData | undefined;
+            if (existingData) {
+              useWorkflowStore.getState().updateNode(existingNodeId, {
+                status: payload.status as NodeStatus,
+                data: {
+                  ...existingData,
+                  status: payload.status,
+                  iteration: payload.iteration,
+                  message: payload.message,
+                },
+              });
+            }
+          } else {
+            // 首次事件：创建节点，使用 message 作为 taskDescription
+            const nodeId = useWorkflowStore.getState().addNode("sub_agent", {
+              agentId: payload.agentId,
+              taskDescription: payload.message ?? "",
+              status: payload.status,
+              iteration: payload.iteration,
+              toolCalls: [],
+              message: payload.message,
+            }, payload.status as NodeStatus);
+            subAgentNodeIdsRef.current.set(payload.agentId, nodeId);
+          }
+        }),
+        onSubAgentToolCall((payload) => {
+          // 后台会话：路由到缓存
+          if (payload.parentSessionId !== sessionIdRef.current) {
+            routeBackgroundEvent(payload.parentSessionId, {
+              type: "sub_agent_tool_call",
+              agentId: payload.agentId,
+              toolName: payload.toolName,
+              arguments: payload.arguments,
+              iteration: payload.iteration,
+            });
+            return;
+          }
+          // 当前会话：在对应的 sub_agent 节点的 toolCalls 数组中追加工具调用记录
+          const existingNodeId = subAgentNodeIdsRef.current.get(payload.agentId);
+          if (existingNodeId) {
+            const existingNode = useWorkflowStore.getState().nodes.find((n) => n.id === existingNodeId);
+            const existingData = existingNode?.data as SubAgentNodeData | undefined;
+            if (existingData) {
+              useWorkflowStore.getState().updateNode(existingNodeId, {
+                data: {
+                  ...existingData,
+                  toolCalls: [
+                    ...existingData.toolCalls,
+                    { toolName: payload.toolName, arguments: payload.arguments },
+                  ],
+                  iteration: payload.iteration,
+                },
+              });
+            }
+          }
+        }),
+        onQuestion((payload) => {
+          // 后台会话：路由到缓存
+          if (payload.sessionId !== sessionIdRef.current) {
+            routeBackgroundEvent(payload.sessionId, {
+              type: "question",
+              questionId: payload.questionId,
+              questions: payload.questions,
+            });
+            return;
+          }
+          // 当前会话：创建 question 节点（status="running"）
+          useWorkflowStore.getState().addNode("question", {
+            questionId: payload.questionId,
+            questions: payload.questions,
+            answered: false,
+          }, "running");
+        }),
       ]);
 
       if (cancelled) {
@@ -354,6 +451,7 @@ export function useAgent(): UseAgentReturn {
       seenToolCallIdsRef.current.clear();
       lastToolCallIterationRef.current = null;
       compactionNodeIdRef.current = null;
+      subAgentNodeIdsRef.current.clear();
 
       // 从附件 store 获取当前待发送的附件
       const currentAttachments = useAttachmentStore.getState().attachments;
@@ -455,6 +553,7 @@ export function useAgent(): UseAgentReturn {
     seenToolCallIdsRef.current.clear();
     lastToolCallIterationRef.current = null;
     compactionNodeIdRef.current = null;
+    subAgentNodeIdsRef.current.clear();
   }, []);
 
   const setSessionIdExternal = useCallback((id: string) => {

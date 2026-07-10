@@ -431,6 +431,15 @@ export async function isAgentRunning(sessionId: string): Promise<boolean> {
   return result.data;
 }
 
+/** 提交用户对 Agent 提问的回答 */
+export async function submitQuestionAnswer(
+  questionId: string,
+  answers: Array<{ questionIndex: number; selectedOptions: string[] }>,
+): Promise<void> {
+  const result = await safeInvoke(() => invoke("submit_question_answer", { questionId, answers }), { context: "submitQuestionAnswer" });
+  if (!result.ok) throw result.error.raw;
+}
+
 // ================================================================
 // 模板命令
 // ================================================================

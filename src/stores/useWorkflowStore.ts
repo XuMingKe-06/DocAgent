@@ -1,10 +1,10 @@
 import { create } from "zustand";
-import type { WorkflowNode, WorkflowNodeType, NodeStatus, ExecutionStatus, NodeDataMap } from "../types";
+import type { WorkflowNode, WorkflowNodeType, NodeStatus, ExecutionStatus, NodeDataMap, SubAgentNodeData } from "../types";
 import type { Message } from "../types/session";
 import type { ContextUsageInfo } from "../types/settings";
 
 import { generateToolBrief } from "../utils/format";
-import { onAgentContextUpdate } from "../services/event";
+import { onAgentContextUpdate, type QuestionItem } from "../services/event";
 import * as tauriCmd from "../services/tauri";
 import i18n from "../i18n";
 
@@ -54,7 +54,10 @@ export type BackgroundAgentEvent =
   | { type: "error"; code: number; message: string; recoverable: boolean }
   | { type: "stopped"; completedSteps: number; reason: string }
   | { type: "compaction_start"; tokensBefore: number }
-  | { type: "compaction_done"; tokensBefore: number; tokensAfter: number; compacted: boolean; error?: string };
+  | { type: "compaction_done"; tokensBefore: number; tokensAfter: number; compacted: boolean; error?: string }
+  | { type: "sub_agent_status"; agentId: string; status: string; message?: string; iteration: number; taskDescription: string }
+  | { type: "sub_agent_tool_call"; agentId: string; toolName: string; arguments: Record<string, unknown>; iteration: number }
+  | { type: "question"; questionId: string; questions: QuestionItem[] };
 
 interface WorkflowState {
   nodes: WorkflowNode[];
@@ -772,6 +775,109 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
             isExpanded: true,
           });
         }
+        break;
+      }
+      case "sub_agent_status": {
+        // 查找已有的 sub_agent 节点（按 agentId 匹配）
+        const existingNode = nodes.find(
+          (n) => n.type === "sub_agent" && (n.data as SubAgentNodeData).agentId === event.agentId
+        );
+        if (existingNode) {
+          // 更新已有节点：保留 taskDescription 和 toolCalls，更新状态相关字段
+          const existingData = existingNode.data as SubAgentNodeData;
+          nodes = nodes.map((n) =>
+            n.id === existingNode.id
+              ? {
+                  ...n,
+                  status: event.status as NodeStatus,
+                  data: {
+                    ...existingData,
+                    status: event.status,
+                    iteration: event.iteration,
+                    message: event.message,
+                  },
+                }
+              : n
+          );
+        } else {
+          // 首次事件：创建节点
+          const nodeId = `bg_node_${++bgNodeCounter}`;
+          nodes.push({
+            id: nodeId,
+            type: "sub_agent",
+            status: event.status as NodeStatus,
+            timestamp: now,
+            data: {
+              agentId: event.agentId,
+              taskDescription: event.taskDescription,
+              status: event.status,
+              iteration: event.iteration,
+              toolCalls: [],
+              message: event.message,
+            },
+            isExpanded: true,
+          });
+        }
+        break;
+      }
+      case "sub_agent_tool_call": {
+        // 查找已有的 sub_agent 节点（按 agentId 匹配）
+        const existingNode = nodes.find(
+          (n) => n.type === "sub_agent" && (n.data as SubAgentNodeData).agentId === event.agentId
+        );
+        if (existingNode) {
+          // 在 toolCalls 数组中追加工具调用记录
+          const existingData = existingNode.data as SubAgentNodeData;
+          nodes = nodes.map((n) =>
+            n.id === existingNode.id
+              ? {
+                  ...n,
+                  data: {
+                    ...existingData,
+                    toolCalls: [
+                      ...existingData.toolCalls,
+                      { toolName: event.toolName, arguments: event.arguments },
+                    ],
+                    iteration: event.iteration,
+                  },
+                }
+              : n
+          );
+        } else {
+          // 未找到对应节点，创建新节点（使用空字符串作为默认 taskDescription）
+          const nodeId = `bg_node_${++bgNodeCounter}`;
+          nodes.push({
+            id: nodeId,
+            type: "sub_agent",
+            status: "running" as NodeStatus,
+            timestamp: now,
+            data: {
+              agentId: event.agentId,
+              taskDescription: "",
+              status: "running",
+              iteration: event.iteration,
+              toolCalls: [{ toolName: event.toolName, arguments: event.arguments }],
+            },
+            isExpanded: true,
+          });
+        }
+        break;
+      }
+      case "question": {
+        // 创建 question 节点（status="running"）
+        const nodeId = `bg_node_${++bgNodeCounter}`;
+        nodes.push({
+          id: nodeId,
+          type: "question",
+          status: "running",
+          timestamp: now,
+          data: {
+            questionId: event.questionId,
+            questions: event.questions,
+            answered: false,
+          },
+          isExpanded: true,
+        });
         break;
       }
     }
