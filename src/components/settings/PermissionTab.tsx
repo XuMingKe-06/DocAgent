@@ -469,13 +469,6 @@ export function PermissionTab() {
           <button className="perm-refresh-btn" onClick={loadRules} title={t('permission.refresh')}>
             <Icon name="refresh" size={14} />
           </button>
-          <button className="perm-add-btn" onClick={handleAdd}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            {t('permission.addRule')}
-          </button>
         </div>
       </div>
 
@@ -525,6 +518,13 @@ export function PermissionTab() {
             <div className="section-header">
               <span className="section-title">{t('permission.userRules')}</span>
               <span className="section-badge">{userRules.length}</span>
+              <button className="perm-add-btn" onClick={handleAdd}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                {t('permission.addRule')}
+              </button>
             </div>
             {userRules.length > 0 ? (
               <div className="perm-table">
@@ -635,6 +635,9 @@ export function PermissionTab() {
         .perm-refresh-btn:hover {
           background: var(--color-bg-hover);
           color: var(--color-text-primary);
+        }
+        .section-header .perm-add-btn {
+          margin-left: auto;
         }
         .perm-add-btn {
           display: inline-flex;
