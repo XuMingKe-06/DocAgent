@@ -44,6 +44,7 @@ fn is_high_risk_command(command: &str) -> bool {
         "rm -rf",
         "rm -r",
         "rm -f",
+        "rm ",   // 匹配不带 flag 的 rm 命令(如 rm test.txt)
         "rmdir",
         "del /f",
         "del /q",
@@ -110,6 +111,8 @@ const MAX_TOOL_RESULT_CHARS: usize = 6000;
 pub enum PermissionResult {
     /// 允许执行
     Allow,
+    /// 允许执行（经过用户规则 Ask 弹窗批准后的 Allow）
+    AllowWithPermissionAsked,
     /// 拒绝执行，附带拒绝原因
     Deny { reason: String },
 }
@@ -665,8 +668,21 @@ impl<R: Runtime> AgentExecutor<R> {
         // 9. 根据 confirmation_level 调整 Ask 行为
         // Never/Always 级别:将 Ask 转为 Allow,避免权限系统弹窗(Never 由用户选择不确认,Always 由 needs_confirmation 统一处理)
         // 保留 Deny 结果(.env 等安全保护仍生效)
+        // 但用户自定义规则的 Ask 不应被 confirmation_level 覆盖,以尊重用户显式配置的权限规则
+        // 判断匹配的规则是否为用户自定义规则(非默认规则)
+        let is_user_rule = decision
+            .matched_rule_id
+            .as_ref()
+            .map(|id| {
+                !self
+                    .permission_registry
+                    .default_rules()
+                    .iter()
+                    .any(|r| &r.id == id)
+            })
+            .unwrap_or(false);
         let final_action = match (&self.confirmation_level, &final_action) {
-            (ConfirmationLevel::Never, PermissionAction::Ask) => {
+            (ConfirmationLevel::Never, PermissionAction::Ask) if !is_user_rule => {
                 log::debug!(
                     "权限允许(confirmation_level=Never,跳过 Ask): session_id={}, tool={}",
                     ctx.session_id,
@@ -674,7 +690,7 @@ impl<R: Runtime> AgentExecutor<R> {
                 );
                 PermissionAction::Allow
             }
-            (ConfirmationLevel::Always, PermissionAction::Ask) => {
+            (ConfirmationLevel::Always, PermissionAction::Ask) if !is_user_rule => {
                 log::debug!(
                     "权限允许(confirmation_level=Always,由 needs_confirmation 处理): session_id={}, tool={}",
                     ctx.session_id,
@@ -732,7 +748,7 @@ impl<R: Runtime> AgentExecutor<R> {
                             ctx.session_id,
                             tool_name
                         );
-                        Ok(PermissionResult::Allow)
+                        Ok(PermissionResult::AllowWithPermissionAsked)
                     }
                     PermissionResponse::Always => {
                         // 生成会话级 Allow 规则并加入白名单
@@ -749,7 +765,7 @@ impl<R: Runtime> AgentExecutor<R> {
                             ctx.session_id,
                             tool_name
                         );
-                        Ok(PermissionResult::Allow)
+                        Ok(PermissionResult::AllowWithPermissionAsked)
                     }
                 }
             }
@@ -1952,7 +1968,10 @@ impl<R: Runtime> AgentExecutor<R> {
                         continue;
                     }
 
-                    if self.needs_confirmation(&tool_call.name, &params) {
+                    // 判断是否已通过权限弹窗批准(避免双重弹窗)
+                    let already_confirmed = matches!(permitted, PermissionResult::AllowWithPermissionAsked);
+
+                    if !already_confirmed && self.needs_confirmation(&tool_call.name, &params) {
                         // 高风险技能：始终发射 tool_call 事件
                         // 若流式阶段已提前发射，此处携带完整参数重新发射，前端通过 callId 去重更新
                         self.emitter
@@ -2088,6 +2107,12 @@ impl<R: Runtime> AgentExecutor<R> {
                     // T3.13: 为 todowrite 工具注入 _session_id
                     // _session_id 用于按会话隔离任务列表，不暴露给 LLM
                     if tool_call.name == "todowrite" {
+                        safe_params["_session_id"] = json!(ctx.session_id);
+                    }
+
+                    // 为 question 工具注入 _session_id
+                    // _session_id 用于在 AGENT_QUESTION 事件中携带正确会话 ID，前端据此路由到当前会话
+                    if tool_call.name == "question" {
                         safe_params["_session_id"] = json!(ctx.session_id);
                     }
 
@@ -2730,6 +2755,9 @@ mod tests {
         assert!(is_high_risk_command("rm -rf /"));
         assert!(is_high_risk_command("rm -r /home"));
         assert!(is_high_risk_command("rm -f file.txt"));
+        // 不带 flag 的 rm 命令也应被识别为高风险
+        assert!(is_high_risk_command("rm test.txt"));
+        assert!(is_high_risk_command("rm /tmp/old_file.log"));
         assert!(is_high_risk_command("rmdir /s /q test"));
         assert!(is_high_risk_command("del /f file.txt"));
         assert!(is_high_risk_command("format C:"));
@@ -2772,5 +2800,7 @@ mod tests {
         assert!(!is_high_risk_command("cargo build"));
         assert!(!is_high_risk_command("format_code.sh")); // "format_code" 不应匹配 "format "
         assert!(!is_high_risk_command("delete file.txt")); // "delete" 不应匹配 "del "
+        assert!(!is_high_risk_command("formatter")); // "formatter" 不应匹配 "rm " 或 "format "
+        assert!(!is_high_risk_command("rmfile")); // "rmfile" 不应匹配 "rm "(无空格)
     }
 }
