@@ -1189,8 +1189,6 @@
 
 .markdown-preview pre {
   background: var(--color-bg-sub);
-  border: 1px solid var(--color-border-light);
-  border-radius: var(--radius-sm);
   padding: 12px 16px;
   margin: 8px 0;
   overflow-x: auto;
