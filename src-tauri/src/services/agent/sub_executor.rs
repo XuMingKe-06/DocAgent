@@ -336,29 +336,8 @@ impl SubAgentExecutor {
             // 检查是否有 tool_calls
             if let Some(tool_calls) = &message.tool_calls {
                 if !tool_calls.is_empty() {
-                    // 取第一个 tool_call 执行
-                    let tool_call = &tool_calls[0];
-                    tool_calls_count += 1;
-
-                    // 发射子 Agent 工具调用事件
-                    // 解析 arguments 字符串为 Value（解析失败时使用空对象）
-                    let tool_args: Value = if tool_call.arguments.is_empty() {
-                        serde_json::json!({})
-                    } else {
-                        serde_json::from_str(&tool_call.arguments).unwrap_or(serde_json::json!({}))
-                    };
-                    self.emit_event(
-                        AGENT_SUB_AGENT_TOOL_CALL,
-                        SubAgentToolCallPayload {
-                            parent_session_id: config.parent_session_id.clone(),
-                            agent_id: config.agent_id.clone(),
-                            tool_name: tool_call.name.clone(),
-                            arguments: tool_args,
-                            iteration: iterations,
-                        },
-                    );
-
-                    // 添加 assistant 消息（携带 tool_calls，保持对话历史完整）
+                    // 添加 assistant 消息（携带全量 tool_calls，保持对话历史完整）
+                    // 只添加一次，避免重复
                     messages.push(ChatMessage {
                         role: "assistant".to_string(),
                         content: message.content.clone(),
@@ -370,20 +349,50 @@ impl SubAgentExecutor {
                         metadata: None,
                     });
 
-                    // 执行工具调用
-                    let tool_result = self.execute_tool(tool_call, &config).await?;
+                    // 遍历执行所有 tool_calls
+                    for tool_call in tool_calls.iter() {
+                        tool_calls_count += 1;
 
-                    // 添加 tool 消息（携带 tool_call_id 关联工具调用）
-                    messages.push(ChatMessage {
-                        role: "tool".to_string(),
-                        content: tool_result,
-                        content_parts: None,
-                        tool_calls: None,
-                        tool_call_id: Some(tool_call.id.clone()),
-                        reasoning_content: None,
-                        attachments: None,
-                        metadata: None,
-                    });
+                        // 发射子 Agent 工具调用事件
+                        // 解析 arguments 字符串为 Value（解析失败时使用空对象）
+                        let tool_args: Value = if tool_call.arguments.is_empty() {
+                            serde_json::json!({})
+                        } else {
+                            serde_json::from_str(&tool_call.arguments).unwrap_or(serde_json::json!({}))
+                        };
+                        self.emit_event(
+                            AGENT_SUB_AGENT_TOOL_CALL,
+                            SubAgentToolCallPayload {
+                                parent_session_id: config.parent_session_id.clone(),
+                                agent_id: config.agent_id.clone(),
+                                tool_name: tool_call.name.clone(),
+                                arguments: tool_args,
+                                iteration: iterations,
+                            },
+                        );
+
+                        // 执行工具调用（出错时不中断，将错误信息作为 tool 结果返回给 LLM）
+                        let tool_result = match self.execute_tool(tool_call, &config).await {
+                            Ok(result) => result,
+                            Err(e) => serde_json::json!({
+                                "error": "tool_execution_failed",
+                                "tool": tool_call.name,
+                                "message": e.to_string()
+                            }).to_string(),
+                        };
+
+                        // 添加 tool 消息（携带 tool_call_id 关联工具调用）
+                        messages.push(ChatMessage {
+                            role: "tool".to_string(),
+                            content: tool_result,
+                            content_parts: None,
+                            tool_calls: None,
+                            tool_call_id: Some(tool_call.id.clone()),
+                            reasoning_content: None,
+                            attachments: None,
+                            metadata: None,
+                        });
+                    }
 
                     continue;
                 }
