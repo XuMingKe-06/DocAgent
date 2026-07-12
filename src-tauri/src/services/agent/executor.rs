@@ -2220,6 +2220,14 @@ impl<R: Runtime> AgentExecutor<R> {
                         None
                     };
 
+                    // 提前捕获 task 工具的 description 参数（safe_params 在 execute 时会被 move）
+                    // 用于在 tool_result metadata 中持久化子 Agent 任务描述
+                    let task_description = if tool_call.name == "task" {
+                        safe_params.get("description").and_then(|v| v.as_str()).map(|s| s.to_string())
+                    } else {
+                        None
+                    };
+
                     // 执行 Tool 或 Handler
                     let result = if let Some(tool) = tool_arc {
                         // 执行 Tool
@@ -2381,12 +2389,25 @@ impl<R: Runtime> AgentExecutor<R> {
                     };
                     // 构建 tool_result 的 metadata：
                     // - question 工具：持久化 questions/answers 作为 question 节点
+                    // - task 工具：持久化子 Agent 执行结果摘要作为 sub_agent 节点
                     // - 其他工具：若经历了 confirm/permission 流程，持久化 confirm 节点信息
                     let tool_metadata = if tool_call.name == "question" {
                         Some(serde_json::json!({
                             "nodeType": "question",
                             "questions": question_questions.unwrap_or(serde_json::Value::Array(vec![])),
                             "answers": result.output.as_ref().and_then(|o| o.get("answers")).cloned().unwrap_or(serde_json::Value::Array(vec![])),
+                        }))
+                    } else if tool_call.name == "task" {
+                        // 从 ToolResult.output 解析子 Agent 执行结果（SubAgentResult 序列化为 JSON）
+                        let output = clean_output.as_ref().unwrap_or(&serde_json::Value::Null);
+                        Some(serde_json::json!({
+                            "nodeType": "sub_agent",
+                            "agentId": output["agentId"],
+                            "taskDescription": task_description,
+                            "success": output.get("success").and_then(|v| v.as_bool()).unwrap_or(false),
+                            "iterations": output["iterations"],
+                            "toolCalls": output["toolCallRecords"],
+                            "error": output["error"],
                         }))
                     } else {
                         confirm_metadata.take()

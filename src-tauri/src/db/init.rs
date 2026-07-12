@@ -146,6 +146,26 @@ fn create_tables(conn: &Connection) -> Result<(), CommandError> {
         );",
     )?;
 
+    // sub_agent_messages 子Agent消息表（持久化子Agent执行期间产生的消息）
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sub_agent_messages (
+            id                  TEXT        NOT NULL PRIMARY KEY,
+            parent_session_id   TEXT        NOT NULL,
+            agent_id            TEXT        NOT NULL,
+            role                TEXT        NOT NULL,
+            content             TEXT,
+            tool_name           TEXT        DEFAULT NULL,
+            tool_args           TEXT        DEFAULT NULL,
+            tool_result         TEXT        DEFAULT NULL,
+            tool_call_id        TEXT        DEFAULT NULL,
+            reasoning_content   TEXT        DEFAULT NULL,
+            attachments         TEXT        DEFAULT NULL,
+            metadata            TEXT        DEFAULT NULL,
+            created_at          INTEGER     NOT NULL,
+            seq                 INTEGER     NOT NULL
+        );",
+    )?;
+
     // 迁移：为已有数据库的 session_messages 表添加 metadata 字段（新字段已存在时忽略错误）
     let _ = conn.execute(
         "ALTER TABLE session_messages ADD COLUMN metadata TEXT DEFAULT NULL",
@@ -204,7 +224,12 @@ fn create_indexes(conn: &Connection) -> Result<(), CommandError> {
         CREATE INDEX IF NOT EXISTS idx_permission_rules_session_id
             ON permission_rules (session_id);
         CREATE INDEX IF NOT EXISTS idx_permission_rules_permission_type
-            ON permission_rules (permission_type);",
+            ON permission_rules (permission_type);
+
+        CREATE INDEX IF NOT EXISTS idx_sub_agent_messages_agent
+            ON sub_agent_messages (agent_id);
+        CREATE INDEX IF NOT EXISTS idx_sub_agent_messages_session
+            ON sub_agent_messages (parent_session_id);",
     )?;
 
     log::info!("索引创建完成");

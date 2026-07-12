@@ -52,6 +52,16 @@ impl Default for SubAgentConfig {
     }
 }
 
+/// 子 Agent 工具调用记录（用于持久化和前端恢复）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallRecord {
+    /// 工具名称
+    pub tool_name: String,
+    /// 工具参数（JSON Value）
+    pub arguments: serde_json::Value,
+}
+
 /// 子 Agent 执行结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -70,6 +80,10 @@ pub struct SubAgentResult {
     pub duration_ms: u64,
     /// 使用的工具调用次数
     pub tool_calls: u32,
+    /// 任务描述(从 SubAgentConfig 透传,供 TaskTool 构建 metadata 时使用)
+    pub task_description: String,
+    /// 工具调用记录列表（完整工具调用历史）
+    pub tool_call_records: Vec<ToolCallRecord>,
 }
 
 /// 子 Agent 状态

@@ -39,6 +39,10 @@ const VersionHistoryPanel = lazy(() =>
 const UpdateNotification = lazy(() =>
   import("./components/common/UpdateNotification").then((m) => ({ default: m.UpdateNotification }))
 );
+// 子 Agent 工作流详情页：体积较大且仅在用户查看子 Agent 详情时才需要，延迟加载
+const SubAgentWorkflowPage = lazy(() =>
+  import("./components/workflow/SubAgentWorkflowPage").then((m) => ({ default: m.SubAgentWorkflowPage }))
+);
 
 /** 懒加载组件的通用加载占位符 */
 function LazyFallback() {
@@ -69,6 +73,8 @@ export default function App() {
   const [versionHistoryFilePath, setVersionHistoryFilePath] = useState("");
   const [versionHistoryFileName, setVersionHistoryFileName] = useState("");
 
+  // 子 Agent 工作流详情页：当前查看的子 Agent ID，非空时切换到详情页替代主工作流
+  const currentSubAgentId = useWorkflowStore((s) => s.currentSubAgentId);
   const { addNode, updateNode, setExecutionStatus, clearNodes, setPermissionHandler, loadFromMessages, executionStatus, initContextUsageListener, loadContextUsage, clearContextUsage, saveSessionToCache, restoreSessionFromCache, clearSessionCache, getCachedStreamingRefs, nodes } = useWorkflowStore();
   const { switchSession, loadSessions, clearCurrentSession, currentSessionId, sessions } = useSessionStore();
   const updateSessionTitleLocal = useSessionStore((s) => s.updateSessionTitleLocal);
@@ -963,18 +969,30 @@ export default function App() {
 
       <MainLayout
         mainArea={
-          <MainArea
-            isEmpty={nodes.length === 0}
-            workflow={<WorkflowTimeline onRetryError={handleRetryError} typewriterVisible={typewriterVisible} />}
-            inputArea={
-              <InputArea
-                onSend={handleSend}
-                executionStatus={executionStatus}
-                onStop={handleStop}
-                centered={nodes.length === 0}
+          // 主工作流始终挂载以保留滚动位置；子 Agent 详情页通过 display 叠加显示
+          <>
+            <div style={{ display: currentSubAgentId ? 'none' : 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+              <MainArea
+                isEmpty={nodes.length === 0}
+                workflow={<WorkflowTimeline onRetryError={handleRetryError} typewriterVisible={typewriterVisible} />}
+                inputArea={
+                  <InputArea
+                    onSend={handleSend}
+                    executionStatus={executionStatus}
+                    onStop={handleStop}
+                    centered={nodes.length === 0}
+                  />
+                }
               />
-            }
-          />
+            </div>
+            {currentSubAgentId && (
+              <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+                <Suspense fallback={<LazyFallback />}>
+                  <SubAgentWorkflowPage agentId={currentSubAgentId} />
+                </Suspense>
+              </div>
+            )}
+          </>
         }
         sidebarVisible={sidebarVisible}
         sidebar={

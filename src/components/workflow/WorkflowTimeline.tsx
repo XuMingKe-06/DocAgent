@@ -81,9 +81,11 @@ export function WorkflowTimeline({ onRetryError, typewriterVisible = false }: Wo
       cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = requestAnimationFrame(() => {
         if (!scrollRef.current) return;
+        const el = scrollRef.current;
+        // 元素隐藏时（display: none）跳过滚动，避免 scrollHeight=0 导致 scrollTop 被重置
+        if (el.offsetParent === null && el.getClientRects().length === 0) return;
 
         isProgrammaticScrollRef.current = true;
-        const el = scrollRef.current;
 
         // 判断是否为会话切换：节点数减少或一次性增加超过1个
         // 节点数减少永远是会话切换（正常流程不会删除节点）

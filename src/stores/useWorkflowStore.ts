@@ -70,6 +70,10 @@ interface WorkflowState {
   contextUsage: ContextUsageInfo | null;
   /** 按会话缓存的状态映射 */
   sessionCache: Map<string, SessionCacheEntry>;
+  /** 当前查看的子 Agent ID，null 表示显示主工作流 */
+  currentSubAgentId: string | null;
+  /** 子 Agent 工作流节点列表 */
+  subAgentNodes: WorkflowNode[];
 
   addNode: <T extends WorkflowNodeType>(type: T, data: NodeDataMap[T], status?: NodeStatus, iteration?: number) => string;
   updateNode: (id: string, updates: Partial<WorkflowNode>) => void;
@@ -82,6 +86,20 @@ interface WorkflowState {
   /** Phase 2: 设置权限审批回调（与 setConfirmHandler 并存，permissionHandler 优先） */
   setPermissionHandler: (handler: ((response: 'once' | 'always' | 'reject', feedback?: string) => Promise<void>) | null) => void;
   loadFromMessages: (messages: Message[]) => void;
+  /** 设置当前查看的子 Agent ID */
+  setCurrentSubAgentId: (agentId: string | null) => void;
+  /** 将子 Agent 消息转换为工作流节点，设置 subAgentNodes */
+  loadSubAgentMessages: (messages: Message[]) => void;
+  /** 清空子 Agent 工作流状态 */
+  clearSubAgentWorkflow: () => void;
+  /** 子 Agent 工作流:追加思考内容（流式） */
+  appendSubAgentThinking: (agentId: string, content: string, isStreaming: boolean, iteration: number) => void;
+  /** 子 Agent 工作流:追加内容（流式） */
+  appendSubAgentContent: (agentId: string, content: string, isStreaming: boolean, iteration: number) => void;
+  /** 子 Agent 工作流:添加工具调用节点 */
+  addSubAgentToolNode: (agentId: string, toolCallId: string, toolName: string, args: Record<string, unknown>, iteration: number) => void;
+  /** 子 Agent 工作流:更新工具执行结果 */
+  updateSubAgentToolResult: (agentId: string, toolCallId: string, result: string | undefined, error: string | undefined, success: boolean) => void;
   /** 初始化上下文窗口使用情况事件监听 */
   initContextUsageListener: () => Promise<() => void>;
   /** 从后端加载指定会话的上下文窗口使用信息 */
@@ -112,6 +130,9 @@ export interface StreamingRefSnapshot {
 
 let nodeCounter = 0;
 
+// 子 Agent 工作流节点计数器（独立于主工作流的 nodeCounter）
+let subAgentNodeCounter = 0;
+
 /** LRU 淘汰：当缓存超过上限时，移除最久未访问的条目 */
 function evictCacheIfNeeded(cache: Map<string, SessionCacheEntry>) {
   if (cache.size <= MAX_CACHE_SIZE) return;
@@ -128,6 +149,193 @@ function evictCacheIfNeeded(cache: Map<string, SessionCacheEntry>) {
   }
 }
 
+/** 将消息列表转换为工作流节点列表的核心逻辑（供 loadFromMessages 和 loadSubAgentMessages 复用） */
+function convertMessagesToNodes(messages: Message[]): WorkflowNode[] {
+  nodeCounter = 0;
+  const nodes: WorkflowNode[] = [];
+  let iterationCounter = 0;
+
+  // 第一遍：收集 tool 消息的执行结果，按 callId 索引
+  // tc.result 为实际值表示成功（JSON 解析成功）；为 null 时结合 msg.content 判断
+  // 同时收集 metadata，用于恢复 question/confirm/sub_agent 节点
+  const toolResultMap = new Map<string, { success: boolean; error?: string; metadata?: Record<string, unknown> }>();
+  for (const msg of messages) {
+    if (msg.role === "tool" && msg.toolCalls) {
+      for (const tc of msg.toolCalls) {
+        if (tc.id) {
+          const failed = tc.result == null && msg.content.startsWith("错误:");
+          toolResultMap.set(tc.id, {
+            success: !failed,
+            error: failed ? msg.content : undefined,
+            metadata: msg.metadata,
+          });
+        }
+      }
+    }
+  }
+
+  for (const msg of messages) {
+    const msgTimestamp = new Date(msg.createdAt).getTime();
+
+    if (msg.role === "user") {
+      // 将消息附件映射为工作流节点附件格式
+      const nodeAttachments = (msg.attachments || []).map((att, idx) => ({
+        id: `att_${idx}`,
+        name: att.name,
+        path: att.path || att.absolutePath || "",
+        size: att.size,
+        mimeType: att.mimeType,
+      }));
+      nodes.push({
+        id: `node_${++nodeCounter}`,
+        type: "user",
+        status: "completed",
+        timestamp: msgTimestamp,
+        data: { content: msg.content, attachments: nodeAttachments },
+        isExpanded: true,
+      });
+    } else if (msg.role === "assistant") {
+      // 检查是否为 error 节点
+      if (msg.metadata?.nodeType === "error") {
+        nodes.push({
+          id: `node_${++nodeCounter}`,
+          type: "error",
+          status: "failed",
+          timestamp: msgTimestamp,
+          data: {
+            code: (msg.metadata.code as number) ?? 0,
+            message: (msg.metadata.message as string) ?? msg.content,
+            recoverable: (msg.metadata.recoverable as boolean) ?? false,
+            module: "",
+          },
+          isExpanded: true,
+        });
+        continue; // 跳过 thinking/content/tool 节点创建
+      }
+
+      // 每条 assistant 消息递增迭代计数
+      iterationCounter += 1;
+      const currentIteration = iterationCounter;
+
+      if (msg.reasoningContent && msg.reasoningContent.trim()) {
+        nodes.push({
+          id: `node_${++nodeCounter}`,
+          type: "thinking",
+          status: "completed",
+          timestamp: msgTimestamp,
+          data: { content: msg.reasoningContent, duration: 0, isStreaming: false },
+          isExpanded: true,
+          iteration: currentIteration,
+        });
+      }
+      // LLM 响应中 content 在 tool_calls 之前输出，因此 content 节点应排在 tool 节点之前
+      if (msg.content && msg.content.trim()) {
+        nodes.push({
+          id: `node_${++nodeCounter}`,
+          type: "content",
+          status: "completed",
+          timestamp: msgTimestamp,
+          data: { content: msg.content },
+          isExpanded: true,
+          iteration: currentIteration,
+        });
+      }
+      if (msg.toolCalls && msg.toolCalls.length > 0) {
+        for (const tc of msg.toolCalls) {
+          const { success, error, metadata } = toolResultMap.get(tc.id) ?? { success: true };
+
+          // 根据 metadata.nodeType 创建不同类型的节点
+          if (metadata?.nodeType === "sub_agent") {
+            // 创建 sub_agent 节点（从持久化消息恢复）
+            // 根据 metadata.success 设置节点状态（兼容旧数据，默认为成功）
+            const subSuccess = (metadata.success as boolean) ?? true;
+            const subStatus: NodeStatus = subSuccess ? "completed" : "failed";
+            // 从 metadata.error 恢复错误信息（失败时）
+            const subMessage = subSuccess ? undefined : (metadata.error as string | null) ?? undefined;
+            // 从 metadata.iterations 恢复迭代次数
+            const subIteration = (metadata.iterations as number) ?? 0;
+            // 从 metadata.toolCalls 恢复工具调用列表（兼容旧数据：若为数字则回退为空数组）
+            const rawToolCalls = metadata.toolCalls;
+            const subToolCalls = Array.isArray(rawToolCalls)
+              ? (rawToolCalls as Array<{ toolName: string; arguments: Record<string, unknown> }>)
+              : [];
+            nodes.push({
+              id: `subagent-${tc.id}`,
+              type: "sub_agent",
+              status: subStatus,
+              timestamp: msgTimestamp,
+              iteration: undefined, // 不显示迭代次数
+              data: {
+                agentId: (metadata.agentId as string) ?? "",
+                taskDescription: (metadata.taskDescription as string) ?? "",
+                status: subStatus,
+                iteration: subIteration,
+                toolCalls: subToolCalls,
+                message: subMessage,
+              } as SubAgentNodeData,
+              isExpanded: true,
+            });
+          } else if (metadata?.nodeType === "question") {
+            // 创建 question 节点
+            nodes.push({
+              id: `node_${++nodeCounter}`,
+              type: "question",
+              status: "completed",
+              timestamp: msgTimestamp,
+              data: {
+                questionId: (metadata.questionId as string) ?? tc.id,
+                questions: (metadata.questions as any[]) ?? [],
+                answers: (metadata.answers as any[]) ?? [],
+                answered: true,
+              },
+              isExpanded: true,
+              iteration: currentIteration,
+            });
+          } else if (metadata?.nodeType === "confirm") {
+            // 创建 confirm 节点
+            nodes.push({
+              id: `node_${++nodeCounter}`,
+              type: "confirm",
+              status: "completed",
+              timestamp: msgTimestamp,
+              data: {
+                title: (metadata.operationType as string) ?? tc.name,
+                description: (metadata.description as string) ?? "",
+                confirmLabel: "确认",
+                cancelLabel: "取消",
+                confirmed: (metadata.approved as boolean) ?? false,
+                riskLevel: (metadata.riskLevel as string) ?? "normal",
+              },
+              isExpanded: true,
+              iteration: currentIteration,
+            });
+          } else {
+            // 普通 tool 节点（现有逻辑）
+            nodes.push({
+              id: `node_${++nodeCounter}`,
+              type: "tool",
+              status: success ? "completed" as NodeStatus : "failed" as NodeStatus,
+              timestamp: msgTimestamp,
+              data: {
+                toolName: tc.name,
+                briefDescription: generateToolBrief(tc.name, (tc.arguments ?? {}) as Record<string, unknown>),
+                input: (tc.arguments ?? {}) as Record<string, unknown>,
+                callId: tc.id,
+                success,
+                ...(error ? { error } : {}),
+              },
+              isExpanded: true,
+              iteration: currentIteration,
+            });
+          }
+        }
+      }
+    }
+  }
+
+  return nodes;
+}
+
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   nodes: [],
   executionStatus: "idle",
@@ -136,6 +344,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   permissionHandler: null,
   contextUsage: null,
   sessionCache: new Map(),
+  currentSubAgentId: null,
+  subAgentNodes: [],
 
   addNode: (type, data, status = "completed", iteration) => {
     const id = `node_${++nodeCounter}`;
@@ -171,7 +381,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   clearNodes: () => {
     nodeCounter = 0;
     // 不重置 sessionCache，它按会话管理
-    set({ nodes: [], error: null, executionStatus: "idle", confirmHandler: null, permissionHandler: null, contextUsage: null });
+    set({ nodes: [], error: null, executionStatus: "idle", confirmHandler: null, permissionHandler: null, contextUsage: null, currentSubAgentId: null, subAgentNodes: [] });
   },
 
   setExecutionStatus: (status) => {
@@ -199,159 +409,216 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   },
 
   loadFromMessages: (messages) => {
-    nodeCounter = 0;
-    const nodes: WorkflowNode[] = [];
-    let iterationCounter = 0;
-
-    // 第一遍：收集 tool 消息的执行结果，按 callId 索引
-    // tc.result 为实际值表示成功（JSON 解析成功）；为 null 时结合 msg.content 判断
-    // 同时收集 metadata，用于恢复 question/confirm 节点
-    const toolResultMap = new Map<string, { success: boolean; error?: string; metadata?: Record<string, unknown> }>();
-    for (const msg of messages) {
-      if (msg.role === "tool" && msg.toolCalls) {
-        for (const tc of msg.toolCalls) {
-          if (tc.id) {
-            const failed = tc.result == null && msg.content.startsWith("错误:");
-            toolResultMap.set(tc.id, {
-              success: !failed,
-              error: failed ? msg.content : undefined,
-              metadata: msg.metadata,
-            });
-          }
-        }
-      }
-    }
-
-    for (const msg of messages) {
-      const msgTimestamp = new Date(msg.createdAt).getTime();
-
-      if (msg.role === "user") {
-        // 将消息附件映射为工作流节点附件格式
-        const nodeAttachments = (msg.attachments || []).map((att, idx) => ({
-          id: `att_${idx}`,
-          name: att.name,
-          path: att.path || att.absolutePath || "",
-          size: att.size,
-          mimeType: att.mimeType,
-        }));
-        nodes.push({
-          id: `node_${++nodeCounter}`,
-          type: "user",
-          status: "completed",
-          timestamp: msgTimestamp,
-          data: { content: msg.content, attachments: nodeAttachments },
-          isExpanded: true,
-        });
-      } else if (msg.role === "assistant") {
-        // 检查是否为 error 节点
-        if (msg.metadata?.nodeType === "error") {
-          nodes.push({
-            id: `node_${++nodeCounter}`,
-            type: "error",
-            status: "failed",
-            timestamp: msgTimestamp,
-            data: {
-              code: (msg.metadata.code as number) ?? 0,
-              message: (msg.metadata.message as string) ?? msg.content,
-              recoverable: (msg.metadata.recoverable as boolean) ?? false,
-              module: "",
-            },
-            isExpanded: true,
-          });
-          continue; // 跳过 thinking/content/tool 节点创建
-        }
-
-        // 每条 assistant 消息递增迭代计数
-        iterationCounter += 1;
-        const currentIteration = iterationCounter;
-
-        if (msg.reasoningContent && msg.reasoningContent.trim()) {
-          nodes.push({
-            id: `node_${++nodeCounter}`,
-            type: "thinking",
-            status: "completed",
-            timestamp: msgTimestamp,
-            data: { content: msg.reasoningContent, duration: 0, isStreaming: false },
-            isExpanded: true,
-            iteration: currentIteration,
-          });
-        }
-        // LLM 响应中 content 在 tool_calls 之前输出，因此 content 节点应排在 tool 节点之前
-        if (msg.content && msg.content.trim()) {
-          nodes.push({
-            id: `node_${++nodeCounter}`,
-            type: "content",
-            status: "completed",
-            timestamp: msgTimestamp,
-            data: { content: msg.content },
-            isExpanded: true,
-            iteration: currentIteration,
-          });
-        }
-        if (msg.toolCalls && msg.toolCalls.length > 0) {
-          for (const tc of msg.toolCalls) {
-            const { success, error, metadata } = toolResultMap.get(tc.id) ?? { success: true };
-
-            // 根据 metadata.nodeType 创建不同类型的节点
-            if (metadata?.nodeType === "question") {
-              // 创建 question 节点
-              nodes.push({
-                id: `node_${++nodeCounter}`,
-                type: "question",
-                status: "completed",
-                timestamp: msgTimestamp,
-                data: {
-                  questionId: (metadata.questionId as string) ?? tc.id,
-                  questions: (metadata.questions as any[]) ?? [],
-                  answers: (metadata.answers as any[]) ?? [],
-                  answered: true,
-                },
-                isExpanded: true,
-                iteration: currentIteration,
-              });
-            } else if (metadata?.nodeType === "confirm") {
-              // 创建 confirm 节点
-              nodes.push({
-                id: `node_${++nodeCounter}`,
-                type: "confirm",
-                status: "completed",
-                timestamp: msgTimestamp,
-                data: {
-                  title: (metadata.operationType as string) ?? tc.name,
-                  description: (metadata.description as string) ?? "",
-                  confirmLabel: "确认",
-                  cancelLabel: "取消",
-                  confirmed: (metadata.approved as boolean) ?? false,
-                  riskLevel: (metadata.riskLevel as string) ?? "normal",
-                },
-                isExpanded: true,
-                iteration: currentIteration,
-              });
-            } else {
-              // 普通 tool 节点（现有逻辑）
-              nodes.push({
-                id: `node_${++nodeCounter}`,
-                type: "tool",
-                status: success ? "completed" as NodeStatus : "failed" as NodeStatus,
-                timestamp: msgTimestamp,
-                data: {
-                  toolName: tc.name,
-                  briefDescription: generateToolBrief(tc.name, (tc.arguments ?? {}) as Record<string, unknown>),
-                  input: (tc.arguments ?? {}) as Record<string, unknown>,
-                  callId: tc.id,
-                  success,
-                  ...(error ? { error } : {}),
-                },
-                isExpanded: true,
-                iteration: currentIteration,
-              });
-            }
-          }
-        }
-      }
-    }
-
+    const nodes = convertMessagesToNodes(messages);
     set({ nodes, error: null, executionStatus: "idle", confirmHandler: null, permissionHandler: null });
+  },
+
+  setCurrentSubAgentId: (agentId) => {
+    set({ currentSubAgentId: agentId });
+  },
+
+  loadSubAgentMessages: (messages) => {
+    // 保存主工作流的 nodeCounter，避免子 Agent 节点生成影响主工作流 ID 序列
+    const savedCounter = nodeCounter;
+    subAgentNodeCounter = 0;  // 重置子 Agent 节点计数器
+    const nodes = convertMessagesToNodes(messages);
+    nodeCounter = savedCounter;
+    // 保留当前 running 状态的流式节点，避免竞态条件导致节点丢失或位置错误
+    // 竞态场景：用户进入子 Agent 页面 → 流式事件创建 running 节点 →
+    // listSubAgentMessages 返回并覆盖 subAgentNodes → running 节点丢失
+    const currentNodes = get().subAgentNodes;
+    const runningNodes = currentNodes.filter(n => n.status === "running");
+    if (runningNodes.length > 0) {
+      let maxCounter = 0;
+      for (const runningNode of runningNodes) {
+        // 提取 running 节点的 counter 值，用于后续更新 subAgentNodeCounter
+        const match = runningNode.id.match(/^subagent_node_(\d+)$/);
+        if (match) {
+          const counter = parseInt(match[1], 10);
+          if (counter > maxCounter) maxCounter = counter;
+        }
+        // 若数据库节点已包含同迭代同类型的 completed 节点，说明该节点已完成并持久化，跳过避免重复
+        const hasCompleted = nodes.some(n =>
+          n.type === runningNode.type &&
+          n.iteration === runningNode.iteration &&
+          n.status === "completed"
+        );
+        if (!hasCompleted) {
+          nodes.push(runningNode);
+        }
+      }
+      // 确保 subAgentNodeCounter 不与保留的 running 节点 ID 冲突
+      subAgentNodeCounter = Math.max(subAgentNodeCounter, maxCounter);
+    }
+    set({ subAgentNodes: nodes });
+  },
+
+  clearSubAgentWorkflow: () => {
+    subAgentNodeCounter = 0;
+    set({ currentSubAgentId: null, subAgentNodes: [] });
+  },
+
+  appendSubAgentThinking: (_agentId, content, isStreaming, iteration) => {
+    const state = get();
+    const nodes = [...state.subAgentNodes];
+    // 查找最后一个 running 的 thinking 节点
+    let thinkingNodeIdx = -1;
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      if (nodes[i].type === "thinking" && nodes[i].status === "running") {
+        thinkingNodeIdx = i;
+        break;
+      }
+    }
+    // 跨迭代不复用旧 running 节点：新迭代开始意味着旧迭代的 thinking 已完成
+    // 避免上一迭代的孤立 running 节点被新迭代复用导致位置错误
+    if (thinkingNodeIdx >= 0 && nodes[thinkingNodeIdx].iteration !== iteration) {
+      const existing = nodes[thinkingNodeIdx];
+      nodes[thinkingNodeIdx] = {
+        ...existing,
+        status: "completed",
+        data: { ...existing.data, isStreaming: false },
+      };
+      thinkingNodeIdx = -1;
+    }
+    if (thinkingNodeIdx >= 0) {
+      // 追加到已有节点
+      const existing = nodes[thinkingNodeIdx];
+      const existingContent = (existing.data as { content: string }).content || "";
+      nodes[thinkingNodeIdx] = {
+        ...existing,
+        data: {
+          ...existing.data,
+          content: existingContent + content,
+          isStreaming,
+        },
+        status: isStreaming ? "running" : "completed",
+        iteration,
+      };
+    } else {
+      // 空内容不创建新节点（close 事件和流式空 delta 均跳过）
+      if (content.length === 0) {
+        return;
+      }
+      // 创建新 thinking 节点
+      const nodeId = `subagent_node_${++subAgentNodeCounter}`;
+      nodes.push({
+        id: nodeId,
+        type: "thinking",
+        status: isStreaming ? "running" : "completed",
+        timestamp: Date.now(),
+        data: { content, duration: 0, isStreaming },
+        isExpanded: true,
+        iteration,
+      });
+    }
+    set({ subAgentNodes: nodes });
+  },
+
+  appendSubAgentContent: (_agentId, content, isStreaming, iteration) => {
+    const state = get();
+    const nodes = [...state.subAgentNodes];
+    // 查找最后一个 running 的 content 节点
+    let contentNodeIdx = -1;
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      if (nodes[i].type === "content" && nodes[i].status === "running") {
+        contentNodeIdx = i;
+        break;
+      }
+    }
+    // 跨迭代不复用旧 running 节点：新迭代开始意味着旧迭代的 content 已完成
+    // 避免上一迭代的孤立 running content 节点被新迭代复用导致位置错误
+    if (contentNodeIdx >= 0 && nodes[contentNodeIdx].iteration !== iteration) {
+      const existing = nodes[contentNodeIdx];
+      nodes[contentNodeIdx] = {
+        ...existing,
+        status: "completed",
+        data: { ...existing.data, isStreaming: false },
+      };
+      contentNodeIdx = -1;
+    }
+    if (contentNodeIdx >= 0) {
+      const existing = nodes[contentNodeIdx];
+      const existingContent = (existing.data as { content: string }).content || "";
+      nodes[contentNodeIdx] = {
+        ...existing,
+        data: {
+          ...existing.data,
+          content: existingContent + content,
+          isStreaming,
+        },
+        status: isStreaming ? "running" : "completed",
+        iteration,
+      };
+    } else {
+      // 空内容不创建新节点（close 事件和流式空 delta 均跳过）
+      if (content.length === 0) {
+        return;
+      }
+      const nodeId = `subagent_node_${++subAgentNodeCounter}`;
+      nodes.push({
+        id: nodeId,
+        type: "content",
+        status: isStreaming ? "running" : "completed",
+        timestamp: Date.now(),
+        data: { content, isStreaming },
+        isExpanded: true,
+        iteration,
+      });
+    }
+    set({ subAgentNodes: nodes });
+  },
+
+  addSubAgentToolNode: (_agentId, toolCallId, toolName, args, iteration) => {
+    const state = get();
+    const nodes = [...state.subAgentNodes];
+    const nodeId = `subagent_node_${++subAgentNodeCounter}`;
+    nodes.push({
+      id: nodeId,
+      type: "tool",
+      status: "running",
+      timestamp: Date.now(),
+      data: {
+        toolName,
+        callId: toolCallId,
+        input: args,
+        briefDescription: generateToolBrief(toolName, args),
+      },
+      isExpanded: true,
+      iteration,
+    });
+    set({ subAgentNodes: nodes });
+  },
+
+  updateSubAgentToolResult: (_agentId, toolCallId, result, error, success) => {
+    const state = get();
+    const nodes = [...state.subAgentNodes];
+    // 按 callId 匹配 tool 节点
+    const toolNodeIdx = nodes.findIndex(
+      (n) => n.type === "tool" && (n.data as { callId?: string }).callId === toolCallId
+    );
+    if (toolNodeIdx >= 0) {
+      const existing = nodes[toolNodeIdx];
+      // 解析 result 字符串为 JSON 对象
+      let parsedResult: unknown = undefined;
+      if (result) {
+        try {
+          parsedResult = JSON.parse(result);
+        } catch {
+          parsedResult = result;
+        }
+      }
+      nodes[toolNodeIdx] = {
+        ...existing,
+        status: success ? "completed" : "failed",
+        data: {
+          ...existing.data,
+          success,
+          error: success ? undefined : (error || i18n.t("toolNode.executionFailed")),
+          result: success && parsedResult ? (parsedResult as Record<string, unknown>) : (existing.data as { result?: Record<string, unknown> }).result,
+        },
+      };
+      set({ subAgentNodes: nodes });
+    }
   },
 
   // 初始化上下文窗口使用情况事件监听，返回取消监听函数

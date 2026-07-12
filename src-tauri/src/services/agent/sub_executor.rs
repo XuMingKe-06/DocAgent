@@ -2,6 +2,7 @@
 //! 独立执行子任务，继承父 Agent 的上下文配置
 //! 与主 AgentExecutor 共享 LLM Router、Tool Registry 等基础设施
 
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,13 +13,16 @@ use tauri::{AppHandle, Emitter, Wry};
 use tokio::sync::RwLock;
 
 use super::{is_document_handler, AgentMode};
-use crate::errors::{CommandError, AGENT_EXECUTION_ERROR, TOOL_INVALID_PARAMS, TOOL_NOT_FOUND};
+use crate::db::sub_agent_message_repo;
+use crate::db::Database;
+use crate::errors::{CommandError, TOOL_INVALID_PARAMS, TOOL_NOT_FOUND};
 use crate::events::types::{
-    SubAgentStatusPayload, SubAgentToolCallPayload, AGENT_SUB_AGENT_STATUS,
-    AGENT_SUB_AGENT_TOOL_CALL,
+    SubAgentContentPayload, SubAgentStatusPayload, SubAgentThinkingPayload, SubAgentToolCallPayload,
+    SubAgentToolResultPayload, AGENT_SUB_AGENT_CONTENT, AGENT_SUB_AGENT_STATUS,
+    AGENT_SUB_AGENT_THINKING, AGENT_SUB_AGENT_TOOL_CALL, AGENT_SUB_AGENT_TOOL_RESULT,
 };
-use crate::models::llm::{ChatMessage, ChatResponse, LlmToolCall, ToolDefinition};
-use crate::models::sub_agent::{SubAgentConfig, SubAgentResult};
+use crate::models::llm::{ChatMessage, LlmToolCall, ToolDefinition};
+use crate::models::sub_agent::{SubAgentConfig, SubAgentResult, ToolCallRecord};
 use crate::models::tool::ToolResult;
 use crate::services::llm::router::LlmRouter;
 use crate::services::permission::evaluator::{PermissionEvaluator, PermissionRequest};
@@ -91,6 +95,8 @@ struct ExecResult {
     iterations: u32,
     /// 工具调用次数
     tool_calls: u32,
+    /// 工具调用记录列表（完整工具调用历史）
+    tool_call_records: Vec<ToolCallRecord>,
 }
 
 /// 子 Agent 执行器
@@ -107,6 +113,8 @@ pub struct SubAgentExecutor {
     session_whitelist: Arc<SessionWhitelist>,
     /// Tauri AppHandle，用于发射事件（T4.04 完善事件发射）
     app_handle: Option<AppHandle<Wry>>,
+    /// 数据库连接（用于持久化子 Agent 消息）
+    db: Arc<Database>,
 }
 
 impl SubAgentExecutor {
@@ -117,6 +125,7 @@ impl SubAgentExecutor {
         permission_registry: Arc<PermissionRegistry>,
         session_whitelist: Arc<SessionWhitelist>,
         app_handle: Option<AppHandle<Wry>>,
+        db: Arc<Database>,
     ) -> Self {
         Self {
             llm_router,
@@ -124,6 +133,7 @@ impl SubAgentExecutor {
             permission_registry,
             session_whitelist,
             app_handle,
+            db,
         }
     }
 
@@ -147,12 +157,14 @@ impl SubAgentExecutor {
         status: &str,
         message: Option<String>,
         iteration: u32,
+        task_description: &str,
     ) {
         let payload = SubAgentStatusPayload {
             parent_session_id: parent_session_id.to_string(),
             agent_id: agent_id.to_string(),
             status: status.to_string(),
             message,
+            task_description: task_description.to_string(),
             iteration,
         };
         self.emit_event(AGENT_SUB_AGENT_STATUS, payload);
@@ -182,7 +194,7 @@ impl SubAgentExecutor {
         );
 
         // 发射状态变更事件：开始执行
-        self.emit_status(&parent_session_id, &agent_id, "running", None, 0);
+        self.emit_status(&parent_session_id, &agent_id, "running", None, 0, &config.task_description);
 
         // 使用超时控制执行
         let timeout = Duration::from_secs(config.timeout_seconds);
@@ -207,6 +219,7 @@ impl SubAgentExecutor {
                     "completed",
                     Some(exec_result.final_message.clone()),
                     exec_result.iterations,
+                    &config.task_description,
                 );
                 SubAgentResult {
                     agent_id,
@@ -216,6 +229,8 @@ impl SubAgentExecutor {
                     iterations: exec_result.iterations,
                     duration_ms,
                     tool_calls: exec_result.tool_calls,
+                    task_description: config.task_description.clone(),
+                    tool_call_records: exec_result.tool_call_records,
                 }
             }
             // 执行失败（返回错误）
@@ -228,6 +243,7 @@ impl SubAgentExecutor {
                     "failed",
                     Some(e.to_string()),
                     0,
+                    &config.task_description,
                 );
                 SubAgentResult {
                     agent_id,
@@ -237,6 +253,8 @@ impl SubAgentExecutor {
                     iterations: 0,
                     duration_ms,
                     tool_calls: 0,
+                    task_description: config.task_description.clone(),
+                    tool_call_records: Vec::new(),
                 }
             }
             // 执行超时
@@ -253,6 +271,7 @@ impl SubAgentExecutor {
                     "failed",
                     Some(format!("执行超时（{}秒）", config.timeout_seconds)),
                     0,
+                    &config.task_description,
                 );
                 SubAgentResult {
                     agent_id,
@@ -262,6 +281,8 @@ impl SubAgentExecutor {
                     iterations: 0,
                     duration_ms,
                     tool_calls: 0,
+                    task_description: config.task_description.clone(),
+                    tool_call_records: Vec::new(),
                 }
             }
         }
@@ -272,6 +293,11 @@ impl SubAgentExecutor {
     async fn execute_inner(&self, config: SubAgentConfig) -> Result<ExecResult, CommandError> {
         // 构建初始消息列表
         let mut messages: Vec<ChatMessage> = Vec::new();
+        // 子 Agent 消息持久化序号（按添加顺序递增）
+        let mut seq: u32 = 0;
+
+        // 工具调用记录列表（用于持久化和前端恢复）
+        let mut tool_call_records: Vec<ToolCallRecord> = Vec::new();
 
         // 添加 system 消息（继承自父 Agent 的系统提示词）
         messages.push(ChatMessage {
@@ -284,6 +310,9 @@ impl SubAgentExecutor {
             attachments: None,
             metadata: None,
         });
+        // 持久化 system 消息（失败时仅记录警告，不中断执行）
+        self.persist_sub_agent_message(&config, seq, messages.last().unwrap());
+        seq += 1;
 
         // 添加 user 消息（子任务描述）
         messages.push(ChatMessage {
@@ -299,6 +328,9 @@ impl SubAgentExecutor {
             attachments: None,
             metadata: None,
         });
+        // 持久化 user 消息（失败时仅记录警告，不中断执行）
+        self.persist_sub_agent_message(&config, seq, messages.last().unwrap());
+        seq += 1;
 
         // 构建工具定义列表：从 Vec<Value> 转换为 Vec<ToolDefinition>
         let tool_defs_json = self.list_tools_for_config(&config);
@@ -324,78 +356,230 @@ impl SubAgentExecutor {
             // 获取 LlmRouter 的 Arc 引用（读锁获取后立即 clone 释放）
             let router = self.llm_router.read().await.clone();
 
-            // 调用 LLM（非流式）
-            let response: ChatResponse = router.chat(&messages, &tools).await?;
+            // 调用 LLM（流式）
+            let mut stream_rx = router.chat_stream(&messages, &tools, None).await?;
 
-            // 从 response.choices[0].message 获取消息内容
-            let choice = response.choices.first().ok_or_else(|| {
-                CommandError::agent(AGENT_EXECUTION_ERROR, "LLM 返回空 choices".to_string())
-            })?;
-            let message = &choice.message;
+            // 流式累加器
+            let mut assistant_content = String::new();
+            let mut reasoning_content = String::new();
+            let mut collected_tool_calls: HashMap<u32, LlmToolCall> = HashMap::new();
+
+            // 流式接收 chunk
+            while let Some(chunk_result) = stream_rx.recv().await {
+                match chunk_result {
+                    Ok(chunk) => {
+                        for choice in chunk.choices {
+                            // 处理 reasoning_content 增量
+                            if let Some(rc) = &choice.delta.reasoning_content {
+                                reasoning_content.push_str(rc);
+                                // 发射思考增量事件（实时）
+                                self.emit_event(
+                                    AGENT_SUB_AGENT_THINKING,
+                                    SubAgentThinkingPayload {
+                                        parent_session_id: config.parent_session_id.clone(),
+                                        agent_id: config.agent_id.clone(),
+                                        content: rc.clone(),
+                                        is_streaming: true,
+                                        iteration: iterations,
+                                    },
+                                );
+                            }
+
+                            // 处理 content 增量
+                            if let Some(content) = &choice.delta.content {
+                                assistant_content.push_str(content);
+                                // 发射内容增量事件（实时）
+                                self.emit_event(
+                                    AGENT_SUB_AGENT_CONTENT,
+                                    SubAgentContentPayload {
+                                        parent_session_id: config.parent_session_id.clone(),
+                                        agent_id: config.agent_id.clone(),
+                                        content: content.clone(),
+                                        is_streaming: true,
+                                        iteration: iterations,
+                                    },
+                                );
+                            }
+
+                            // 处理 tool_calls 增量，按 index 合并
+                            if let Some(delta_tool_calls) = choice.delta.tool_calls {
+                                for tc in delta_tool_calls {
+                                    let tc_index = tc.index;
+                                    match collected_tool_calls.get_mut(&tc_index) {
+                                        Some(existing) => {
+                                            if !tc.id.is_empty() {
+                                                existing.id = tc.id;
+                                            }
+                                            existing.name.push_str(&tc.name);
+                                            existing.arguments.push_str(&tc.arguments);
+                                        }
+                                        None => {
+                                            collected_tool_calls.insert(tc_index, tc);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!("子 Agent 流式响应错误: {}", e.message);
+                        // 流式错误时中断
+                        return Err(e);
+                    }
+                }
+            }
+
+            // 流式结束：关闭思考节点（若有 reasoning_content）
+            if !reasoning_content.is_empty() {
+                self.emit_event(
+                    AGENT_SUB_AGENT_THINKING,
+                    SubAgentThinkingPayload {
+                        parent_session_id: config.parent_session_id.clone(),
+                        agent_id: config.agent_id.clone(),
+                        content: String::new(),
+                        is_streaming: false,
+                        iteration: iterations,
+                    },
+                );
+            }
+
+            // 将 HashMap 转为按 index 排序的 Vec
+            let mut tool_calls_vec: Vec<LlmToolCall> =
+                collected_tool_calls.into_values().collect::<Vec<_>>();
+            tool_calls_vec.sort_by_key(|tc| tc.index);
+
+            // 构建 assistant 消息
+            let assistant_message = ChatMessage {
+                role: "assistant".to_string(),
+                content: assistant_content.clone(),
+                content_parts: None,
+                tool_calls: if tool_calls_vec.is_empty() {
+                    None
+                } else {
+                    Some(tool_calls_vec.clone())
+                },
+                tool_call_id: None,
+                reasoning_content: if reasoning_content.is_empty() {
+                    None
+                } else {
+                    Some(reasoning_content.clone())
+                },
+                attachments: None,
+                metadata: None,
+            };
+
+            // 推入 messages 并持久化
+            messages.push(assistant_message);
+            self.persist_sub_agent_message(&config, seq, messages.last().unwrap());
+            seq += 1;
+
+            // 关闭内容节点（若有 content）
+            // 公共逻辑：无论是否有 tool_calls，流式结束后都需关闭内容节点
+            if !assistant_content.is_empty() {
+                self.emit_event(
+                    AGENT_SUB_AGENT_CONTENT,
+                    SubAgentContentPayload {
+                        parent_session_id: config.parent_session_id.clone(),
+                        agent_id: config.agent_id.clone(),
+                        content: String::new(),
+                        is_streaming: false,
+                        iteration: iterations,
+                    },
+                );
+            }
 
             // 检查是否有 tool_calls
-            if let Some(tool_calls) = &message.tool_calls {
-                if !tool_calls.is_empty() {
-                    // 添加 assistant 消息（携带全量 tool_calls，保持对话历史完整）
-                    // 只添加一次，避免重复
+            if !tool_calls_vec.is_empty() {
+                // 遍历执行所有 tool_calls
+                for tool_call in tool_calls_vec.iter() {
+                    tool_calls_count += 1;
+
+                    // 解析 arguments 字符串为 Value（解析失败时使用空对象）
+                    let tool_args: Value = if tool_call.arguments.is_empty() {
+                        serde_json::json!({})
+                    } else {
+                        serde_json::from_str(&tool_call.arguments)
+                            .unwrap_or(serde_json::json!({}))
+                    };
+
+                    // 发射子 Agent 工具调用事件（含 tool_call_id）
+                    self.emit_event(
+                        AGENT_SUB_AGENT_TOOL_CALL,
+                        SubAgentToolCallPayload {
+                            parent_session_id: config.parent_session_id.clone(),
+                            agent_id: config.agent_id.clone(),
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                            arguments: tool_args.clone(),
+                            iteration: iterations,
+                        },
+                    );
+
+                    // 记录工具调用（用于持久化和前端恢复）
+                    tool_call_records.push(ToolCallRecord {
+                        tool_name: tool_call.name.clone(),
+                        arguments: tool_args,
+                    });
+
+                    // 执行工具调用（出错时不中断，将错误信息作为 tool 结果返回给 LLM）
+                    let (tool_result, tool_success) =
+                        match self.execute_tool(tool_call, &config).await {
+                            Ok(result) => {
+                                // 判断是否为错误结果（execute_tool 返回的 JSON 中可能包含 error 字段）
+                                let is_error = result.contains("\"error\"");
+                                (result, !is_error)
+                            }
+                            Err(e) => {
+                                let error_msg = serde_json::json!({
+                                    "error": "tool_execution_failed",
+                                    "tool": tool_call.name,
+                                    "message": e.to_string()
+                                })
+                                .to_string();
+                                (error_msg, false)
+                            }
+                        };
+
+                    // 发射子 Agent 工具结果事件
+                    self.emit_event(
+                        AGENT_SUB_AGENT_TOOL_RESULT,
+                        SubAgentToolResultPayload {
+                            parent_session_id: config.parent_session_id.clone(),
+                            agent_id: config.agent_id.clone(),
+                            tool_call_id: tool_call.id.clone(),
+                            tool_name: tool_call.name.clone(),
+                            result: if tool_success {
+                                Some(tool_result.clone())
+                            } else {
+                                None
+                            },
+                            error: if !tool_success {
+                                Some(tool_result.clone())
+                            } else {
+                                None
+                            },
+                            success: tool_success,
+                            iteration: iterations,
+                        },
+                    );
+
+                    // 添加 tool 消息（携带 tool_call_id 关联工具调用）
                     messages.push(ChatMessage {
-                        role: "assistant".to_string(),
-                        content: message.content.clone(),
+                        role: "tool".to_string(),
+                        content: tool_result,
                         content_parts: None,
-                        tool_calls: Some(tool_calls.clone()),
-                        tool_call_id: None,
-                        reasoning_content: message.reasoning_content.clone(),
+                        tool_calls: None,
+                        tool_call_id: Some(tool_call.id.clone()),
+                        reasoning_content: None,
                         attachments: None,
                         metadata: None,
                     });
-
-                    // 遍历执行所有 tool_calls
-                    for tool_call in tool_calls.iter() {
-                        tool_calls_count += 1;
-
-                        // 发射子 Agent 工具调用事件
-                        // 解析 arguments 字符串为 Value（解析失败时使用空对象）
-                        let tool_args: Value = if tool_call.arguments.is_empty() {
-                            serde_json::json!({})
-                        } else {
-                            serde_json::from_str(&tool_call.arguments).unwrap_or(serde_json::json!({}))
-                        };
-                        self.emit_event(
-                            AGENT_SUB_AGENT_TOOL_CALL,
-                            SubAgentToolCallPayload {
-                                parent_session_id: config.parent_session_id.clone(),
-                                agent_id: config.agent_id.clone(),
-                                tool_name: tool_call.name.clone(),
-                                arguments: tool_args,
-                                iteration: iterations,
-                            },
-                        );
-
-                        // 执行工具调用（出错时不中断，将错误信息作为 tool 结果返回给 LLM）
-                        let tool_result = match self.execute_tool(tool_call, &config).await {
-                            Ok(result) => result,
-                            Err(e) => serde_json::json!({
-                                "error": "tool_execution_failed",
-                                "tool": tool_call.name,
-                                "message": e.to_string()
-                            }).to_string(),
-                        };
-
-                        // 添加 tool 消息（携带 tool_call_id 关联工具调用）
-                        messages.push(ChatMessage {
-                            role: "tool".to_string(),
-                            content: tool_result,
-                            content_parts: None,
-                            tool_calls: None,
-                            tool_call_id: Some(tool_call.id.clone()),
-                            reasoning_content: None,
-                            attachments: None,
-                            metadata: None,
-                        });
-                    }
-
-                    continue;
+                    // 持久化 tool 消息
+                    self.persist_sub_agent_message(&config, seq, messages.last().unwrap());
+                    seq += 1;
                 }
+
+                continue;
             }
 
             // 无 tool_calls，任务完成
@@ -405,9 +589,10 @@ impl SubAgentExecutor {
                 tool_calls_count
             );
             return Ok(ExecResult {
-                final_message: message.content.clone(),
+                final_message: assistant_content,
                 iterations,
                 tool_calls: tool_calls_count,
+                tool_call_records,
             });
         }
 
@@ -424,7 +609,38 @@ impl SubAgentExecutor {
             ),
             iterations,
             tool_calls: tool_calls_count,
+            tool_call_records,
         })
+    }
+
+    /// 持久化子 Agent 消息到数据库
+    /// 失败时仅记录警告日志，不中断子 Agent 执行
+    fn persist_sub_agent_message(
+        &self,
+        config: &SubAgentConfig,
+        seq: u32,
+        msg: &ChatMessage,
+    ) {
+        match self.db.conn() {
+            Ok(conn) => {
+                if let Err(e) = sub_agent_message_repo::create_sub_agent_message(
+                    &conn,
+                    &config.parent_session_id,
+                    &config.agent_id,
+                    seq,
+                    msg,
+                ) {
+                    log::warn!("子 Agent 消息持久化失败(seq={}): {}", seq, e);
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "获取数据库连接失败，跳过子 Agent 消息持久化(seq={}): {}",
+                    seq,
+                    e.message
+                );
+            }
+        }
     }
 
     /// 执行工具调用

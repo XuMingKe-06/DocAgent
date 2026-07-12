@@ -167,13 +167,17 @@
     "failedWithError": "Context compaction failed: {{error}}"
   },
   "subAgentNode": {
-    "running": "Sub-agent running: {{task}}",
-    "completed": "Sub-agent completed: {{task}}",
-    "failed": "Sub-agent failed: {{task}}",
-    "cancelled": "Sub-agent cancelled: {{task}}",
-    "iterations": "{{count}} iterations",
-    "toolCalls": "{{count}} tool calls",
+    "running": "Sub-agent running",
+    "completed": "Sub-agent completed",
+    "failed": "Sub-agent failed",
+    "cancelled": "Sub-agent cancelled",
     "error": "Error: {{message}}"
+  },
+  "subAgentWorkflow": {
+    "title": "Sub Agent Workflow",
+    "back": "Back",
+    "loading": "Loading...",
+    "empty": "No workflow data"
   },
   "questionNode": {
     "title": "Agent Question",

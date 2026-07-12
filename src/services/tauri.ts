@@ -16,6 +16,7 @@ import type {
   Session,
   SessionSummary,
   SessionDetail,
+  Message,
   WorkspaceInfo,
   FileNode,
   SearchOptions,
@@ -439,6 +440,13 @@ export async function submitQuestionAnswer(
 ): Promise<void> {
   const result = await safeInvoke(() => invoke("submit_question_answer", { questionId, answers }), { context: "submitQuestionAnswer" });
   if (!result.ok) throw result.error.raw;
+}
+
+/** 查询指定子 Agent 的所有持久化消息 */
+export async function listSubAgentMessages(agentId: string): Promise<Message[]> {
+  const result = await safeInvoke(() => invoke<Message[]>("list_sub_agent_messages", { agentId }), { context: "listSubAgentMessages" });
+  if (!result.ok) throw result.error.raw;
+  return result.data;
 }
 
 // ================================================================

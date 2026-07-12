@@ -131,6 +131,8 @@ export interface SubAgentStatusPayload {
   status: string;
   /** 附加消息（错误信息或结果摘要） */
   message?: string;
+  /** 任务描述（父 Agent 给子 Agent 的任务指令） */
+  taskDescription: string;
   /** 当前迭代次数 */
   iteration: number;
 }
@@ -141,10 +143,60 @@ export interface SubAgentToolCallPayload {
   parentSessionId: string;
   /** 子 Agent 唯一标识 */
   agentId: string;
+  /** 工具调用 ID（用于关联 tool_result） */
+  toolCallId: string;
   /** 工具名称 */
   toolName: string;
   /** 工具调用参数 */
   arguments: Record<string, unknown>;
+  /** 当前迭代次数 */
+  iteration: number;
+}
+
+/** 子 Agent 思考链增量事件 */
+export interface SubAgentThinkingPayload {
+  /** 父会话 ID */
+  parentSessionId: string;
+  /** 子 Agent 唯一标识 */
+  agentId: string;
+  /** 思考内容增量 */
+  content: string;
+  /** 是否为流式输出的中间片段 */
+  isStreaming: boolean;
+  /** 当前迭代次数 */
+  iteration: number;
+}
+
+/** 子 Agent 内容增量事件 */
+export interface SubAgentContentPayload {
+  /** 父会话 ID */
+  parentSessionId: string;
+  /** 子 Agent 唯一标识 */
+  agentId: string;
+  /** 内容增量 */
+  content: string;
+  /** 是否为流式输出的中间片段 */
+  isStreaming: boolean;
+  /** 当前迭代次数 */
+  iteration: number;
+}
+
+/** 子 Agent 工具执行结果事件 */
+export interface SubAgentToolResultPayload {
+  /** 父会话 ID */
+  parentSessionId: string;
+  /** 子 Agent 唯一标识 */
+  agentId: string;
+  /** 工具调用 ID（关联 tool_call 事件） */
+  toolCallId: string;
+  /** 工具名称 */
+  toolName: string;
+  /** 成功时的结果 */
+  result?: string;
+  /** 失败时的错误信息 */
+  error?: string;
+  /** 是否成功 */
+  success: boolean;
   /** 当前迭代次数 */
   iteration: number;
 }
@@ -362,6 +414,33 @@ export function onSubAgentToolCall(
   handler: (payload: SubAgentToolCallPayload) => void,
 ): Promise<UnlistenFn> {
   return listen<SubAgentToolCallPayload>("agent:sub_agent_tool_call", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** 监听子 Agent 思考链增量事件 */
+export function onSubAgentThinking(
+  handler: (payload: SubAgentThinkingPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<SubAgentThinkingPayload>("agent:sub_agent_thinking", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** 监听子 Agent 内容增量事件 */
+export function onSubAgentContent(
+  handler: (payload: SubAgentContentPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<SubAgentContentPayload>("agent:sub_agent_content", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** 监听子 Agent 工具执行结果事件 */
+export function onSubAgentToolResult(
+  handler: (payload: SubAgentToolResultPayload) => void,
+): Promise<UnlistenFn> {
+  return listen<SubAgentToolResultPayload>("agent:sub_agent_tool_result", (event) => {
     handler(event.payload);
   });
 }

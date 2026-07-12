@@ -23,6 +23,12 @@ pub const AGENT_COMPACTION_DONE: &str = "agent:compaction_done";
 pub const AGENT_SUB_AGENT_STATUS: &str = "agent:sub_agent_status";
 /// 子 Agent 工具调用事件（阶段 4）
 pub const AGENT_SUB_AGENT_TOOL_CALL: &str = "agent:sub_agent_tool_call";
+/// 子 Agent 思考链增量事件（流式）
+pub const AGENT_SUB_AGENT_THINKING: &str = "agent:sub_agent_thinking";
+/// 子 Agent 内容增量事件（流式）
+pub const AGENT_SUB_AGENT_CONTENT: &str = "agent:sub_agent_content";
+/// 子 Agent 工具执行结果事件
+pub const AGENT_SUB_AGENT_TOOL_RESULT: &str = "agent:sub_agent_tool_result";
 /// 向用户提问事件（阶段 4，T4.19 使用）
 pub const AGENT_QUESTION: &str = "agent:question";
 
@@ -199,6 +205,8 @@ pub struct SubAgentStatusPayload {
     /// 附加消息（如错误信息或结果摘要）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
+    /// 任务描述（父 Agent 给子 Agent 的任务指令，来自 SubAgentConfig.task_description）
+    pub task_description: String,
     /// 当前迭代次数
     pub iteration: u32,
 }
@@ -211,10 +219,68 @@ pub struct SubAgentToolCallPayload {
     pub parent_session_id: String,
     /// 子 Agent ID
     pub agent_id: String,
+    /// 工具调用 ID（用于关联 tool_result）
+    pub tool_call_id: String,
     /// 工具名称
     pub tool_name: String,
     /// 工具参数
     pub arguments: serde_json::Value,
+    /// 当前迭代次数
+    pub iteration: u32,
+}
+
+/// 子 Agent 思考链增量事件 Payload（流式）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentThinkingPayload {
+    /// 父 Agent 会话 ID
+    pub parent_session_id: String,
+    /// 子 Agent ID
+    pub agent_id: String,
+    /// 思考内容增量
+    pub content: String,
+    /// 是否为流式输出的中间片段
+    pub is_streaming: bool,
+    /// 当前迭代次数
+    pub iteration: u32,
+}
+
+/// 子 Agent 内容增量事件 Payload（流式）
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentContentPayload {
+    /// 父 Agent 会话 ID
+    pub parent_session_id: String,
+    /// 子 Agent ID
+    pub agent_id: String,
+    /// 内容增量
+    pub content: String,
+    /// 是否为流式输出的中间片段
+    pub is_streaming: bool,
+    /// 当前迭代次数
+    pub iteration: u32,
+}
+
+/// 子 Agent 工具执行结果事件 Payload
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SubAgentToolResultPayload {
+    /// 父 Agent 会话 ID
+    pub parent_session_id: String,
+    /// 子 Agent ID
+    pub agent_id: String,
+    /// 工具调用 ID（关联 tool_call 事件）
+    pub tool_call_id: String,
+    /// 工具名称
+    pub tool_name: String,
+    /// 成功时的结果
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<String>,
+    /// 失败时的错误信息
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// 是否成功
+    pub success: bool,
     /// 当前迭代次数
     pub iteration: u32,
 }

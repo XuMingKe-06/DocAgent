@@ -16,6 +16,9 @@ import {
   onAgentCompactionDone,
   onSubAgentStatus,
   onSubAgentToolCall,
+  onSubAgentThinking,
+  onSubAgentContent,
+  onSubAgentToolResult,
   onQuestion,
   type ThinkingPayload,
   type DeepThinkingPayload,
@@ -330,7 +333,7 @@ export function useAgent(): UseAgentReturn {
               status: payload.status,
               message: payload.message,
               iteration: payload.iteration,
-              taskDescription: payload.message ?? "",
+              taskDescription: payload.taskDescription,
             });
             return;
           }
@@ -352,10 +355,10 @@ export function useAgent(): UseAgentReturn {
               });
             }
           } else {
-            // 首次事件：创建节点，使用 message 作为 taskDescription
+            // 首次事件：创建节点，使用 payload.taskDescription 作为任务描述
             const nodeId = useWorkflowStore.getState().addNode("sub_agent", {
               agentId: payload.agentId,
-              taskDescription: payload.message ?? "",
+              taskDescription: payload.taskDescription,
               status: payload.status,
               iteration: payload.iteration,
               toolCalls: [],
@@ -393,6 +396,56 @@ export function useAgent(): UseAgentReturn {
                 },
               });
             }
+          }
+          // 若用户正在查看该子 Agent 的详情页，在子 Agent 工作流中添加 tool 节点
+          const currentSubAgentId = useWorkflowStore.getState().currentSubAgentId;
+          if (currentSubAgentId === payload.agentId) {
+            useWorkflowStore.getState().addSubAgentToolNode(
+              payload.agentId,
+              payload.toolCallId,
+              payload.toolName,
+              payload.arguments,
+              payload.iteration,
+            );
+          }
+        }),
+        onSubAgentThinking((payload) => {
+          // 仅处理当前会话的子 Agent 事件
+          if (payload.parentSessionId !== sessionIdRef.current) return;
+          // 仅当用户正在查看该子 Agent 的详情页时更新
+          const currentSubAgentId = useWorkflowStore.getState().currentSubAgentId;
+          if (currentSubAgentId === payload.agentId) {
+            useWorkflowStore.getState().appendSubAgentThinking(
+              payload.agentId,
+              payload.content,
+              payload.isStreaming,
+              payload.iteration,
+            );
+          }
+        }),
+        onSubAgentContent((payload) => {
+          if (payload.parentSessionId !== sessionIdRef.current) return;
+          const currentSubAgentId = useWorkflowStore.getState().currentSubAgentId;
+          if (currentSubAgentId === payload.agentId) {
+            useWorkflowStore.getState().appendSubAgentContent(
+              payload.agentId,
+              payload.content,
+              payload.isStreaming,
+              payload.iteration,
+            );
+          }
+        }),
+        onSubAgentToolResult((payload) => {
+          if (payload.parentSessionId !== sessionIdRef.current) return;
+          const currentSubAgentId = useWorkflowStore.getState().currentSubAgentId;
+          if (currentSubAgentId === payload.agentId) {
+            useWorkflowStore.getState().updateSubAgentToolResult(
+              payload.agentId,
+              payload.toolCallId,
+              payload.result,
+              payload.error,
+              payload.success,
+            );
           }
         }),
         onQuestion((payload) => {

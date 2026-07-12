@@ -333,6 +333,7 @@ impl TaskTool {
                 "iterations": result.iterations,
                 "durationMs": result.duration_ms,
                 "toolCalls": result.tool_calls,
+                "toolCallRecords": result.tool_call_records,
             })),
             error: result.error.clone(),
             duration_ms,
@@ -521,6 +522,8 @@ impl TaskTool {
                         iterations: 0,
                         duration_ms: 0,
                         tool_calls: 0,
+                        task_description: String::new(),
+                        tool_call_records: Vec::new(),
                     });
                 }
             }
@@ -541,6 +544,7 @@ impl TaskTool {
                     "iterations": r.iterations,
                     "durationMs": r.duration_ms,
                     "toolCalls": r.tool_calls,
+                    "toolCallRecords": r.tool_call_records,
                 })
             })
             .collect();

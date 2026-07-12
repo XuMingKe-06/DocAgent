@@ -512,7 +512,7 @@ pub fn run() {
             let task_tool = registration.task_tool;
 
             // 阶段 4: 初始化 SubAgentExecutor（需要 tool_registry，故在工具注册后创建）
-            // 共享 llm_router、tool_registry、permission_registry、session_whitelist、app_handle
+            // 共享 llm_router、tool_registry、permission_registry、session_whitelist、app_handle、db
             let tool_registry_arc = Arc::new(tool_registry);
             let sub_executor =
                 Arc::new(crate::services::agent::sub_executor::SubAgentExecutor::new(
@@ -521,6 +521,7 @@ pub fn run() {
                     Arc::clone(&permission_registry),
                     Arc::clone(&session_whitelist),
                     Some(app.handle().clone()),
+                    Arc::clone(&db_arc),
                 ));
             // 延迟注入 SubAgentExecutor 到 TaskTool（setup 为同步上下文，使用 block_on 调用 async setter）
             // 使用 trait 对象 Arc<dyn SubAgentExecTrait> 避免 SubAgentExecutor 的 Drop glue 在 cdylib 模式下的符号导出问题
@@ -761,6 +762,7 @@ pub fn run() {
             commands::agent::get_context_usage,
             commands::agent::is_agent_running,
             commands::agent::submit_question_answer,
+            commands::agent::list_sub_agent_messages,
             // 模板命令
             commands::template::list_templates,
             commands::template::get_template,

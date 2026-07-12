@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import type { WorkflowNode, SubAgentNodeData } from "../../types";
 import { Icon } from "../common/Icon";
+import { useWorkflowStore } from "../../stores/useWorkflowStore";
 
 interface SubAgentNodeProps {
   node: WorkflowNode<"sub_agent">;
@@ -9,14 +10,15 @@ interface SubAgentNodeProps {
 /**
  * 子 Agent 节点
  * 在 Agent 执行过程中触发子 Agent 时显示
- * - running: 显示"子 Agent 执行中: {taskDescription}" + 迭代次数
- * - completed: 显示"子 Agent 完成: {taskDescription}" + 迭代次数 + 工具调用次数
- * - failed: 显示"子 Agent 失败: {taskDescription}" + 错误消息
- * - cancelled: 显示"子 Agent 已取消: {taskDescription}"
- * - 如果有工具调用(toolCalls)，展开显示工具名列表
+ * - running: 显示"子 Agent 执行中"
+ * - completed: 显示"子 Agent 完成"
+ * - failed: 显示"子 Agent 失败" + 错误消息
+ * - cancelled: 显示"子 Agent 已取消"
+ * - 可点击跳转到子 Agent 工作流详情页
  */
 export function SubAgentNode({ node }: SubAgentNodeProps) {
   const { t } = useTranslation();
+  const setCurrentSubAgentId = useWorkflowStore((s) => s.setCurrentSubAgentId);
   const data = node.data as SubAgentNodeData;
   const isRunning = data.status === "running";
   const isFailed = data.status === "failed";
@@ -32,21 +34,21 @@ export function SubAgentNode({ node }: SubAgentNodeProps) {
         ? "check-circle"
         : "stop";
 
-  // 主文本：根据状态显示不同内容
+  // 主文本：根据状态显示不同内容（不在父 Agent 页面显示任务指令）
   const getText = (): string => {
     if (isRunning) {
-      return t("subAgentNode.running", { task: data.taskDescription });
+      return t("subAgentNode.running");
     }
     if (isFailed) {
-      return t("subAgentNode.failed", { task: data.taskDescription });
+      return t("subAgentNode.failed");
     }
     if (isCompleted) {
-      return t("subAgentNode.completed", { task: data.taskDescription });
+      return t("subAgentNode.completed");
     }
     if (isCancelled) {
-      return t("subAgentNode.cancelled", { task: data.taskDescription });
+      return t("subAgentNode.cancelled");
     }
-    return data.taskDescription;
+    return "";
   };
 
   // 状态相关的 CSS 类名
@@ -60,39 +62,22 @@ export function SubAgentNode({ node }: SubAgentNodeProps) {
 
   return (
     <div className="wf-node">
-      <div className={`wf-subagent-flat${stateClass}`}>
+      <div
+        className={`wf-subagent-flat${stateClass}`}
+        onClick={() => setCurrentSubAgentId(data.agentId)}
+        style={{ cursor: 'pointer' }}
+      >
         <Icon
           name={iconName}
           size={12}
           className={isRunning ? "wf-subagent-spin" : undefined}
         />
         <span className="wf-subagent-text">{getText()}</span>
-        {/* 迭代次数 */}
-        <span className="wf-subagent-meta">
-          {t("subAgentNode.iterations", { count: data.iteration })}
-        </span>
-        {/* 完成状态显示工具调用次数 */}
-        {isCompleted && data.toolCalls.length > 0 && (
-          <span className="wf-subagent-meta">
-            {t("subAgentNode.toolCalls", { count: data.toolCalls.length })}
-          </span>
-        )}
       </div>
       {/* 失败时显示错误消息 */}
       {isFailed && data.message && (
         <div className="wf-subagent-error">
           {t("subAgentNode.error", { message: data.message })}
-        </div>
-      )}
-      {/* 工具调用列表（有工具调用时展开显示） */}
-      {data.toolCalls.length > 0 && (
-        <div className="wf-subagent-tools">
-          {data.toolCalls.map((tc, idx) => (
-            <div key={idx} className="wf-subagent-tool-item">
-              <Icon name="tool" size={10} />
-              <span>{tc.toolName}</span>
-            </div>
-          ))}
         </div>
       )}
       <style>{`
@@ -123,33 +108,12 @@ export function SubAgentNode({ node }: SubAgentNodeProps) {
         .wf-subagent-text {
           font-size: 12px;
         }
-        .wf-subagent-meta {
-          font-size: 11px;
-          color: var(--color-text-quaternary);
-          padding: 0 4px;
-          border-radius: 3px;
-          background: var(--color-bg-tertiary);
-        }
         .wf-subagent-error {
           margin-top: 2px;
           padding-left: 18px;
           font-size: 11px;
           color: var(--color-error, #ef4444);
           line-height: 1.5;
-        }
-        .wf-subagent-tools {
-          margin-top: 4px;
-          padding-left: 18px;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-        .wf-subagent-tool-item {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          font-size: 11px;
-          color: var(--color-text-tertiary);
         }
         .wf-subagent-spin {
           animation: wf-subagent-spin 1s linear infinite;

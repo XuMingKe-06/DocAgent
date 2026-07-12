@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, State};
 
 use crate::db::session_repo;
+use crate::db::sub_agent_message_repo;
 use crate::errors::{
     CommandError, AGENT_ALREADY_RUNNING, AGENT_NOT_RUNNING, AGENT_OPERATION_REJECTED,
     AGENT_SESSION_NOT_FOUND,
@@ -12,6 +13,7 @@ use crate::events::types;
 use crate::events::AgentEmitter;
 use crate::models::llm::{ChatMessage, ContentPart, ToolDefinition};
 use crate::models::message::AttachmentMeta;
+use crate::models::message::Message;
 use crate::services::agent::context::{AgentContext, AgentMode};
 use crate::services::agent::executor::{AgentExecutor, ContextUsagePersistFn};
 use crate::services::attachment::AttachmentService;
@@ -956,6 +958,17 @@ pub async fn submit_question_answer(
             ))
         }
     }
+}
+
+/// 查询指定子 Agent 的所有持久化消息
+#[tauri::command]
+pub async fn list_sub_agent_messages(
+    agent_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<Message>, CommandError> {
+    let conn = state.db.conn()?;
+    sub_agent_message_repo::list_sub_agent_messages(&conn, &agent_id)
+        .map_err(|e| CommandError::db(4001, format!("查询子 Agent 消息失败: {}", e)))
 }
 
 /// 将消息列表持久化到数据库
