@@ -16,7 +16,7 @@ export function ConfirmNode({ node }: ConfirmNodeProps) {
   const isPending = data.confirmed === null && node.status === "running";
   const [feedback, setFeedback] = useState("");
 
-  // Phase 2: 优先使用 permissionHandler（三态权限系统），回退到 confirmHandler（旧版二态）
+  // 优先使用 permissionHandler（双态权限系统），回退到 confirmHandler（旧版二态）
   const usePermissionFlow = !!permissionHandler;
 
   // 风险等级颜色映射：critical=红、high=橙、medium=蓝、normal=灰
@@ -29,10 +29,9 @@ export function ConfirmNode({ node }: ConfirmNodeProps) {
     }
   };
 
-  // 权限回复结果文本：区分 once/always/reject 三态
+  // 权限回复结果文本：区分 once/reject 双态
   const getResultText = (): string => {
     if (data.permissionResponse === 'once') return t('permission.onceAllowed');
-    if (data.permissionResponse === 'always') return t('permission.alwaysAllowed');
     if (data.confirmed === false) {
       return data.feedback
         ? `${t('permission.rejected')}: ${data.feedback}`
@@ -64,7 +63,7 @@ export function ConfirmNode({ node }: ConfirmNodeProps) {
         {isPending ? (
           <div className="wf-confirm-actions">
             {usePermissionFlow ? (
-              // Phase 2: 三态权限审批按钮（仅本次允许/永久允许/拒绝）
+              // 权限审批按钮（确认/拒绝）
               <div className="wf-permission-buttons">
                 <button
                   className="wf-perm-btn wf-perm-once"
@@ -74,15 +73,6 @@ export function ConfirmNode({ node }: ConfirmNodeProps) {
                   }}
                 >
                   {t('permission.once')}
-                </button>
-                <button
-                  className="wf-perm-btn wf-perm-always"
-                  onClick={async (e) => {
-                    e.stopPropagation();
-                    await permissionHandler?.('always');
-                  }}
-                >
-                  {t('permission.always')}
                 </button>
                 <button
                   className="wf-perm-btn wf-perm-reject"
@@ -170,14 +160,6 @@ export function ConfirmNode({ node }: ConfirmNodeProps) {
           border-color: var(--color-accent);
         }
         .wf-perm-once:hover {
-          filter: brightness(0.9);
-        }
-        .wf-perm-always {
-          background: var(--color-success, #10b981);
-          color: white;
-          border-color: var(--color-success, #10b981);
-        }
-        .wf-perm-always:hover {
           filter: brightness(0.9);
         }
         .wf-perm-reject {

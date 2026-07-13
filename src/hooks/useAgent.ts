@@ -49,8 +49,8 @@ export interface UseAgentReturn {
   sendMessage: (prompt: string, options?: Record<string, unknown>) => Promise<void>;
   stopAgent: () => Promise<void>;
   confirmOperation: (operationId: string, approved: boolean, feedback?: string) => Promise<void>;
-  /** Phase 2 权限审批回复（once/always/reject 三态） */
-  respondPermission: (operationId: string, response: 'once' | 'always' | 'reject', feedback?: string) => Promise<void>;
+  /** 权限审批回复（once/reject 双态） */
+  respondPermission: (operationId: string, response: 'once' | 'reject', feedback?: string) => Promise<void>;
   reset: () => void;
   setSessionId: (id: string) => void;
 }
@@ -573,9 +573,9 @@ export function useAgent(): UseAgentReturn {
     [sessionId],
   );
 
-  // Phase 2: 权限审批回复（三态权限系统），与 confirmOperation 并存以保持向后兼容
+  // 权限审批回复（双态权限系统），与 confirmOperation 并存以保持向后兼容
   const respondPermission = useCallback(
-    async (operationId: string, response: 'once' | 'always' | 'reject', feedback?: string) => {
+    async (operationId: string, response: 'once' | 'reject', feedback?: string) => {
       if (!sessionId) return;
 
       try {

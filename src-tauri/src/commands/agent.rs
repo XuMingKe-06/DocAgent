@@ -106,7 +106,6 @@ pub async fn start_agent(
     // Phase 2: 权限系统组件
     let permission_channels = Arc::clone(&state.permission_channels);
     let permission_registry = Arc::clone(&state.permission_registry);
-    let session_whitelist = Arc::clone(&state.session_whitelist);
     let doom_loop_detector = Arc::clone(&state.doom_loop_detector);
     let agent_mode_manager = Arc::clone(&state.agent_mode_manager);
     let skill_registry = Arc::clone(&state.skill_registry);
@@ -234,7 +233,6 @@ pub async fn start_agent(
             // Phase 2: 权限系统组件
             &permission_channels,
             &permission_registry,
-            &session_whitelist,
             &doom_loop_detector,
             &agent_mode_manager,
             &skill_registry,
@@ -741,8 +739,8 @@ pub async fn confirm_operation(
     }
 }
 
-/// Phase 2: 权限审批回复命令（三态 once/always/reject）
-/// 优先查找 permission_channels（Phase 2 三态权限通道）
+/// 权限审批回复命令（双态 once/reject）
+/// 优先查找 permission_channels（双态权限通道）
 /// 未命中时回退到 confirm_channels（兼容旧版 confirm_operation 调用）
 #[tauri::command]
 pub async fn permission_respond(
@@ -768,7 +766,7 @@ pub async fn permission_respond(
             )
         })?;
 
-    // 优先查找 permission_channels（Phase 2 三态权限通道）
+    // 优先查找 permission_channels（双态权限通道）
     let perm_sender = {
         let mut channels = state.permission_channels.lock().await;
         channels.remove(&operation_id)
@@ -811,7 +809,7 @@ pub async fn permission_respond(
     match confirm_sender {
         Some(tx) => {
             // 将 PermissionResponse 转换为旧 ConfirmDecision
-            // Reject → approved=false, Once/Always → approved=true
+            // Reject → approved=false, Once → approved=true
             let approved = !matches!(
                 perm_response,
                 crate::services::permission::types::PermissionResponse::Reject
@@ -1088,7 +1086,6 @@ async fn run_agent(
         >,
     >,
     permission_registry: &Arc<crate::services::permission::registry::PermissionRegistry>,
-    session_whitelist: &Arc<crate::services::permission::session_whitelist::SessionWhitelist>,
     doom_loop_detector: &Arc<crate::services::permission::doom_loop::DoomLoopDetector>,
     agent_mode_manager: &Arc<crate::services::agent::AgentModeManager>,
     skill_registry: &Arc<crate::services::skill::registry::SkillRegistry>,
@@ -1489,7 +1486,6 @@ async fn run_agent(
         // Phase 2: 权限系统组件
         Arc::clone(permission_channels),
         Arc::clone(permission_registry),
-        Arc::clone(session_whitelist),
         Arc::clone(doom_loop_detector),
         Arc::clone(agent_mode_manager),
     )

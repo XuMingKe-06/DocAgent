@@ -575,15 +575,15 @@ export default function App() {
         confirmLabel: t('confirmNode.confirmExecute'),
         cancelLabel: t('confirmNode.cancelOperation'),
         confirmed: null as boolean | null,
-        // Phase 2: 风险等级与权限回复字段，供 ConfirmNode 渲染三态按钮与风险徽标
+        // 风险等级与权限回复字段，供 ConfirmNode 渲染双态按钮与风险徽标
         riskLevel: pendingConfirmation.riskLevel,
-        permissionResponse: null as 'once' | 'always' | 'reject' | null,
+        permissionResponse: null as 'once' | 'reject' | null,
       };
       const nodeId = addNode("confirm", confirmData, "running");
       confirmNodeIdRef.current = nodeId;
 
-      // Phase 2: 优先使用 permissionHandler（三态权限系统），与 setConfirmHandler 并存以保持向后兼容
-      setPermissionHandler(async (response: 'once' | 'always' | 'reject', feedback?: string) => {
+      // 优先使用 permissionHandler（双态权限系统），与 setConfirmHandler 并存以保持向后兼容
+      setPermissionHandler(async (response: 'once' | 'reject', feedback?: string) => {
         const approved = response !== 'reject';
         if (confirmNodeIdRef.current) {
           updateNode(confirmNodeIdRef.current, {

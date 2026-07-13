@@ -201,45 +201,28 @@ pub enum RuleScope {
     Global,
     /// 项目规则:对指定工作区生效
     Project,
-    /// 会话临时规则:仅当前会话生效(always 选项生成)
+    /// 会话临时规则:仅当前会话生效
     Session,
 }
 
 /// 用户审批回复
-/// 对应 OpenCode 的 once/always/reject
+/// 对应 OpenCode 的 once/reject
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PermissionResponse {
     /// 仅本次允许:下次相同操作仍需询问
     Once,
-    /// 会话内永久允许:相同操作不再询问
-    Always,
     /// 拒绝本次操作
     Reject,
 }
 
 impl PermissionResponse {
-    /// 从用户回复解析
-    /// approved=true 且 always=false → Once
-    /// approved=true 且 always=true → Always
-    /// approved=false → Reject
-    pub fn from_user_reply(approved: bool, always: bool) -> Self {
-        if !approved {
-            Self::Reject
-        } else if always {
-            Self::Always
-        } else {
-            Self::Once
-        }
-    }
-
     /// 从字符串解析用户回复（用于 permission_respond 命令）
-    /// 接受 "once" / "always" / "reject"（大小写不敏感）
+    /// 接受 "once" / "reject"（大小写不敏感）
     #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "once" => Some(Self::Once),
-            "always" => Some(Self::Always),
             "reject" => Some(Self::Reject),
             _ => None,
         }

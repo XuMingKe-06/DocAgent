@@ -64,8 +64,8 @@ interface WorkflowState {
   executionStatus: ExecutionStatus;
   error: string | null;
   confirmHandler: ((approved: boolean, feedback?: string) => Promise<void>) | null;
-  /** Phase 2 权限审批回调（once/always/reject 三态） */
-  permissionHandler: ((response: 'once' | 'always' | 'reject', feedback?: string) => Promise<void>) | null;
+  /** Phase 2 权限审批回调（once/reject 双态） */
+  permissionHandler: ((response: 'once' | 'reject', feedback?: string) => Promise<void>) | null;
   /** 上下文窗口使用信息（Agent 运行时实时更新） */
   contextUsage: ContextUsageInfo | null;
   /** 按会话缓存的状态映射 */
@@ -84,7 +84,7 @@ interface WorkflowState {
   toggleNode: (id: string) => void;
   setConfirmHandler: (handler: ((approved: boolean, feedback?: string) => Promise<void>) | null) => void;
   /** Phase 2: 设置权限审批回调（与 setConfirmHandler 并存，permissionHandler 优先） */
-  setPermissionHandler: (handler: ((response: 'once' | 'always' | 'reject', feedback?: string) => Promise<void>) | null) => void;
+  setPermissionHandler: (handler: ((response: 'once' | 'reject', feedback?: string) => Promise<void>) | null) => void;
   loadFromMessages: (messages: Message[]) => void;
   /** 设置当前查看的子 Agent ID */
   setCurrentSubAgentId: (agentId: string | null) => void;

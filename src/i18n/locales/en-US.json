@@ -92,11 +92,9 @@
     "feedbackPlaceholder": "Enter reason (optional)…"
   },
   "permission": {
-    "once": "Allow Once",
-    "always": "Allow Always",
+    "once": "Confirm",
     "reject": "Reject",
-    "onceAllowed": "✓ Allowed (once)",
-    "alwaysAllowed": "✓ Allowed (always)",
+    "onceAllowed": "✓ Confirmed",
     "rejected": "✗ Rejected",
     "feedbackPlaceholder": "Enter reason (optional)…",
     "tabTitle": "Permission Rules Management",

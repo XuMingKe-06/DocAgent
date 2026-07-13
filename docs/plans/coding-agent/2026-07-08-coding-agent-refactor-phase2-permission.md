@@ -16,7 +16,7 @@
 在阶段 1 已经建立核心编程能力(文件读写、编辑、搜索、命令执行)的基础上,本阶段将 DocAgent 升级为具备精细化权限管控和模式切换的编程 Agent:
 
 1. **三态权限系统(allow/deny/ask)**:替换现有的 `ConfirmationLevel` 三档确认级别,改为基于规则的细粒度权限管控,支持按工具类型、命令模式、文件路径匹配
-2. **用户审批三选项(once/always/reject)**:替换现有的 approve/feedback 二元决策,改为"本次允许/会话内永久允许/拒绝"三选项,`always` 自动生成临时白名单规则
+2. **用户审批双选项(once/reject)**:替换现有的 approve/feedback 二元决策,改为"确认/拒绝"双选项,去除 `always` 永久允许机制
 3. **权限规则持久化**:将权限规则存入 SQLite `permission_rules` 表,支持全局规则、项目级规则、会话级临时规则三层
 4. **Plan/Build/Document 三态模式切换**:实现 Plan(只读规划)、Build(完整执行)、Document(Build 超集 + 文档 Handler)三态模式,仅通过前端按钮切换(不提供 LLM 工具切换模式)
 5. **Doom loop 检测**:检测连续 3 次相同工具调用(相同参数),触发 `doom_loop` 权限规则
@@ -33,15 +33,15 @@
 - 创建 `permission_rules` 数据库表和仓库
 - 实现 PermissionRegistry(规则加载、合并、评估)
 - 改造 AgentExecutor 集成权限系统
-- 改造 `confirm_operation` 命令支持 once/always/reject
-- 实现临时白名单(会话内 always 规则缓存)
+- 改造 `confirm_operation` 命令支持 once/reject
+- 移除会话白名单 always 规则生成逻辑
 - 实现 Doom loop 检测器(连续 3 次相同调用)
 - 实现 Agent 模式(Plan/Build/Document)枚举和切换逻辑(仅前端按钮切换,不提供 LLM 工具)
 - 实现工具列表动态过滤(基于 AgentMode,非 Document 模式过滤掉 4 个文档 Handler)
 - 重构系统提示词层(按 Agent 模式注入不同提示词,含 Document 模式分支)
 - 改造 AppState 加入 `permission_registry` 和 `agent_mode`
 - 前端:InputArea 增加模式切换按钮
-- 前端:权限审批对话框升级(once/always/reject)
+- 前端:权限审批对话框改为双态(once/reject)
 - 前端:设置弹窗增加权限规则管理 UI
 
 **本阶段不包含**(留给后续阶段):
@@ -63,7 +63,7 @@
 - [ ] Plan 模式下 edit/bash 等修改类工具被拒绝,read/glob/grep/list 可用
 - [ ] Build 模式下所有编程工具可用(受权限规则约束),文档 Handler 不出现在工具列表
 - [ ] Document 模式下文档 Handler(docx/xlsx/pptx/pdf)出现在工具列表且可调用,编程工具完全可用
-- [ ] 用户点击 `always` 后,会话内相同操作不再弹窗
+- [ ] 用户选择 `once` 后,本次操作执行;选择 `reject` 后,操作被拒绝并返回错误
 - [ ] 连续 3 次相同工具调用触发 Doom loop 检测
 - [ ] 前端 Plan/Build/Document 三态切换按钮和权限对话框交互正常
 - [ ] 模式切换仅由前端按钮触发,LLM 无法自主切换模式
@@ -83,16 +83,16 @@
 | T2.05 | 实现 PermissionRule 模型与仓库 | 新增 | 中 | T2.04 |
 | T2.06 | 实现 PermissionRegistry 权限注册表 | 新增 | 高 | T2.03, T2.05 |
 | T2.07 | 实现 PermissionEvaluator 权限评估器 | 新增 | 高 | T2.06 |
-| T2.08 | 实现临时白名单(会话级 always 规则) | 新增 | 中 | T2.06 |
+| T2.08 | 实现权限规则缓存与会话级规则管理 | 新增 | 中 | T2.06 |
 | T2.09 | 实现 Doom loop 检测器 | 新增 | 中 | T2.02 |
 | T2.10 | 改造 AgentExecutor 集成权限系统 | 重构 | 高 | T2.07, T2.08, T2.09 |
-| T2.11 | 改造 confirm_operation 命令支持 once/always/reject | 改造 | 中 | T2.10 |
+| T2.11 | 改造 confirm_operation 命令支持 once/reject | 改造 | 中 | T2.10 |
 | T2.12 | 定义 Agent 模式枚举(Plan/Build/Document) | 新增 | 低 | T2.02 |
 | T2.13 | 实现工具列表动态过滤(按 AgentMode 过滤文档 Handler) | 新增 | 中 | T2.12 |
 | T2.14 | 重构系统提示词层(按 Agent 模式注入,含 Document 分支) | 重构 | 中 | T2.12 |
 | T2.15 | 改造 AppState 加入 permission_registry 和 agent_mode | 重构 | 中 | T2.06, T2.12 |
 | T2.16 | 前端:InputArea 增加 Plan/Build/Document 模式切换按钮 | 前端 | 中 | T2.15 |
-| T2.17 | 前端:权限审批对话框升级(once/always/reject) | 前端 | 中 | T2.11 |
+| T2.17 | 前端:权限审批对话框改为双态(once/reject) | 前端 | 中 | T2.11 |
 | T2.18 | 前端:设置弹窗增加权限规则管理 UI | 前端 | 中 | T2.05 |
 | T2.19 | 集成测试:验证权限系统与三态模式切换 | 测试 | 高 | T2.10-T2.18 |
 
@@ -347,33 +347,28 @@ pub enum RuleScope {
     Global,
     /// 项目规则:对指定工作区生效
     Project,
-    /// 会话临时规则:仅当前会话生效(always 选项生成)
+    /// 会话临时规则:仅当前会话生效
     Session,
 }
 
 /// 用户审批回复
-/// 对应 OpenCode 的 once/always/reject
+/// 对应 OpenCode 的 once/reject
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PermissionResponse {
     /// 仅本次允许:下次相同操作仍需询问
     Once,
-    /// 会话内永久允许:相同操作不再询问
-    Always,
     /// 拒绝本次操作
     Reject,
 }
 
 impl PermissionResponse {
     /// 从用户回复解析
-    /// approved=true 且 scope="once" → Once
-    /// approved=true 且 scope="always" → Always
+    /// approved=true → Once
     /// approved=false → Reject
-    pub fn from_user_reply(approved: bool, always: bool) -> Self {
+    pub fn from_user_reply(approved: bool, _always: bool) -> Self {
         if !approved {
             Self::Reject
-        } else if always {
-            Self::Always
         } else {
             Self::Once
         }
@@ -1515,187 +1510,17 @@ cargo test permission_evaluator -- --nocapture
 
 ---
 
-### T2.08:实现临时白名单(会话级 always 规则)
-
-**文件**:
-- 新增: `src-tauri/src/services/permission/session_whitelist.rs`
+### T2.08:实现权限规则缓存与会话级规则管理
 
 **说明**:
-当用户选择 `always` 时,生成一条会话级临时规则并加入白名单。会话结束时清理。
-白名单为内存缓存,避免每次查询数据库。
-
-**实施步骤**:
-
-文件: `src-tauri/src/services/permission/session_whitelist.rs`
-
-```rust
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-use crate::models::permission::PermissionRule;
-
-use super::{PermissionAction, PermissionType, RuleScope};
-
-/// 会话级临时白名单
-/// 当用户选择 "always" 时,生成一条临时规则并缓存
-/// 会话结束时通过 cleanup_session 清理
-#[derive(Debug, Clone)]
-pub struct SessionWhitelist {
-    /// 按 session_id 隔离的临时规则列表
-    sessions: Arc<RwLock<HashMap<String, Vec<PermissionRule>>>>,
-}
-
-impl SessionWhitelist {
-    pub fn new() -> Self {
-        Self {
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-
-    /// 添加一条会话级临时规则
-    /// 当用户选择 always 时调用
-    pub async fn add_rule(&self, session_id: &str, rule: PermissionRule) {
-        let mut sessions = self.sessions.write().await;
-        sessions.entry(session_id.to_string())
-            .or_insert_with(Vec::new)
-            .push(rule);
-    }
-
-    /// 获取指定会话的所有临时规则
-    pub async fn get_rules(&self, session_id: &str) -> Vec<PermissionRule> {
-        let sessions = self.sessions.read().await;
-        sessions.get(session_id).cloned().unwrap_or_default()
-    }
-
-    /// 清理指定会话的所有临时规则
-    pub async fn cleanup_session(&self, session_id: &str) {
-        let mut sessions = self.sessions.write().await;
-        if let Some(rules) = sessions.remove(session_id) {
-            log::info!("已清理会话 {} 的 {} 条临时权限规则", session_id, rules.len());
-        }
-    }
-
-    /// 根据 always 响应生成临时规则
-    /// 自动推断通配符模式:如果具体路径,使用路径;如果命令,提取命令前缀 + 通配符
-    pub fn generate_always_rule(
-        session_id: &str,
-        permission_type: PermissionType,
-        target: &str,
-    ) -> PermissionRule {
-        let pattern = Self::infer_pattern(permission_type, target);
-        PermissionRule::new(
-            RuleScope::Session,
-            permission_type,
-            pattern,
-            PermissionAction::Allow,
-        )
-        .with_session(session_id.to_string())
-        .with_description("用户选择 always 自动生成")
-    }
-
-    /// 根据目标和权限类型推断通配符模式
-    /// - 文件路径:使用具体路径(只放行该文件)
-    /// - 命令:提取命令前缀 + *(如 "git status *" 放行所有 git status 子命令)
-    /// - 其他:使用具体值
-    fn infer_pattern(permission_type: PermissionType, target: &str) -> String {
-        match permission_type {
-            PermissionType::Bash | PermissionType::WriteScript => {
-                // 命令:提取前两个 token + 通配符
-                // 例如 "git push origin main" → "git push *"
-                let tokens: Vec<&str> = target.split_whitespace().take(2).collect();
-                if tokens.is_empty() {
-                    "*".to_string()
-                } else if tokens.len() == 1 {
-                    format!("{} *", tokens[0])
-                } else {
-                    format!("{} {} *", tokens[0], tokens[1])
-                }
-            }
-            _ => {
-                // 文件路径或其他:使用具体值
-                target.to_string()
-            }
-        }
-    }
-
-    /// 检查指定会话是否有匹配的临时规则
-    pub async fn check(&self, session_id: &str, permission_type: PermissionType, target: &str) -> Option<PermissionAction> {
-        let sessions = self.sessions.read().await;
-        let rules = sessions.get(session_id)?;
-        for rule in rules {
-            if !rule.enabled {
-                continue;
-            }
-            if rule.permission_type != permission_type && rule.permission_type != PermissionType::Wildcard {
-                continue;
-            }
-            let matcher = super::WildcardMatcher::new(&rule.pattern);
-            if matcher.matches(target) {
-                return Some(rule.action);
-            }
-        }
-        None
-    }
-}
-
-impl Default for SessionWhitelist {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_infer_pattern_command() {
-        let p = SessionWhitelist::infer_pattern(PermissionType::Bash, "git push origin main");
-        assert_eq!(p, "git push *");
-
-        let p = SessionWhitelist::infer_pattern(PermissionType::Bash, "ls");
-        assert_eq!(p, "ls *");
-    }
-
-    #[test]
-    fn test_infer_pattern_file() {
-        let p = SessionWhitelist::infer_pattern(PermissionType::Edit, "src/main.rs");
-        assert_eq!(p, "src/main.rs");
-    }
-
-    #[tokio::test]
-    async fn test_add_and_check_rule() {
-        let whitelist = SessionWhitelist::new();
-        let rule = SessionWhitelist::generate_always_rule("sess1", PermissionType::Bash, "git status");
-        whitelist.add_rule("sess1", rule).await;
-
-        // 相同前缀的命令应命中白名单
-        let action = whitelist.check("sess1", PermissionType::Bash, "git status --short").await;
-        assert_eq!(action, Some(PermissionAction::Allow));
-
-        // 不同会话不应命中
-        let action = whitelist.check("sess2", PermissionType::Bash, "git status").await;
-        assert_eq!(action, None);
-    }
-
-    #[tokio::test]
-    async fn test_cleanup_session() {
-        let whitelist = SessionWhitelist::new();
-        let rule = SessionWhitelist::generate_always_rule("sess1", PermissionType::Bash, "npm install");
-        whitelist.add_rule("sess1", rule).await;
-
-        whitelist.cleanup_session("sess1").await;
-        let action = whitelist.check("sess1", PermissionType::Bash, "npm install").await;
-        assert_eq!(action, None);
-    }
-}
-```
+原计划实现会话级 always 白名单。由于 `always` 选项已被移除,不再需要独立的 SessionWhitelist。权限规则统一由 PermissionRegistry 通过数据库管理,支持全局/项目/会话三个作用域的规则持久化。
 
 **验证**:
 ```bash
-cargo test session_whitelist -- --nocapture
+cargo test permission_registry -- --nocapture
 ```
+
+
 
 ---
 
@@ -1909,11 +1734,11 @@ cargo test doom_loop -- --nocapture
 **说明**:
 改造 AgentExecutor,在工具执行前进行权限检查。流程:
 1. 工具执行前构建 PermissionRequest
-2. 优先检查会话白名单(always 规则)
+2. 评估权限规则(最后匹配优先)
 3. 检查 Doom loop(触发则强制 Ask)
 4. 评估权限规则(默认 → 全局 → 项目 → 会话)
 5. 根据 action 决策:Allow 直接执行,Deny 返回错误,Ask 弹窗等待用户回复
-6. 用户回复后:Once 执行,Always 加入白名单后执行,Reject 返回错误
+6. 用户回复后:Once 直接执行,Reject 返回错误
 
 **实施步骤**:
 
@@ -1924,7 +1749,7 @@ cargo test doom_loop -- --nocapture
 在现有 `ConfirmDecision` 旁新增 `PermissionDecision` 结构(保留旧结构以兼容):
 
 ```rust
-/// 用户权限审批决策(三选项:once/always/reject)
+/// 用户权限审批决策(双选项:once/reject)
 #[derive(Debug, Clone)]
 pub struct PermissionDecision {
     /// 审批响应类型
@@ -1954,7 +1779,7 @@ pub struct AgentExecutor<R: Runtime> {
     handler_registry: Arc<Mutex<HandlerRegistry>>,
     emitter: AgentEmitter<R>,
     confirm_channels: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<crate::ConfirmDecision>>>>,
-    // [新增] 权限审批通道(三选项)
+    // [新增] 权限审批通道(双选项 once/reject)
     permission_channels: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<crate::PermissionDecision>>>>,
     max_iterations: u32,
     should_stop: Arc<dyn Fn(&str) -> bool + Send + Sync>,
@@ -2100,7 +1925,7 @@ impl AgentMode {
             ).await?;
         }
 
-        // 3. 检查会话白名单(always 规则)
+        // 3. 评估权限规则(最后匹配优先)
         let request = PermissionRequest::from_tool_call(tool_name, params);
         if let Some(action) = self.session_whitelist
             .check(session_id, request.permission_type, &request.target)
@@ -2144,16 +1969,6 @@ impl AgentMode {
 
                 match response {
                     PermissionResponse::Once => Ok(()),
-                    PermissionResponse::Always => {
-                        // 生成临时规则加入白名单
-                        let rule = SessionWhitelist::generate_always_rule(
-                            session_id,
-                            request.permission_type,
-                            &request.target,
-                        );
-                        self.session_whitelist.add_rule(session_id, rule).await;
-                        Ok(())
-                    }
                     PermissionResponse::Reject => {
                         Err(CommandError::agent(
                             crate::errors::AGENT_OPERATION_REJECTED,
@@ -2185,7 +2000,7 @@ impl AgentMode {
         }
     }
 
-    /// 请求用户权限审批(完整版,返回三选项响应)
+    /// 请求用户权限审批(返回 once/reject 响应)
     async fn request_permission_with_response(
         &self,
         session_id: &str,
@@ -2361,13 +2176,13 @@ cargo build -p docagent_lib
 
 ---
 
-### T2.11:改造 confirm_operation 命令支持 once/always/reject
+### T2.11:改造权限审批命令支持 once/reject
 
 **文件**:
 - 修改: `src-tauri/src/commands/agent.rs`
 
 **说明**:
-升级 `confirm_operation` 命令为权限审批命令,新增 `permission_respond` 命令处理三选项响应。
+升级权限审批命令,新增 `permission_respond` 命令处理双选项响应。
 保留旧 `confirm_operation` 命令以兼容前端逐步迁移。
 
 **实施步骤**:
@@ -2376,7 +2191,7 @@ cargo build -p docagent_lib
 
 ```rust
 /// 权限审批响应
-/// 用户在权限对话框中选择 once/always/reject
+/// 用户在权限对话框中选择 once/reject
 #[tauri::command]
 pub async fn permission_respond(
     session_id: String,
@@ -2455,7 +2270,7 @@ impl PermissionResponse {
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "once" => Some(Self::Once),
-            "always" => Some(Self::Always),
+            // always 选项已移除
             "reject" => Some(Self::Reject),
             _ => None,
         }
@@ -2924,7 +2739,7 @@ pub struct AppState {
     pub active_agents: Arc<tokio::sync::Mutex<HashMap<String, bool>>>,
     // [保留] 旧确认通道(兼容)
     pub confirm_channels: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<ConfirmDecision>>>>,
-    // [新增] 权限审批通道(三选项)
+    // [新增] 权限审批通道(双选项 once/reject)
     pub permission_channels: Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionDecision>>>>,
     // [保留] v1.1: Document 模式下使用 doc_service 和 handler_registry
     pub llm_router: Arc<tokio::sync::RwLock<Arc<crate::services::llm::router::LlmRouter>>>,
@@ -3247,14 +3062,14 @@ cargo build -p docagent_lib
 
 ---
 
-### T2.17:前端:权限审批对话框升级(once/always/reject)
+### T2.17:前端:权限审批对话框改为双态(once/reject)
 
 **文件**:
 - 修改: `src/components/workflow/ConfirmNode.tsx`(或等效的确认对话框组件)
 - 修改: `src/hooks/useAgent.ts`
 
 **说明**:
-升级确认对话框,从 approve/reject 二选项改为 once/always/reject 三选项。
+升级确认对话框,从 approve/reject 二选项改为 once/reject 双选项,移除 always 永久允许按钮。
 
 **实施步骤**:
 
@@ -3267,13 +3082,13 @@ cargo build -p docagent_lib
  * 响应权限审批
  * @param sessionId 会话 ID
  * @param operationId 操作 ID
- * @param response 响应类型: once / always / reject
+ * @param response 响应类型: once / reject
  * @param feedback 反馈信息(可选)
  */
 export async function permissionRespond(
   sessionId: string,
   operationId: string,
-  response: 'once' | 'always' | 'reject',
+  response: 'once' | 'reject',
   feedback?: string,
 ): Promise<void> {
   await invoke('permission_respond', {
@@ -3294,7 +3109,7 @@ export async function permissionRespond(
 const respondPermission = useCallback(
   async (
     operationId: string,
-    response: 'once' | 'always' | 'reject',
+    response: 'once' | 'reject',
     feedback?: string,
   ) => {
     if (!sessionId) return;
@@ -3317,12 +3132,12 @@ return {
 
 #### 3. 修改确认对话框 UI
 
-在显示确认对话框的组件中(如 `ConfirmNode` 或 `WorkflowTimeline` 中的确认节点),将按钮改为三个:
+在显示确认对话框的组件中(如 `ConfirmNode` 或 `WorkflowTimeline` 中的确认节点),将按钮改为两个(确认/拒绝),移除 always 永久允许按钮:
 
 ```tsx
 function PermissionDialog({ payload, onRespond }: {
   payload: ConfirmPayload;
-  onRespond: (response: 'once' | 'always' | 'reject') => void;
+  onRespond: (response: 'once' | 'reject') => void;
 }) {
   const { t } = useTranslation();
   const [feedback, setFeedback] = useState('');
@@ -3365,12 +3180,6 @@ function PermissionDialog({ payload, onRespond }: {
           {t('permission.once')}
         </button>
         <button
-          className="btn btn-always"
-          onClick={() => onRespond('always')}
-        >
-          {t('permission.always')}
-        </button>
-        <button
           className="btn btn-reject"
           onClick={() => onRespond('reject')}
         >
@@ -3402,7 +3211,6 @@ function PermissionDialog({ payload, onRespond }: {
 }
 
 .btn-once { background: var(--color-info); color: white; }
-.btn-always { background: var(--color-success); color: white; }
 .btn-reject { background: var(--color-danger); color: white; }
 ```
 
@@ -3411,10 +3219,9 @@ function PermissionDialog({ payload, onRespond }: {
 ```json
 {
   "permission": {
-    "once": "本次允许",
-    "always": "永久允许",
+    "once": "确认",
     "reject": "拒绝",
-    "feedbackPlaceholder": "反馈信息(可选)"
+    "feedbackPlaceholder": "输入拒绝原因(可选)"
   }
 }
 ```
@@ -3821,13 +3628,7 @@ async fn test_full_permission_flow() {
     let decision2 = PermissionEvaluator::evaluate(&req2, &rules);
     assert_eq!(decision2.action, PermissionAction::Allow);
 
-    // 5. 测试白名单
-    let rule = SessionWhitelist::generate_always_rule("sess1", PermissionType::Bash, "git status");
-    whitelist.add_rule("sess1", rule).await;
-    let action = whitelist.check("sess1", PermissionType::Bash, "git status --short").await;
-    assert_eq!(action, Some(PermissionAction::Allow));
-
-    // 6. 测试 Doom loop 检测
+    // 5. 测试 Doom loop 检测
     let params = serde_json::json!({"path": "file.rs"});
     assert!(!doom_loop.record_and_check("s1", "read", &params).await);
     assert!(!doom_loop.record_and_check("s1", "read", &params).await);
@@ -4025,7 +3826,7 @@ npm run build
 | Document 模式调用文档 Handler | 切换到 Document 模式,让 Agent 读取 docx 文件 | Handler 正常执行,返回文档内容 |
 | 模式切换仅前端触发 | Agent 尝试调用模式切换工具 | 无此工具可用,LLM 无法自主切换模式 |
 | once 选项 | 选择"本次允许",再次触发相同操作 | 再次弹窗 |
-| always 选项 | 选择"永久允许",再次触发相同操作 | 不再弹窗,直接执行 |
+| once 选项 | 选择"确认",本次操作被允许执行 | 操作执行,下次相同操作仍需确认 |
 | reject 选项 | 选择"拒绝" | 操作被拒绝,Agent 收到错误反馈 |
 | Doom loop 检测 | 让 Agent 连续 3 次调用相同工具 | 第 3 次触发权限弹窗 |
 | .env 文件保护 | 让 Agent 读取 .env 文件 | 被默认规则拒绝 |
@@ -4050,7 +3851,7 @@ npm run build
 | 风险 | 影响 | 应对措施 |
 |------|------|----------|
 | **权限规则过多影响性能** | 工具调用前评估耗时增加 | 限制规则数量(建议<100 条);热规则内存缓存;按 permission_type 分组索引 |
-| **always 白名单误放行危险操作** | 安全风险 | always 仅生成会话级临时规则,会话结束自动清理;UI 明确提示"永久允许"含义 |
+| **权限规则误放行危险操作** | 安全风险 | 权限规则支持 deny 规则优先;高危险操作默认配置为 ask;用户可自定义规则 |
 | **Doom loop 误报** | 正常的批量操作被拦截 | 阈值可配置(默认 3 次);检测相同参数而非相似参数;允许用户选择"本次允许"继续 |
 | **Plan 模式过严影响体验** | Agent 无法完成简单任务 | Plan 模式允许只读工具;前端按钮一键切换到 Build/Document 模式 |
 | **Document 模式工具列表过滤失效** | 非 Document 模式下文档 Handler 可见 | 单元测试覆盖各模式下的工具列表;executor 构建工具定义后断言 Handler 存在/不存在 |
@@ -4169,16 +3970,16 @@ npm run build
 | T2.05 | 实现 PermissionRule 模型与仓库 | 待实施 | - | |
 | T2.06 | 实现 PermissionRegistry 权限注册表 | 待实施 | - | |
 | T2.07 | 实现 PermissionEvaluator 权限评估器 | 待实施 | - | |
-| T2.08 | 实现临时白名单(会话级 always 规则) | 待实施 | - | |
+| T2.08 | 权限规则缓存与会话级规则管理 | 待实施 | - | 原 always 白名单已移除 |
 | T2.09 | 实现 Doom loop 检测器 | 待实施 | - | |
 | T2.10 | 改造 AgentExecutor 集成权限系统 | 待实施 | - | |
-| T2.11 | 改造 confirm_operation 命令支持 once/always/reject | 待实施 | - | |
+| T2.11 | 改造权限审批命令支持 once/reject | 待实施 | - | |
 | T2.12 | 定义 Agent 模式枚举(Plan/Build/Document) | 待实施 | - | |
 | T2.13 | 实现工具列表动态过滤(按 AgentMode 过滤文档 Handler) | 待实施 | - | v1.1:替代原 plan_exit 工具 |
 | T2.14 | 重构系统提示词层(按 Agent 模式注入,含 Document 分支) | 待实施 | - | |
 | T2.15 | 改造 AppState 加入 permission_registry 和 agent_mode | 待实施 | - | |
 | T2.16 | 前端:InputArea 增加 Plan/Build/Document 模式切换按钮 | 待实施 | - | |
-| T2.17 | 前端:权限审批对话框升级(once/always/reject) | 待实施 | - | |
+| T2.17 | 前端:权限审批对话框改为双态(once/reject) | 待实施 | - | |
 | T2.18 | 前端:设置弹窗增加权限规则管理 UI | 待实施 | - | |
 | T2.19 | 集成测试:验证权限系统与三态模式切换 | 待实施 | - | |
 

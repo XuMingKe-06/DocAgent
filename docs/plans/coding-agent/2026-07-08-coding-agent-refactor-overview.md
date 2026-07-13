@@ -191,7 +191,7 @@ System Prompt
 **主要任务**:
 1. 实现三态权限系统(allow/deny/ask):
    - 权限类型:edit, read(DocAgent 扩展,OpenCode 原生不管控 read 权限), bash, webfetch, task, external_directory, doom_loop, document 等
-   - 用户回复:once / always / reject
+    - 用户回复:once / reject
    - 权限规则持久化(数据库 permission 表)
 2. 实现 Plan/Build/Document 三态模式切换(仅前端按钮,不提供 LLM 工具):
    - Plan 模式:禁止 edit/bash 等修改类操作,只允许 read/glob/grep/list
@@ -514,7 +514,7 @@ fn layer_context(
 1. **edit 工具**:oldString 唯一匹配、多匹配报错、FileTime 锁冲突、编辑后自动格式化
 2. **glob 工具`**:`**/*.ts` 递归匹配、`{a,b}/*.rs` 花括号扩展、排除模式
 3. **grep 工具**:正则匹配、多文件搜索、上下文行显示、二进制文件跳过
-4. **权限系统**:allow 规则自动放行、deny 规则立即拒绝、ask 规则触发对话框、always 持久化
+4. **权限系统**:allow 规则自动放行、deny 规则立即拒绝、ask 规则触发对话框
 5. **Plan/Build/Document 模式切换**:Plan 模式下 edit 被拒绝;Build 模式下文档 Handler 不在工具列表;Document 模式下文档 Handler 出现且可调用
 6. **Skill 加载**:SKILL.md frontmatter 解析、按权限过滤、按需加载内容
 7. **子 Agent**:task 工具委托、独立上下文、结果汇总、嵌套深度限制

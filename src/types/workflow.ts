@@ -50,8 +50,8 @@ export interface ConfirmNodeData {
   feedback?: string;
   /** Phase 2: 风险等级（critical/high/medium/normal） */
   riskLevel?: string;
-  /** Phase 2: 权限审批回复（once/always/reject） */
-  permissionResponse?: 'once' | 'always' | 'reject' | null;
+  /** 权限审批回复（once/reject） */
+  permissionResponse?: 'once' | 'reject' | null;
 }
 
 export interface ErrorNodeData {

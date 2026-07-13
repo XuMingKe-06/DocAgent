@@ -18,7 +18,7 @@ use crate::services::handler::registry::HandlerRegistry;
 use crate::services::llm::router::LlmRouter;
 use crate::services::permission::{
     doom_loop::DoomLoopDetector, evaluator::PermissionEvaluator, evaluator::PermissionRequest,
-    registry::PermissionRegistry, session_whitelist::SessionWhitelist, types::PermissionAction,
+    registry::PermissionRegistry, types::PermissionAction,
     types::PermissionResponse, types::PermissionType,
 };
 use crate::services::tool::registry::ToolRegistry;
@@ -174,7 +174,7 @@ pub struct AgentExecutor<R: Runtime> {
     emitter: AgentEmitter<R>,
     confirm_channels:
         Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<ConfirmDecision>>>>,
-    /// Phase 2: 权限审批通道（三态 once/always/reject）
+    /// 权限审批通道（双态 once/reject）
     permission_channels: Arc<
         tokio::sync::Mutex<
             HashMap<String, tokio::sync::oneshot::Sender<crate::PermissionDecision>>,
@@ -182,8 +182,6 @@ pub struct AgentExecutor<R: Runtime> {
     >,
     /// Phase 2: 权限注册表（默认规则 + 用户规则合并）
     permission_registry: Arc<PermissionRegistry>,
-    /// Phase 2: 会话级白名单（always 规则缓存）
-    session_whitelist: Arc<SessionWhitelist>,
     /// Phase 2: Doom loop 检测器
     doom_loop_detector: Arc<DoomLoopDetector>,
     /// Phase 2: Agent 模式管理器（Plan/Build/Document）
@@ -218,7 +216,6 @@ impl<R: Runtime> AgentExecutor<R> {
             >,
         >,
         permission_registry: Arc<PermissionRegistry>,
-        session_whitelist: Arc<SessionWhitelist>,
         doom_loop_detector: Arc<DoomLoopDetector>,
         agent_mode_manager: Arc<super::AgentModeManager>,
     ) -> Self {
@@ -230,7 +227,6 @@ impl<R: Runtime> AgentExecutor<R> {
             confirm_channels,
             permission_channels,
             permission_registry,
-            session_whitelist,
             doom_loop_detector,
             agent_mode_manager,
             max_iterations: 100,
@@ -615,21 +611,7 @@ impl<R: Runtime> AgentExecutor<R> {
         // 4. 构造权限评估请求
         let request = PermissionRequest::from_tool_call(tool_name, params);
 
-        // 5. 白名单检查（会话级 always 规则缓存）
-        if let Some(PermissionAction::Allow) = self
-            .session_whitelist
-            .check(&ctx.session_id, request.permission_type, &request.target)
-            .await
-        {
-            log::debug!(
-                "权限允许(白名单命中): session_id={}, tool={}",
-                ctx.session_id,
-                tool_name
-            );
-            return Ok(PermissionResult::Allow);
-        }
-
-        // 6. 外部目录检查：文件操作且路径在工作区外时强制 Ask
+        // 5. 外部目录检查：文件操作且路径在工作区外时强制 Ask
         let is_external = if !ctx.workspace_path.is_empty() {
             // 从参数中提取路径，判断是否为外部目录
             let path_str = params
@@ -726,7 +708,7 @@ impl<R: Runtime> AgentExecutor<R> {
                 })
             }
             PermissionAction::Ask => {
-                // 询问用户，等待三态回复
+                // 询问用户，等待双态回复
                 let user_decision = self
                     .request_permission_with_response(&ctx.session_id, tool_name, params)
                     .await?;
@@ -750,29 +732,12 @@ impl<R: Runtime> AgentExecutor<R> {
                         );
                         Ok(PermissionResult::AllowWithPermissionAsked)
                     }
-                    PermissionResponse::Always => {
-                        // 生成会话级 Allow 规则并加入白名单
-                        let always_rule = SessionWhitelist::generate_always_rule(
-                            &ctx.session_id,
-                            request.permission_type,
-                            &request.target,
-                        );
-                        self.session_whitelist
-                            .add_rule(&ctx.session_id, always_rule)
-                            .await;
-                        log::info!(
-                            "权限允许(用户 Always): session_id={}, tool={}",
-                            ctx.session_id,
-                            tool_name
-                        );
-                        Ok(PermissionResult::AllowWithPermissionAsked)
-                    }
                 }
             }
         }
     }
 
-    /// Phase 2: 请求用户权限审批（三态：once/always/reject）
+    /// 请求用户权限审批（双态：once/reject）
     /// 使用 permission_channels 等待用户回复，5 分钟超时
     async fn request_permission_with_response(
         &self,

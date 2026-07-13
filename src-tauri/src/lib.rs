@@ -22,11 +22,11 @@ pub struct ConfirmDecision {
     pub feedback: Option<String>,
 }
 
-/// 权限审批决策（Phase 2 三态权限系统）
-/// 用于 permission_channels 传递用户的三态回复（once/always/reject）
+/// 权限审批决策（双态权限系统）
+/// 用于 permission_channels 传递用户的双态回复（once/reject）
 #[derive(Debug, Clone)]
 pub struct PermissionDecision {
-    /// 用户回复：Once/Always/Reject
+    /// 用户回复：Once/Reject
     pub response: crate::services::permission::types::PermissionResponse,
     /// 用户反馈（可选）
     pub feedback: Option<String>,
@@ -39,7 +39,7 @@ pub struct AppState {
     pub active_agents: Arc<tokio::sync::Mutex<HashMap<String, bool>>>,
     pub confirm_channels:
         Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<ConfirmDecision>>>>,
-    /// 权限审批通道（Phase 2 三态权限系统，once/always/reject）
+    /// 权限审批通道（双态权限系统，once/reject）
     pub permission_channels:
         Arc<tokio::sync::Mutex<HashMap<String, tokio::sync::oneshot::Sender<PermissionDecision>>>>,
     /// Question 工具答案通道（阶段 4，按 question_id 隔离）
@@ -47,8 +47,6 @@ pub struct AppState {
     pub question_channels: crate::services::tool::builtin::question::QuestionChannels,
     /// 权限注册表（默认规则 + 用户规则合并）
     pub permission_registry: Arc<crate::services::permission::registry::PermissionRegistry>,
-    /// 会话级白名单（always 规则缓存）
-    pub session_whitelist: Arc<crate::services::permission::session_whitelist::SessionWhitelist>,
     /// Doom loop 检测器
     pub doom_loop_detector: Arc<crate::services::permission::doom_loop::DoomLoopDetector>,
     /// Agent 模式管理器（Plan/Build/Document）
@@ -384,8 +382,6 @@ pub fn run() {
             let permission_registry = Arc::new(
                 crate::services::permission::registry::PermissionRegistry::new(Arc::clone(&db_arc)),
             );
-            let session_whitelist =
-                Arc::new(crate::services::permission::session_whitelist::SessionWhitelist::new());
             let doom_loop_detector =
                 Arc::new(crate::services::permission::doom_loop::DoomLoopDetector::new());
             let agent_mode_manager = Arc::new(crate::services::agent::AgentModeManager::new());
@@ -512,14 +508,13 @@ pub fn run() {
             let task_tool = registration.task_tool;
 
             // 阶段 4: 初始化 SubAgentExecutor（需要 tool_registry，故在工具注册后创建）
-            // 共享 llm_router、tool_registry、permission_registry、session_whitelist、app_handle、db
+            // 共享 llm_router、tool_registry、permission_registry、app_handle、db
             let tool_registry_arc = Arc::new(tool_registry);
             let sub_executor =
                 Arc::new(crate::services::agent::sub_executor::SubAgentExecutor::new(
                     Arc::clone(&llm_router_arc),
                     Arc::clone(&tool_registry_arc),
                     Arc::clone(&permission_registry),
-                    Arc::clone(&session_whitelist),
                     Some(app.handle().clone()),
                     Arc::clone(&db_arc),
                 ));
@@ -554,7 +549,6 @@ pub fn run() {
                 permission_channels: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                 question_channels,
                 permission_registry,
-                session_whitelist,
                 doom_loop_detector,
                 agent_mode_manager,
                 doc_service: doc_service_for_handlers,

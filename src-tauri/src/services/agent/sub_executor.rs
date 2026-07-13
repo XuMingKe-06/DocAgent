@@ -27,7 +27,6 @@ use crate::models::tool::ToolResult;
 use crate::services::llm::router::LlmRouter;
 use crate::services::permission::evaluator::{PermissionEvaluator, PermissionRequest};
 use crate::services::permission::registry::PermissionRegistry;
-use crate::services::permission::session_whitelist::SessionWhitelist;
 use crate::services::permission::types::{PermissionAction, PermissionType};
 use crate::services::tool::registry::ToolRegistry;
 
@@ -109,8 +108,6 @@ pub struct SubAgentExecutor {
     tool_registry: Arc<ToolRegistry>,
     /// 权限注册表（T4.03/T4.04 用于工具执行权限校验）
     permission_registry: Arc<PermissionRegistry>,
-    /// 会话级白名单（T4.03/T4.04 用于 always 规则缓存）
-    session_whitelist: Arc<SessionWhitelist>,
     /// Tauri AppHandle，用于发射事件（T4.04 完善事件发射）
     app_handle: Option<AppHandle<Wry>>,
     /// 数据库连接（用于持久化子 Agent 消息）
@@ -123,7 +120,6 @@ impl SubAgentExecutor {
         llm_router: Arc<RwLock<Arc<LlmRouter>>>,
         tool_registry: Arc<ToolRegistry>,
         permission_registry: Arc<PermissionRegistry>,
-        session_whitelist: Arc<SessionWhitelist>,
         app_handle: Option<AppHandle<Wry>>,
         db: Arc<Database>,
     ) -> Self {
@@ -131,7 +127,6 @@ impl SubAgentExecutor {
             llm_router,
             tool_registry,
             permission_registry,
-            session_whitelist,
             app_handle,
             db,
         }
@@ -645,7 +640,7 @@ impl SubAgentExecutor {
 
     /// 执行工具调用
     /// 从 ToolRegistry 获取工具，注入系统参数后执行
-    /// T4.10/T4.14: 接入权限检查（复用 permission_registry 与 session_whitelist）
+    /// T4.10/T4.14: 接入权限检查（复用 permission_registry）
     async fn execute_tool(
         &self,
         tool_call: &LlmToolCall,
@@ -744,25 +739,7 @@ impl SubAgentExecutor {
         // 2. 构造权限评估请求
         let request = PermissionRequest::from_tool_call(tool_name, params);
 
-        // 3. 白名单检查（复用父会话的 always 规则缓存）
-        if let Some(PermissionAction::Allow) = self
-            .session_whitelist
-            .check(
-                &config.parent_session_id,
-                request.permission_type,
-                &request.target,
-            )
-            .await
-        {
-            log::debug!(
-                "子 Agent 权限允许(白名单): agent_id={}, tool={}",
-                config.agent_id,
-                tool_name
-            );
-            return Ok(true);
-        }
-
-        // 4. 规则评估（子 Agent 无 workspace_id，使用 None）
+        // 3. 规则评估（子 Agent 无 workspace_id，使用 None）
         let rules = self
             .permission_registry
             .load_effective_rules(None, Some(&config.parent_session_id));

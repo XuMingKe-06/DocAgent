@@ -92,11 +92,9 @@
     "feedbackPlaceholder": "输入拒绝原因（可选）…"
   },
   "permission": {
-    "once": "仅本次允许",
-    "always": "永久允许",
+    "once": "确认",
     "reject": "拒绝",
-    "onceAllowed": "✓ 已允许（本次）",
-    "alwaysAllowed": "✓ 已允许（永久）",
+    "onceAllowed": "✓ 已确认",
     "rejected": "✗ 已拒绝",
     "feedbackPlaceholder": "输入拒绝原因（可选）…",
     "tabTitle": "权限规则管理",

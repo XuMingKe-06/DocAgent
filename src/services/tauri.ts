@@ -395,11 +395,11 @@ export async function confirmOperation(
   if (!result.ok) throw result.error.raw;
 }
 
-/** 权限审批回复（Phase 2 三态权限系统：once/always/reject） */
+/** 权限审批回复（Phase 2 双态权限系统：once/reject） */
 export async function permissionRespond(
   sessionId: string,
   operationId: string,
-  response: 'once' | 'always' | 'reject',
+  response: 'once' | 'reject',
   feedback?: string,
 ): Promise<void> {
   const result = await safeInvoke(() => invoke("permission_respond", {
