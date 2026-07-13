@@ -1,7 +1,7 @@
 {
   "app": {
-    "name": "DocAgent",
-    "desc": "基于 AI Agent 的智能文档处理桌面应用",
+    "name": "WorkMolde AI",
+    "desc": "基于 AI Agent 的智能工作助手桌面应用",
     "techStack": "Tauri 2 + React + Rust + Python",
     "engineVersion": "Python 3.12+ Sidecar"
   },
@@ -64,9 +64,9 @@
     "directoryDeletedToast": "工作区 \"{{name}}\" 的目录已被删除，已自动移除"
   },
   "workflow": {
-    "startNewSession": "Work with DocAgent",
-    "startNewSessionPlan": "Plan with DocAgent",
-    "startNewSessionCode": "Code with DocAgent",
+    "startNewSession": "Work with WorkMolde",
+    "startNewSessionPlan": "Plan with WorkMolde",
+    "startNewSessionCode": "Code with WorkMolde",
     "emptySession": "空会话",
     "timeline": "工作流时间线",
     "thinking": "思考过程"

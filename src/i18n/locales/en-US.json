@@ -1,7 +1,7 @@
 {
   "app": {
-    "name": "DocAgent",
-    "desc": "AI Agent-powered intelligent document processing desktop app",
+    "name": "WorkMolde AI",
+    "desc": "AI Agent-powered intelligent work assistant desktop app",
     "techStack": "Tauri 2 + React + Rust + Python",
     "engineVersion": "Python 3.12+ Sidecar"
   },
@@ -64,9 +64,9 @@
     "directoryDeletedToast": "The directory of workspace \"{{name}}\" has been deleted, automatically removed"
   },
   "workflow": {
-    "startNewSession": "Work with DocAgent",
-    "startNewSessionPlan": "Plan with DocAgent",
-    "startNewSessionCode": "Code with DocAgent",
+    "startNewSession": "Work with WorkMolde",
+    "startNewSessionPlan": "Plan with WorkMolde",
+    "startNewSessionCode": "Code with WorkMolde",
     "emptySession": "Empty Session",
     "timeline": "Workflow Timeline",
     "thinking": "Thinking"
