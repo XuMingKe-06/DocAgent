@@ -18,10 +18,33 @@ pub async fn lsp_restart_server(
     state: State<'_, AppState>,
     language: String,
 ) -> Result<(), crate::errors::CommandError> {
-    // 先停止现有服务器
-    state.lsp_manager.stop(&language).await?;
+    // 先停止现有服务器(stop 失败降级为日志,不中断重启流程)
+    if let Err(e) = state.lsp_manager.stop(&language).await {
+        log::warn!(
+            "LSP 停止失败(language={},将继续尝试启动): {}",
+            language,
+            e.message
+        );
+    }
     // 重新启动(会自动使用已注册的配置)
-    state.lsp_manager.get_or_start(&language).await?;
+    state.lsp_manager.get_or_start(&language).await.map_err(|e| {
+        // 保留原错误码,但 message 改为更友好的描述
+        let friendly_msg = match e.code {
+            crate::errors::FS_PATH_NOT_FOUND => format!(
+                "未找到 LSP 服务器程序,请确保已安装该语言服务器并添加到 PATH(原始错误: {})",
+                e.message
+            ),
+            crate::errors::RUNTIME_EVENT_EMIT_ERROR => {
+                if e.message.contains("超时") {
+                    format!("LSP 服务器响应超时,可能正在索引或工作区配置异常(原始错误: {})", e.message)
+                } else {
+                    format!("LSP 服务器启动后立即退出,请检查工作区是否包含项目标识文件(原始错误: {})", e.message)
+                }
+            }
+            _ => e.message.clone(),
+        };
+        crate::errors::CommandError::new(e.code, friendly_msg)
+    })?;
     log::info!("LSP 服务器已重启: language={}", language);
     Ok(())
 }

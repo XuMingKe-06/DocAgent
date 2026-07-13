@@ -119,8 +119,22 @@ export function LspStatusPanel() {
       addToast("success", t("settings.lsp.restartSuccess"));
       await loadStatus();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      addToast("error", `${t("settings.lsp.restartError")}: ${msg}`);
+      // 解析 CommandError 结构 { code: number, message: string }
+      const errObj = err as { code?: number; message?: string };
+      const code = errObj?.code ?? 0;
+      const message = errObj?.message ?? (err instanceof Error ? err.message : String(err));
+      // 根据错误码与消息映射为 LSP 专用友好提示
+      let friendlyMsg: string;
+      if (code === 6001 || /not found|program not found/i.test(message)) {
+        friendlyMsg = t("settings.lsp.errorProgramNotFound");
+      } else if (code === 7001 && /超时|timeout/i.test(message)) {
+        friendlyMsg = t("settings.lsp.errorTimeout");
+      } else if (code === 7001 && /响应通道已关闭|已退出|stdout|exited/i.test(message)) {
+        friendlyMsg = t("settings.lsp.errorProcessExited");
+      } else {
+        friendlyMsg = message;
+      }
+      addToast("error", `${t("settings.lsp.restartError")}: ${friendlyMsg}`);
     } finally {
       setRestartingLangs((prev) => {
         const next = new Set(prev);

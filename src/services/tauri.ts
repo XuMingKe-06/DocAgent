@@ -641,7 +641,8 @@ export async function lspGetStatus(): Promise<LspServerInfo[]> {
 
 /** 重启指定语言的 LSP 服务器 */
 export async function lspRestartServer(language: string): Promise<void> {
-  const result = await safeInvoke(() => invoke("lsp_restart_server", { language }), { context: "lspRestartServer" });
+  // 禁用默认 Toast，由前端 handleRestart 统一处理错误提示，避免双重 Toast
+  const result = await safeInvoke(() => invoke("lsp_restart_server", { language }), { context: "lspRestartServer", showToast: false });
   if (!result.ok) throw result.error.raw;
 }
 

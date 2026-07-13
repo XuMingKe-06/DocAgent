@@ -52,6 +52,17 @@ impl LspServerManager {
             }
         }
 
+        // 清理旧 client(状态非 Ready):取出后释放锁,再调用 shutdown 避免嵌套持锁
+        {
+            let mut clients = self.clients.write().await;
+            if let Some(old_client) = clients.remove(language) {
+                // 释放写锁后再 shutdown,避免阻塞其他 client 操作
+                drop(clients);
+                let _ = old_client.shutdown().await;
+                log::info!("LSP 旧 client 已清理: language={}", language);
+            }
+        }
+
         // 获取该语言的 LSP 配置
         let config = {
             let configs = self.configs.read().await;
