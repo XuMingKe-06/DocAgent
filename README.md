@@ -20,8 +20,13 @@ Download the latest Windows installer from [Releases](https://github.com/light-m
 
 ## Features
 
-### AI Chat & Document Processing
-- Multi-turn conversational document operations
+### AI Agent
+- Multi-mode agent (Plan / Code / Document modes), autonomous task execution
+- SubAgent workflow for complex task decomposition
+- LSP (Language Server Protocol) integration with real-time code diagnostics
+- Permission system with granular control over file and command operations
+- Extensible Skill system for loading custom capabilities
+- Multi-turn conversational operations
 - Real-time streaming of AI thoughts and results
 - Visual workflow timeline showing each step
 - Live code execution preview
@@ -37,6 +42,7 @@ Download the latest Windows installer from [Releases](https://github.com/light-m
 - File tree browsing and search
 - Create, delete, rename files within workspaces
 - Auto-detection when directories are deleted
+- Git repository status display
 
 ### Document Processing
 - Word (.docx): read, create, edit, format conversion, structure analysis
@@ -56,6 +62,7 @@ Download the latest Windows installer from [Releases](https://github.com/light-m
 - Switch between multiple sessions
 - AI continues running in background after switching
 - Auto-generated session titles
+- Session list pagination for large history
 
 ### Prompt Templates
 - Built-in templates for common tasks
