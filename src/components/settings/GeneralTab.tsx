@@ -300,7 +300,7 @@ export function GeneralTab() {
             </button>
             <button
               className="about-link-btn"
-              onClick={() => tauriCmd.openUrl(`https://github.com/light-misty/Samoyed-Work/releases/tag/v${currentVersion || "0.1.0"}`)}
+              onClick={() => tauriCmd.openUrl("https://github.com/light-misty/Samoyed-Work/releases")}
             >
               <Icon name="external-link" size={14} />
               <span>{t('settings.general.changelog')}</span>
