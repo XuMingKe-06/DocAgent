@@ -851,6 +851,7 @@
     "searchFiles": "搜索文件",
     "globFiles": "匹配路径",
     "grepFiles": "搜索内容",
+    "searchFor": "搜索",
     "exitCode": "退出码",
     "output": "输出",
     "errorOutput": "错误输出",

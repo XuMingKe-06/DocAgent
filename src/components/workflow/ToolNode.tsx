@@ -21,9 +21,23 @@ const toolDescriptions: Record<string, string> = {
   grep: 'toolBrief.grepFiles',
 };
 
+/** 工具输入参数预览：用实际输入内容替代静态 i18n 描述 */
+const toolInputPreview: Record<string, string> = {
+  grep: 'pattern',
+  glob: 'pattern',
+  search: 'query',
+  web_search: 'query',
+  webfetch: 'url',
+  read_web: 'url',
+};
+
 export function ToolNode({ node }: ToolNodeProps) {
   const { t } = useTranslation();
   const data = node.data as ToolNodeData;
+  const toolBriefInputKey = toolInputPreview[data.toolName];
+  const toolBriefPreview = typeof toolBriefInputKey === 'string' && data.input?.[toolBriefInputKey] !== undefined
+    ? String(data.input[toolBriefInputKey])
+    : null;
   const hasError = data.success === false;
   // 判断工具是否正在执行中
   const isRunning = node.status === "running";
@@ -70,6 +84,10 @@ export function ToolNode({ node }: ToolNodeProps) {
             <><span> · </span><span>{t('toolBrief.writeScript')} {String(data.input.filename)}</span></>
           ) : data.filePath ? (
             <><span> · </span><span>{data.filePath}</span></>
+          ) : data.toolName === 'grep' && data.input?.pattern ? (
+            <><span> · </span><span>{t('toolBrief.searchFor')} "{String(data.input.pattern)}"</span></>
+          ) : toolBriefPreview ? (
+            <><span> · </span><span>{toolBriefPreview}</span></>
           ) : toolDescriptions[data.toolName] ? (
             <><span> · </span><span>{t(toolDescriptions[data.toolName])}</span></>
           ) : null}

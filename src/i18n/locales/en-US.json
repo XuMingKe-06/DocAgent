@@ -851,6 +851,7 @@
     "searchFiles": "Search files",
     "globFiles": "Glob paths",
     "grepFiles": "Grep content",
+    "searchFor": "Search for",
     "exitCode": "Exit code",
     "output": "Output",
     "errorOutput": "Error output",
