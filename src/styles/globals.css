@@ -695,11 +695,7 @@
   flex: 1;
 }
 
-/* 其他分支的匹配项：左侧添加分支色条 */
-.branch-graph-node.other-branch {
-  border-left: 2px solid var(--color-accent);
-  padding-left: 6px;
-}
+
 
 /* 搜索结果分隔线（当前分支与其他分支之间） */
 .branch-graph-separator {
