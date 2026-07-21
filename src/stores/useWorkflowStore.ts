@@ -102,7 +102,7 @@ interface WorkflowState {
   /** 创建分支后待发送的消息（由 UserNode 设置，App.tsx 监听消费） */
   pendingBranchSend: { content: string; branchGroupId: string } | null;
 
-  /** 右侧边栏是否可见（持久化到 localStorage） */
+  /** 右侧边栏是否可见 */
   rightSidebarVisible: boolean;
   // 节点 DOM ref 注册表已移至模块级 nodeRefsMap，不作为 store state（避免触发重渲染）
   /** 当前可见节点 ID */
@@ -419,20 +419,6 @@ function convertMessagesToNodes(
   return nodes;
 }
 
-/** 右侧边栏可见性 localStorage key */
-const RIGHT_SIDEBAR_VISIBLE_KEY = "workflow-right-sidebar-visible";
-
-/** 从 localStorage 读取右侧边栏可见性，无记录默认 true */
-function loadRightSidebarVisible(): boolean {
-  try {
-    const stored = localStorage.getItem(RIGHT_SIDEBAR_VISIBLE_KEY);
-    return stored === null ? true : stored === "true";
-  } catch {
-    // localStorage 不可用（如隐私模式）时使用默认值
-    return true;
-  }
-}
-
 export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   nodes: [],
   executionStatus: "idle",
@@ -446,7 +432,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   branchGroups: [],
   activeBranchId: "",
   pendingBranchSend: null,
-  rightSidebarVisible: loadRightSidebarVisible(),
+  rightSidebarVisible: false,
   // nodeRefs 已移至模块级 nodeRefsMap，不作为 store state
   currentVisibleNodeId: null,
   highlightNodeId: null,
@@ -1342,15 +1328,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   // 设置/清除待发送的分支消息
   setPendingBranchSend: (data) => set({ pendingBranchSend: data }),
 
-  // 设置右侧边栏可见性并同步到 localStorage
-  setRightSidebarVisible: (visible) => {
-    try {
-      localStorage.setItem(RIGHT_SIDEBAR_VISIBLE_KEY, String(visible));
-    } catch {
-      // 忽略 localStorage 写入失败（如隐私模式）
-    }
-    set({ rightSidebarVisible: visible });
-  },
+  // 设置右侧边栏可见性（仅在内存中，不持久化）
+  setRightSidebarVisible: (visible) => set({ rightSidebarVisible: visible }),
 
   // 注册节点 DOM ref（直接操作模块级 Map，不触发 store 更新）
   registerNodeRef: (nodeId, el) => {

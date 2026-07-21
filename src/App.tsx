@@ -83,7 +83,7 @@ export default function App() {
 
   // 子 Agent 工作流详情页：当前查看的子 Agent ID，非空时切换到详情页替代主工作流
   const currentSubAgentId = useWorkflowStore((s) => s.currentSubAgentId);
-  const { addNode, updateNode, setExecutionStatus, clearNodes, setPermissionHandler, loadFromMessages, executionStatus, initContextUsageListener, loadContextUsage, clearContextUsage, saveSessionToCache, restoreSessionFromCache, clearSessionCache, getCachedStreamingRefs, nodes, clearSubAgentWorkflow, pendingBranchSend, setPendingBranchSend } = useWorkflowStore();
+  const { addNode, updateNode, setExecutionStatus, clearNodes, setPermissionHandler, loadFromMessages, executionStatus, initContextUsageListener, loadContextUsage, clearContextUsage, saveSessionToCache, restoreSessionFromCache, clearSessionCache, getCachedStreamingRefs, nodes, clearSubAgentWorkflow, pendingBranchSend, setPendingBranchSend, setRightSidebarVisible } = useWorkflowStore();
   const { switchSession, loadSessions, clearCurrentSession, currentSessionId, sessions } = useSessionStore();
   const updateSessionTitleLocal = useSessionStore((s) => s.updateSessionTitleLocal);
   const { loadSettings, initThemeListener } = useSettingsStore();
@@ -751,7 +751,8 @@ export default function App() {
     clearCurrentSession();
     clearContextUsage();
     resetRefs();
-  }, [clearNodes, resetAgent, clearCurrentSession, clearContextUsage, saveSessionToCache, currentSessionId]);
+    setRightSidebarVisible(false);
+  }, [clearNodes, resetAgent, clearCurrentSession, clearContextUsage, saveSessionToCache, currentSessionId, setRightSidebarVisible]);
 
   // 切换到历史会话：先保存当前会话状态到缓存，再从缓存或后端恢复目标会话
   const handleSwitchSession = useCallback(async (sessionId: string, workspaceId?: string) => {
@@ -831,7 +832,8 @@ export default function App() {
     if (hasMessages) {
       loadContextUsage(sessionId);
     }
-  }, [clearNodes, resetAgent, clearContextUsage, clearSubAgentWorkflow, switchSession, setAgentSessionId, loadFromMessages, loadContextUsage, saveSessionToCache, restoreSessionFromCache, getCachedStreamingRefs, setExecutionStatus, currentSessionId, switchWorkspace, currentWorkspaceId, workspaces]);
+    setRightSidebarVisible(false);
+  }, [clearNodes, resetAgent, clearContextUsage, clearSubAgentWorkflow, switchSession, setAgentSessionId, loadFromMessages, loadContextUsage, saveSessionToCache, restoreSessionFromCache, getCachedStreamingRefs, setExecutionStatus, currentSessionId, switchWorkspace, currentWorkspaceId, workspaces, setRightSidebarVisible]);
 
   // 为指定工作区新建会话：仅切换工作区并重置到"待机"状态，不立即创建后端会话
   // 实际会话在用户首次提问时由 useAgent.sendMessage 自动创建（携带当前工作区 ID），
