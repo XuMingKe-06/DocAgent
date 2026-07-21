@@ -228,7 +228,6 @@ export function WorkflowRightSidebar({ collapsed = false }: WorkflowRightSidebar
                     data-node-id={node.id}
                     onClick={() => jumpToNode(node.id)}
                   >
-                    {index > 0 && <div className="branch-graph-connector" />}
                     <span className="branch-graph-node-index">{index + 1}</span>
                     <span className="branch-graph-node-content">{summary}</span>
                     {/* 分支组指示按钮：点击切换展开/折叠，阻止冒泡避免触发节点跳转 */}

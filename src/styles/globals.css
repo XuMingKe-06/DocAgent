@@ -656,15 +656,6 @@
   flex: 1;
 }
 
-.branch-graph-connector {
-  position: absolute;
-  left: 14px;
-  top: -8px;
-  height: 8px;
-  width: 1px;
-  background: var(--color-border);
-}
-
 /* 其他分支的匹配项：左侧添加分支色条 */
 .branch-graph-node.other-branch {
   border-left: 2px solid var(--color-accent);
