@@ -680,20 +680,6 @@
   /* 允许分支组列表换行到新行 */
   flex-wrap: wrap;
 }
-
-
-
-.branch-graph-node.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 4px;
-  bottom: 4px;
-  width: 2px;
-  background: var(--color-accent);
-  border-radius: 1px;
-}
-
 .branch-graph-node-index {
   color: var(--color-text-tertiary);
   font-size: 11px;
