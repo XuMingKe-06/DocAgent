@@ -856,8 +856,15 @@ impl<R: Runtime> AgentExecutor<R> {
         response_tokens: usize,
         usage: Option<&ChatUsage>,
     ) {
-        let model_name = self.router.current_model_name();
-        let cache_type = self.router.current_cache_type().to_string();
+        // 使用用户在对话框中选择的 Provider（preferred_provider_id）查询元数据
+        // 若未指定则回退到默认 Provider，确保右侧栏显示与实际 LLM 调用一致的 Provider 信息
+        let pid = if ctx.preferred_provider_id.is_empty() {
+            None
+        } else {
+            Some(ctx.preferred_provider_id.as_str())
+        };
+        let model_name = self.router.model_name_for(pid);
+        let cache_type = self.router.cache_type_for(pid).to_string();
 
         // 缓存诊断：记录本轮和累计的缓存命中统计
         if let Some(u) = usage {

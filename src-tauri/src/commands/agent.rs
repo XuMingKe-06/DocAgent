@@ -354,15 +354,33 @@ pub async fn start_agent(
 
 /// 获取当前上下文窗口使用信息
 /// 需要传入 session_id，返回该会话的上下文窗口使用情况
+/// provider_id 为可选参数，指定用户在对话框中选择的 Provider ID
 /// 优先从数据库读取持久化的 JSON（与实时事件数据完全一致），若无则回退到重新计算
 #[tauri::command]
 pub async fn get_context_usage(
     session_id: String,
+    provider_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<crate::models::llm::ContextUsageInfo, CommandError> {
+    // 获取用户选择 Provider 的上下文窗口大小、模型名称和缓存类型
+    // 通过 Router 按 provider_id 精确查找（避免使用默认 Provider 导致显示错误的 context_window）
+    // 提前获取以便在 DB 命中时刷新 Provider 相关字段，避免编辑 Provider 后显示过期值
+    let (context_window, model_name, provider_cache_type) = {
+        let router = state.llm_router.read().await;
+        let pid = provider_id.as_deref();
+        let cw = router.context_window_for(pid);
+        let mn = router.model_name_for(pid);
+        let ct = router.cache_type_for(pid).to_string();
+        (cw, mn, ct)
+    };
+
     // 优先从数据库读取持久化的上下文窗口使用信息（与实时事件数据完全一致）
     if let Ok(conn) = state.db.conn() {
-        if let Some(usage) = crate::db::session_repo::load_context_usage(&conn, &session_id) {
+        if let Some(mut usage) = crate::db::session_repo::load_context_usage(&conn, &session_id) {
+            // 刷新 Provider 相关字段，避免编辑 Provider 后显示过期的 context_window/model_name
+            usage.context_window = context_window;
+            usage.model_name = model_name.clone();
+            usage.provider_cache_type = provider_cache_type.clone();
             return Ok(usage);
         }
     }
@@ -371,22 +389,6 @@ pub async fn get_context_usage(
     use crate::services::agent::context::AgentContext;
     use crate::services::agent::prompts::task_type::TaskType;
     use crate::services::agent::prompts::token_budget::TokenBudgetManager;
-
-    // 获取当前活跃 Provider 的上下文窗口大小、模型名称和缓存类型
-    // 通过 Router 的主 Provider ID 精确查找（避免 list_providers 顺序不确定）
-    let (context_window, model_name, provider_cache_type) = {
-        let router = state.llm_router.read().await;
-        let providers = router.list_providers();
-        let main_provider_id = router.default_provider_id();
-        let main_provider = main_provider_id
-            .and_then(|id| providers.iter().find(|p| p.id == id))
-            .or_else(|| providers.first());
-        let cache_type = router.current_cache_type();
-        match main_provider {
-            Some(p) => (p.context_window, p.model.clone(), cache_type.to_string()),
-            None => (200_000, String::new(), cache_type.to_string()),
-        }
-    };
 
     // 获取当前工作区路径（用于构建系统提示词）
     let workspace_path = {
@@ -1197,25 +1199,37 @@ async fn run_agent(
         compaction_config.keep_recent_messages
     );
 
-    // 从当前活跃 Provider 解析上下文窗口大小
+    // 从用户选择的 Provider 解析上下文窗口大小
+    // 优先使用 provider_id 对应的 Provider，找不到时回退到默认 Provider（providers.first()）
     let context_window = {
         let cfg = tokio::task::block_in_place(|| config.blocking_lock());
         match cfg.load_llm_config() {
-            Ok(llm_config) => match llm_config.providers.first() {
-                Some(provider) => {
-                    let cw = provider.resolve_context_window();
-                    log::info!(
-                        "从主 Provider 解析上下文窗口: {} tokens (模型: {})",
-                        cw,
-                        provider.model
-                    );
-                    cw
+            Ok(llm_config) => {
+                // 优先查找用户在对话框中选择的 Provider
+                let provider = if !provider_id.is_empty() {
+                    llm_config.providers.iter().find(|p| p.id == provider_id)
+                } else {
+                    None
+                };
+                // 回退到默认 Provider（providers.first()）
+                let provider = provider.or_else(|| llm_config.providers.first());
+                match provider {
+                    Some(provider) => {
+                        let cw = provider.resolve_context_window();
+                        log::info!(
+                            "从 Provider 解析上下文窗口: {} tokens (模型: {}, provider_id: {})",
+                            cw,
+                            provider.model,
+                            provider.id
+                        );
+                        cw
+                    }
+                    None => {
+                        log::warn!("无可用 Provider，使用默认上下文窗口 200K");
+                        200_000
+                    }
                 }
-                None => {
-                    log::warn!("无可用 Provider，使用默认上下文窗口 200K");
-                    200_000
-                }
-            },
+            }
             Err(e) => {
                 log::warn!("加载 LLM 配置失败: {}, 使用默认上下文窗口 200K", e.message);
                 200_000

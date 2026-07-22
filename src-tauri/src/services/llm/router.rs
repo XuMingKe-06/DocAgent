@@ -793,25 +793,37 @@ impl LlmRouter {
         }
     }
 
-    /// 获取当前默认 Provider 的模型名称
-    pub fn current_model_name(&self) -> String {
-        self.default_id
-            .as_ref()
-            .and_then(|id| self.meta.get(id))
-            .map(|m| m.model.clone())
-            .unwrap_or_default()
-    }
-
     /// 获取主 Provider ID（列表第一个，用于上下文窗口等查询）
     pub fn default_provider_id(&self) -> Option<&str> {
         self.default_id.as_deref()
     }
 
-    /// 获取当前默认 Provider 的缓存类型
+    /// 按 provider_id 查询上下文窗口大小
+    /// 若 provider_id 为 None 或空，回退到默认 Provider
+    pub fn context_window_for(&self, provider_id: Option<&str>) -> usize {
+        let pid = provider_id.filter(|s| !s.is_empty()).or(self.default_id.as_deref());
+        pid
+            .and_then(|id| self.meta.get(id))
+            .map(|m| m.context_window)
+            .unwrap_or(200_000)
+    }
+
+    /// 按 provider_id 查询模型名称
+    /// 若 provider_id 为 None 或空，回退到默认 Provider
+    pub fn model_name_for(&self, provider_id: Option<&str>) -> String {
+        let pid = provider_id.filter(|s| !s.is_empty()).or(self.default_id.as_deref());
+        pid
+            .and_then(|id| self.meta.get(id))
+            .map(|m| m.model.clone())
+            .unwrap_or_default()
+    }
+
+    /// 按 provider_id 查询缓存类型
+    /// 若 provider_id 为 None 或空，回退到默认 Provider
     /// 返回 "deepseek" | "anthropic" | "gemini" | "none"
-    pub fn current_cache_type(&self) -> &str {
-        self.default_id
-            .as_ref()
+    pub fn cache_type_for(&self, provider_id: Option<&str>) -> &str {
+        let pid = provider_id.filter(|s| !s.is_empty()).or(self.default_id.as_deref());
+        pid
             .and_then(|id| self.meta.get(id))
             .map(|m| match m.provider_type.as_str() {
                 "openai" | "custom" | "anthropic" => {

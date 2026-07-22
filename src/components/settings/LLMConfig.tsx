@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from "../../stores/useSettingsStore";
+import { useSessionStore } from "../../stores/useSessionStore";
+import { useWorkflowStore } from "../../stores/useWorkflowStore";
 import { ProviderFormDialog } from "./ProviderFormDialog";
 import { DeleteConfirmDialog } from "../common/DeleteConfirmDialog";
 import type { ProviderInfo } from "../../types";
@@ -57,6 +59,21 @@ export function LLMConfigTab() {
     setDialogMode(null);
     setEditingProvider(null);
     await loadProviders();
+    // 刷新所有缓存会话的上下文窗口使用信息，确保侧边栏立即显示最新的 context_window
+    const { currentSessionId } = useSessionStore.getState();
+    const { sessionCache, loadContextUsage } = useWorkflowStore.getState();
+    // 清除所有缓存会话的 contextUsage，防止旧值在切换会话时被恢复
+    if (sessionCache.size > 0) {
+      const newCache = new Map(sessionCache);
+      newCache.forEach((entry, key) => {
+        newCache.set(key, { ...entry, contextUsage: null });
+      });
+      useWorkflowStore.setState({ sessionCache: newCache });
+    }
+    // 刷新当前会话的上下文窗口
+    if (currentSessionId) {
+      loadContextUsage(currentSessionId);
+    }
   };
 
   return (

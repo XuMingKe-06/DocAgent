@@ -5,6 +5,7 @@ import type { ContextUsageInfo } from "../types/settings";
 
 import { extractToolPath } from "../utils/format";
 import { useWorkspaceStore } from "./useWorkspaceStore";
+import { useSettingsStore } from "./useSettingsStore";
 import { onAgentContextUpdate, type QuestionItem } from "../services/event";
 import * as tauriCmd from "../services/tauri";
 import i18n from "../i18n";
@@ -715,34 +716,44 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   initContextUsageListener: async () => {
     const unlisten = await onAgentContextUpdate((payload) => {
       const state = get();
-      // 如果事件属于当前会话，直接更新 contextUsage
-      // 否则更新后台会话缓存
+      // 如果事件属于当前会话，同时更新 contextUsage 和 sessionCache
+      // 否则仅更新后台会话缓存
       const currentSessionId = _currentSessionId;
+      const cache = new Map(state.sessionCache);
+      const entry = cache.get(payload.sessionId);
+      if (entry) {
+        cache.set(payload.sessionId, {
+          ...entry,
+          contextUsage: payload.contextUsage,
+        });
+      }
       if (currentSessionId && payload.sessionId !== currentSessionId) {
-        // 后台会话：更新缓存中的 contextUsage
-        const cache = new Map(state.sessionCache);
-        const entry = cache.get(payload.sessionId);
-        if (entry) {
-          cache.set(payload.sessionId, {
-            ...entry,
-            contextUsage: payload.contextUsage,
-            lastAccessedAt: entry.lastAccessedAt,
-          });
-          set({ sessionCache: cache });
-        }
+        // 后台会话：仅更新缓存
+        set({ sessionCache: cache });
       } else {
-        // 当前会话：直接更新
-        set({ contextUsage: payload.contextUsage });
+        // 当前会话：同时更新状态和缓存
+        set({ contextUsage: payload.contextUsage, sessionCache: cache });
       }
     });
     return unlisten;
   },
 
   // 从后端加载指定会话的上下文窗口使用信息
+  // 传入用户在对话框中选择的 Provider ID，确保后端返回正确的 context_window
   loadContextUsage: async (sessionId: string) => {
     try {
-      const usage = await tauriCmd.getContextUsage(sessionId);
+      // 从 useSettingsStore 读取用户选择的 Provider ID
+      const providerId = useSettingsStore.getState().preferredProviderId ?? undefined;
+      const usage = await tauriCmd.getContextUsage(sessionId, providerId);
       set({ contextUsage: usage });
+      // 同步更新 sessionCache 中该会话的 contextUsage，避免切换会话时恢复旧值
+      const state = get();
+      const cache = new Map(state.sessionCache);
+      const entry = cache.get(sessionId);
+      if (entry) {
+        cache.set(sessionId, { ...entry, contextUsage: usage });
+        set({ sessionCache: cache });
+      }
     } catch {
       // 会话无消息或后端计算失败时，清除上下文使用信息
       set({ contextUsage: null });
