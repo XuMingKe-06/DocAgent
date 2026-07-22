@@ -1,62 +1,11 @@
 import { useState } from "react";
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from "../../stores/useSettingsStore";
-import { useWorkflowStore } from "../../stores/useWorkflowStore";
 import { Icon } from "../common/Icon";
-
-/** 格式化 Token 数量为可读字符串 */
-function formatTokens(tokens: number): string {
-  if (tokens >= 1_000_000) {
-    return `${(tokens / 1_000_000).toFixed(1)}M`;
-  }
-  if (tokens >= 1000) {
-    return `${(tokens / 1000).toFixed(1)}K`;
-  }
-  return String(tokens);
-}
-
-/** 根据使用百分比返回对应的显示信息 */
-function getUsageInfo(usagePercent: number, t: (key: string) => string): { label: string; color: string } {
-  if (usagePercent >= 95) {
-    return { label: t('contextWindow.approachingLimit'), color: "var(--color-error)" };
-  } else if (usagePercent >= 80) {
-    return { label: t('contextWindow.normal'), color: "var(--color-warning)" };
-  } else {
-    return { label: t('contextWindow.normal'), color: "var(--color-success)" };
-  }
-}
-
-/** 上下文各部分定义：key（用于翻译）、颜色变量名、对应字段 */
-const CONTEXT_SECTIONS = [
-  { key: "system", labelKey: "contextWindow.systemPrompt", colorVar: "--color-context-system" },
-  { key: "functions", labelKey: "contextWindow.toolDefinitions", colorVar: "--color-context-functions" },
-  { key: "history", labelKey: "contextWindow.conversationHistory", colorVar: "--color-context-history" },
-  { key: "response", labelKey: "contextWindow.llmResponse", colorVar: "--color-context-response" },
-] as const;
-
-/** 缓存命中率文字显示 */
-function CacheHitRateBar({ hitRate }: { hitRate: number }) {
-  const { t } = useTranslation();
-  const percent = Math.round(hitRate * 100);
-  const color =
-    percent >= 70
-      ? "var(--color-success)"
-      : percent >= 40
-        ? "var(--color-warning)"
-        : "var(--color-error)";
-
-  return (
-    <div className="ai-cache-simple">
-      <span className="ai-cache-label">{t('contextWindow.cacheHitRate')}</span>
-      <span className="ai-cache-value" style={{ color }}>{percent}%</span>
-    </div>
-  );
-}
 
 export function AgentInfoSection() {
   const { t } = useTranslation();
   const { settings, llmProviders, activeProviderId, preferredProviderId, updateSettings, openSettings } = useSettingsStore();
-  const { contextUsage } = useWorkflowStore();
 
   // 默认收缩状态
   const [open, setOpen] = useState(false);
@@ -69,74 +18,6 @@ export function AgentInfoSection() {
   ];
   // 优先显示用户选择的首选 Provider，回退到默认 Provider，与 InputArea/TopBar 显示逻辑一致
   const activeProvider = llmProviders.find((p) => p.id === (preferredProviderId || activeProviderId));
-
-  // 计算上下文使用数据
-  // 仅当后端返回了实际的上下文使用数据时才显示，新会话（无消息）不显示
-  const hasContextInfo = !!contextUsage;
-
-  let contextBar = null;
-  if (contextUsage) {
-    const {
-      contextWindow,
-      systemPromptTokens,
-      functionDefinitionsTokens,
-      conversationTokens,
-      responseTokens,
-      totalUsedTokens,
-      totalMessageCount,
-      cacheHitRate,
-      providerCacheType,
-    } = contextUsage;
-
-    const usagePercent = contextWindow > 0 ? Math.round((totalUsedTokens / contextWindow) * 100) : 0;
-    const usageInfo = getUsageInfo(usagePercent, t);
-    const systemPct = contextWindow > 0 ? (systemPromptTokens / contextWindow) * 100 : 0;
-    const funcPct = contextWindow > 0 ? (functionDefinitionsTokens / contextWindow) * 100 : 0;
-    const convPct = contextWindow > 0 ? (conversationTokens / contextWindow) * 100 : 0;
-    const respPct = contextWindow > 0 ? (responseTokens / contextWindow) * 100 : 0;
-    const sectionTokens = [systemPromptTokens, functionDefinitionsTokens, conversationTokens, responseTokens];
-    const sectionPcts = [systemPct, funcPct, convPct, respPct];
-
-    contextBar = (
-      <div className="ai-context-block">
-        <div className="ai-context-header">
-          <span className="ai-context-label">{t('contextWindow.sectionTitle')}</span>
-          <span className="ai-context-value" style={usagePercent >= 95 ? { color: "var(--color-error)" } : undefined}>
-            {formatTokens(totalUsedTokens)} / {formatTokens(contextWindow)}
-          </span>
-        </div>
-
-        <div className="ai-context-bar-track">
-          {CONTEXT_SECTIONS.map((section, i) => (
-            <div
-              key={section.key}
-              className="ai-context-bar-segment"
-              style={{ width: `${sectionPcts[i]}%`, background: `var(${section.colorVar})` }}
-              title={`${t(section.labelKey)}: ${formatTokens(sectionTokens[i])} (${sectionPcts[i].toFixed(1)}%)`}
-            />
-          ))}
-        </div>
-
-        <div className="ai-context-footer">
-          <span className="ai-context-status" style={{ color: usageInfo.color }}>
-            {usageInfo.label}
-          </span>
-          <span className="ai-context-percent">{usagePercent}%</span>
-        </div>
-
-        {usagePercent >= 80 && (
-          <div className="ai-context-compressed">
-            <span className="ai-context-dot" />
-            <span>
-              {t('contextWindow.approachingLimitDetail', { total: totalMessageCount })}
-            </span>
-          </div>
-        )}
-
-        {providerCacheType !== "none" && <CacheHitRateBar hitRate={cacheHitRate} />}
-      </div>
-    );
-  }
 
   return (
     <div className="agent-info-section">
@@ -235,8 +116,6 @@ export function AgentInfoSection() {
             </select>
           </div>
 
-          {hasContextInfo && <div className="ai-context-divider" />}
-          {contextBar}
         </div>
       </div>
 
@@ -458,92 +337,6 @@ export function AgentInfoSection() {
         .ai-setup-hint:hover {
           background: var(--color-accent-light);
           border-color: var(--color-accent);
-        }
-
-        /* 合并后的上下文窗口区域 */
-        .ai-context-divider {
-          height: 1px;
-          background: var(--color-border-light);
-          margin: 6px 0 4px;
-        }
-        .ai-context-block {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-          padding: 2px 0;
-        }
-        .ai-context-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .ai-context-label {
-          font-size: 12px;
-          color: var(--color-text-quaternary);
-          font-weight: 500;
-        }
-        .ai-context-value {
-          font-size: 12px;
-          font-weight: 600;
-          color: var(--color-text-secondary);
-          font-variant-numeric: tabular-nums;
-        }
-        .ai-context-bar-track {
-          height: 4px;
-          background: var(--color-context-idle);
-          border-radius: 2px;
-          overflow: hidden;
-          display: flex;
-        }
-        .ai-context-bar-segment {
-          height: 100%;
-          transition: width 0.5s ease;
-          min-width: 0;
-        }
-        .ai-context-footer {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        }
-        .ai-context-status {
-          font-size: 11px;
-          font-weight: 500;
-        }
-        .ai-context-percent {
-          font-size: 11px;
-          color: var(--color-text-quaternary);
-          font-variant-numeric: tabular-nums;
-        }
-        .ai-context-compressed {
-          display: flex;
-          align-items: center;
-          gap: 4px;
-          padding: 3px 6px;
-          background: var(--color-warning-bg, rgba(250, 173, 20, 0.1));
-          border-radius: var(--radius-sm);
-          font-size: 11px;
-          color: var(--color-warning, #faad14);
-        }
-        .ai-context-dot {
-          width: 5px;
-          height: 5px;
-          border-radius: 50%;
-          background: var(--color-warning, #faad14);
-          flex-shrink: 0;
-        }
-        .ai-cache-simple {
-          display: flex;
-          gap: 4px;
-          align-items: baseline;
-        }
-        .ai-cache-label {
-          font-size: 11px;
-          color: var(--color-text-tertiary);
-        }
-        .ai-cache-value {
-          font-size: 12px;
-          font-weight: 600;
-          font-variant-numeric: tabular-nums;
         }
       `}</style>
     </div>

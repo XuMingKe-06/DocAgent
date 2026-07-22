@@ -76,8 +76,9 @@
     "previousBranch": "Previous Branch",
     "nextBranch": "Next Branch",
     "branchGraph": "Branch Navigation",
-    "hideBranchGraph": "Hide Branch Navigation",
-    "showBranchGraph": "Show Branch Navigation",
+    "contextWindow": "Context Window",
+    "hideRightSidebar": "Hide Side Panel",
+    "showRightSidebar": "Show Side Panel",
     "branchesCount": "{{count}} branches",
     "currentBranch": "Current Branch",
     "emptyWorkflow": "No workflow nodes yet",
@@ -248,7 +249,8 @@
     "conversationHistory": "Conversation History",
     "llmResponse": "LLM Response",
     "approachingLimitDetail": "Context near limit ({{total}} messages)",
-    "cacheHitRate": "Cache Hit Rate"
+    "cacheHitRate": "Cache Hit Rate",
+    "noData": "No context data"
   },
   "settings": {
     "title": "Settings",

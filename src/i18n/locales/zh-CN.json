@@ -76,8 +76,9 @@
     "previousBranch": "上一个分支",
     "nextBranch": "下一个分支",
     "branchGraph": "分支导航",
-    "hideBranchGraph": "隐藏分支导航",
-    "showBranchGraph": "显示分支导航",
+    "contextWindow": "上下文窗口",
+    "hideRightSidebar": "隐藏侧边栏",
+    "showRightSidebar": "显示侧边栏",
     "branchesCount": "{{count}} 个分支",
     "currentBranch": "当前分支",
     "emptyWorkflow": "暂无工作流节点",
@@ -248,7 +249,8 @@
     "conversationHistory": "对话历史",
     "llmResponse": "LLM 响应",
     "approachingLimitDetail": "上下文接近上限 ({{total}} 消息)",
-    "cacheHitRate": "缓存命中率"
+    "cacheHitRate": "缓存命中率",
+    "noData": "暂无上下文数据"
   },
   "settings": {
     "title": "设置",

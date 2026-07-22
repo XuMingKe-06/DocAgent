@@ -8,47 +8,159 @@ import { CustomScrollArea } from '../common/CustomScrollArea';
 import type { UserNodeData } from '../../types/workflow';
 import type { BranchUserMessage } from '../../types/session';
 
+/** 格式化 Token 数量为可读字符串 */
+function formatTokens(tokens: number): string {
+  if (tokens >= 1_000_000) {
+    return `${(tokens / 1_000_000).toFixed(1)}M`;
+  }
+  if (tokens >= 1000) {
+    return `${(tokens / 1000).toFixed(1)}K`;
+  }
+  return String(tokens);
+}
+
+/** 根据使用百分比返回对应的显示信息 */
+function getUsageInfo(usagePercent: number, t: (key: string) => string): { label: string; color: string } {
+  if (usagePercent >= 95) {
+    return { label: t('contextWindow.approachingLimit'), color: "var(--color-error)" };
+  } else if (usagePercent >= 80) {
+    return { label: t('contextWindow.normal'), color: "var(--color-warning)" };
+  } else {
+    return { label: t('contextWindow.normal'), color: "var(--color-success)" };
+  }
+}
+
+const CONTEXT_SECTIONS = [
+  { key: "system", labelKey: "contextWindow.systemPrompt", colorVar: "--color-context-system" },
+  { key: "functions", labelKey: "contextWindow.toolDefinitions", colorVar: "--color-context-functions" },
+  { key: "history", labelKey: "contextWindow.conversationHistory", colorVar: "--color-context-history" },
+  { key: "response", labelKey: "contextWindow.llmResponse", colorVar: "--color-context-response" },
+] as const;
+
+function CacheHitRateDisplay({ hitRate }: { hitRate: number }) {
+  const { t } = useTranslation();
+  const percent = Math.round(hitRate * 100);
+  const color =
+    percent >= 70
+      ? "var(--color-success)"
+      : percent >= 40
+        ? "var(--color-warning)"
+        : "var(--color-error)";
+
+  return (
+    <div className="context-panel-cache">
+      <span className="context-panel-cache-label">{t('contextWindow.cacheHitRate')}</span>
+      <span className="context-panel-cache-value" style={{ color }}>{percent}%</span>
+    </div>
+  );
+}
+
+function ContextPanel() {
+  const { t } = useTranslation();
+  const contextUsage = useWorkflowStore((s) => s.contextUsage);
+
+  if (!contextUsage) {
+    return (
+      <div className="context-panel">
+        <div className="context-panel-empty">{t('contextWindow.noData')}</div>
+      </div>
+    );
+  }
+
+  const {
+    contextWindow,
+    systemPromptTokens,
+    functionDefinitionsTokens,
+    conversationTokens,
+    responseTokens,
+    totalUsedTokens,
+    totalMessageCount,
+    cacheHitRate,
+    providerCacheType,
+  } = contextUsage;
+
+  const usagePercent = contextWindow > 0 ? Math.round((totalUsedTokens / contextWindow) * 100) : 0;
+  const usageInfo = getUsageInfo(usagePercent, t);
+  const systemPct = contextWindow > 0 ? (systemPromptTokens / contextWindow) * 100 : 0;
+  const funcPct = contextWindow > 0 ? (functionDefinitionsTokens / contextWindow) * 100 : 0;
+  const convPct = contextWindow > 0 ? (conversationTokens / contextWindow) * 100 : 0;
+  const respPct = contextWindow > 0 ? (responseTokens / contextWindow) * 100 : 0;
+  const sectionTokens = [systemPromptTokens, functionDefinitionsTokens, conversationTokens, responseTokens];
+  const sectionPcts = [systemPct, funcPct, convPct, respPct];
+
+  return (
+    <div className="context-panel">
+      <div className="context-panel-header">
+        <span className="context-panel-label">{t('contextWindow.sectionTitle')}</span>
+        <span className="context-panel-value" style={usagePercent >= 95 ? { color: "var(--color-error)" } : undefined}>
+          {formatTokens(totalUsedTokens)} / {formatTokens(contextWindow)}
+        </span>
+      </div>
+
+      <div className="context-panel-bar-track">
+        {CONTEXT_SECTIONS.map((section, i) => (
+          <div
+            key={section.key}
+            className="context-panel-bar-segment"
+            style={{ width: `${sectionPcts[i]}%`, background: `var(${section.colorVar})` }}
+            title={`${t(section.labelKey)}: ${formatTokens(sectionTokens[i])} (${sectionPcts[i].toFixed(1)}%)`}
+          />
+        ))}
+      </div>
+
+      <div className="context-panel-footer">
+        <span className="context-panel-status" style={{ color: usageInfo.color }}>
+          {usageInfo.label}
+        </span>
+        <span className="context-panel-percent">{usagePercent}%</span>
+      </div>
+
+      {usagePercent >= 80 && (
+        <div className="context-panel-warning">
+          <span className="context-panel-dot" />
+          <span>
+            {t('contextWindow.approachingLimitDetail', { total: totalMessageCount })}
+          </span>
+        </div>
+      )}
+
+      {providerCacheType !== "none" && <CacheHitRateDisplay hitRate={cacheHitRate} />}
+    </div>
+  );
+}
+
+type RightSidebarTab = "branches" | "context";
+
 interface WorkflowRightSidebarProps {
   /** 是否处于收起状态（由父组件控制，用于触发滑入/滑出动画） */
   collapsed?: boolean;
 }
 
 /**
- * 工作流右侧边栏：分支导航
- * - 展示 user 节点列表
- * - 分支组指示按钮：对属于多分支组的 user 节点显示分支数量，点击展开/折叠
- * - 分支切换：展开后显示分支列表，点击切换活跃分支；Agent 运行时禁用
- * - 搜索功能：点击搜索图标显示输入框，按关键词过滤用户消息
+ * 工作流右侧边栏：分支导航 + 上下文窗口
+ * - 顶部 Tab 栏在「分支导航」和「上下文窗口」之间切换
+ * - 分支导航：展示 user 节点列表、分支组指示按钮、分支切换、搜索功能
+ * - 上下文窗口：展示 Token 使用情况、进度条、缓存命中率
  * - 滑入/滑出动画：外层控制 width，内层控制 transform，避免内容被压缩
  */
 export function WorkflowRightSidebar({ collapsed = false }: WorkflowRightSidebarProps) {
   const { t } = useTranslation();
+  const [activeTab, setActiveTab] = useState<RightSidebarTab>("branches");
   const nodes = useWorkflowStore((s) => s.nodes);
   const currentVisibleNodeId = useWorkflowStore((s) => s.currentVisibleNodeId);
   const setRightSidebarVisible = useWorkflowStore((s) => s.setRightSidebarVisible);
-  // 跳转到指定节点（滚动+高亮）
   const jumpToNode = useWorkflowStore((s) => s.jumpToNode);
-  // 通过 messageId 跳转（用于跨分支搜索结果）
   const jumpToMessage = useWorkflowStore((s) => s.jumpToMessage);
-  // 执行状态：Agent 运行时禁用分支切换
   const executionStatus = useWorkflowStore((s) => s.executionStatus);
-  // 分支组信息：用于展开后渲染分支列表
   const branchGroups = useWorkflowStore((s) => s.branchGroups);
-  // 当前活跃分支 ID：用于高亮当前分支、判断跨分支跳转
   const activeBranchId = useWorkflowStore((s) => s.activeBranchId);
 
-  // 本地 state 管理各分支组的展开/折叠状态（按 branchGroupId 隔离）
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set());
-  // 搜索状态：是否显示搜索输入框
   const [isSearching, setIsSearching] = useState(false);
-  // 搜索关键词
   const [searchQuery, setSearchQuery] = useState('');
-  // 全分支用户消息列表（进入搜索模式时加载）
   const [allBranchMessages, setAllBranchMessages] = useState<BranchUserMessage[]>([]);
-  // 全分支消息加载状态
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
 
-  // 进入搜索模式时加载所有分支的 user 消息
   useEffect(() => {
     if (!isSearching) return;
     const sessionId = useSessionStore.getState().currentSessionId;
@@ -72,7 +184,6 @@ export function WorkflowRightSidebar({ collapsed = false }: WorkflowRightSidebar
     };
   }, [isSearching]);
 
-  // 切换指定分支组的展开/折叠状态
   const toggleGroup = (groupId: string) => {
     setExpandedGroupIds((prev) => {
       const next = new Set(prev);
@@ -85,7 +196,6 @@ export function WorkflowRightSidebar({ collapsed = false }: WorkflowRightSidebar
     });
   };
 
-  // 切换到指定分支：Agent 运行时禁用
   const handleSwitchToBranch = async (branchId: string) => {
     if (executionStatus === 'running') return;
     try {
@@ -95,46 +205,34 @@ export function WorkflowRightSidebar({ collapsed = false }: WorkflowRightSidebar
     }
   };
 
-  // 关闭搜索：清空关键词并隐藏搜索框
   const handleCloseSearch = () => {
     setIsSearching(false);
     setSearchQuery('');
     setAllBranchMessages([]);
   };
 
-  // 点击搜索结果项跳转：当前分支直接跳转，其他分支先切换再跳转
   const handleSearchResultClick = async (message: BranchUserMessage) => {
     if (executionStatus === 'running') return;
-    // 当前分支：直接通过 messageId 跳转
     if (message.branchId === activeBranchId) {
       jumpToMessage(message.messageId);
       return;
     }
-    // 其他分支：先切换分支，等待工作流重渲染后通过 messageId 跳转
     try {
       await useSessionStore.getState().switchBranch(message.branchId);
-      // 切换分支后工作流重渲染需要时间，用 requestAnimationFrame 延迟跳转
-      // 需要多次重试以确保节点已注册到 nodeRefsMap
       const tryJump = (attempts: number) => {
         if (jumpToMessage(message.messageId)) return;
         if (attempts > 0) {
           requestAnimationFrame(() => tryJump(attempts - 1));
         }
       };
-      // 最多重试 30 帧（约 500ms）
       setTimeout(() => tryJump(30), 100);
     } catch (err) {
       console.error('[WorkflowRightSidebar] 跨分支跳转失败:', err);
     }
   };
 
-  // 当前分支的 user 节点（从工作流节点列表过滤）
   const currentUserNodes = nodes.filter((n) => n.type === 'user');
 
-  // 搜索模式：构建合并显示列表
-  // - 当前分支节点：从 nodes 过滤（保留分支组指示等交互）
-  // - 其他分支节点：从 allBranchMessages 过滤（仅显示匹配项）
-  // - 匹配项用深色背景标记
   const searchResultsFromOtherBranches = searchQuery
     ? allBranchMessages.filter(
         (m) =>
@@ -143,7 +241,6 @@ export function WorkflowRightSidebar({ collapsed = false }: WorkflowRightSidebar
       )
     : [];
 
-  // 当前分支是否包含匹配项（仅用于"无搜索结果"提示判断）
   const hasCurrentBranchMatches = searchQuery
     ? currentUserNodes.some((n) => {
         const data = n.data as UserNodeData;
@@ -153,159 +250,172 @@ export function WorkflowRightSidebar({ collapsed = false }: WorkflowRightSidebar
 
   return (
     <div className={`workflow-right-sidebar${collapsed ? ' collapsed' : ''}`}>
-      {/* 内层容器：固定宽度，配合外层 width 动画实现滑入/滑出效果 */}
       <div className="workflow-right-sidebar-inner">
+        {/* 顶部 Tab 栏 */}
         <div className="branch-graph-header">
-          {isSearching ? (
-            // 搜索模式：显示搜索输入框 + 关闭按钮
-            <div className="branch-graph-search-row">
-              <Icon name="search" size={12} className="branch-graph-search-icon" />
-              <input
-                type="text"
-                className="branch-graph-search-input"
-                placeholder={t('workflow.searchUserMessages')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                autoFocus
-              />
-              <button
-                className="branch-graph-close-btn"
-                onClick={handleCloseSearch}
-                title={t('common.cancel')}
-              >
-                <Icon name="close" size={14} />
-              </button>
-            </div>
-          ) : (
-            // 默认模式：显示标题 + 搜索按钮 + 收起按钮
-            <>
-              <span className="branch-graph-title">{t('workflow.branchGraph')}</span>
-              <div className="branch-graph-header-actions">
-                <button
-                  className="branch-graph-close-btn"
-                  onClick={() => setIsSearching(true)}
-                  title={t('workflow.searchUserMessages')}
-                >
-                  <Icon name="search" size={14} />
-                </button>
-                <button
-                  className="branch-graph-close-btn"
-                  onClick={() => setRightSidebarVisible(false)}
-                  title={t('workflow.hideBranchGraph')}
-                >
-                  <Icon name="close" size={14} />
-                </button>
-              </div>
-            </>
-          )}
+          <div className="right-sidebar-tabs">
+            <button
+              className={`right-sidebar-tab${activeTab === "branches" ? " active" : ""}`}
+              onClick={() => setActiveTab("branches")}
+            >
+              <Icon name="git-branch" size={12} />
+              <span>{t('workflow.branchGraph')}</span>
+            </button>
+            <button
+              className={`right-sidebar-tab${activeTab === "context" ? " active" : ""}`}
+              onClick={() => setActiveTab("context")}
+            >
+              <Icon name="chart" size={12} />
+              <span>{t('workflow.contextWindow')}</span>
+            </button>
+          </div>
+          <div className="branch-graph-header-actions">
+            <button
+              className="branch-graph-close-btn"
+              onClick={() => setRightSidebarVisible(false)}
+              title={t('workflow.hideRightSidebar')}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+                <polyline points="15 10 18 13 15 16" />
+              </svg>
+            </button>
+          </div>
         </div>
-        <CustomScrollArea className="branch-graph-content">
-          {currentUserNodes.length === 0 && !isSearching ? (
-            <div className="branch-graph-empty">{t('workflow.emptyWorkflow')}</div>
-          ) : isLoadingMessages && isSearching ? (
-            <div className="branch-graph-empty">{t('common.loading') }</div>
-          ) : (
-            <div className="branch-graph-padding">
-              {/* 当前分支的 user 节点列表（搜索时不清空，仅作为分支导航展示） */}
-              {currentUserNodes.map((node, index) => {
-                const data = node.data as UserNodeData;
-                const content = data.content || '';
-                const summary = content.length > 40 ? content.slice(0, 40) + '...' : (content || t('workflow.attachmentMessage'));
-                const isActive = currentVisibleNodeId === node.id;
-                // 判断该 user 节点是否属于多分支组（branchTotal > 1）
-                const hasBranchGroup = !!(data.branchGroupId && data.branchTotal && data.branchTotal > 1);
-                // 当前分支组是否处于展开状态
-                const isExpanded = hasBranchGroup && expandedGroupIds.has(data.branchGroupId!);
-                // 获取当前分支组信息
-                const group = hasBranchGroup ? branchGroups.find((g) => g.branchGroupId === data.branchGroupId) : undefined;
-                // 按 sortOrder 升序排序分支列表
-                const sortedBranches = group?.branches.slice().sort((a, b) => a.sortOrder - b.sortOrder) || [];
-                // 节点 class：active（当前可见）
-                const nodeClass = `branch-graph-node${isActive ? ' active' : ''}`;
-                return (
-                  <div
-                    key={node.id}
-                    className={nodeClass}
-                    data-node-id={node.id}
-                    onClick={() => jumpToNode(node.id)}
+
+        {/* Tab 内容 */}
+        {activeTab === "branches" ? (
+          <CustomScrollArea className="branch-graph-content">
+            {currentUserNodes.length === 0 && !isSearching ? (
+              <div className="branch-graph-empty">{t('workflow.emptyWorkflow')}</div>
+            ) : isLoadingMessages && isSearching ? (
+              <div className="branch-graph-empty">{t('common.loading')}</div>
+            ) : (
+              <div className="branch-graph-padding">
+                {isSearching ? (
+                  <>
+                    <div className="branch-graph-search-row" style={{ marginBottom: 8 }}>
+                      <Icon name="search" size={12} className="branch-graph-search-icon" />
+                      <input
+                        type="text"
+                        className="branch-graph-search-input"
+                        placeholder={t('workflow.searchUserMessages')}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        autoFocus
+                      />
+                      <button
+                        className="branch-graph-close-btn"
+                        onClick={handleCloseSearch}
+                        title={t('common.cancel')}
+                      >
+                        <Icon name="close" size={14} />
+                      </button>
+                    </div>
+
+                    {searchResultsFromOtherBranches.length > 0 && (
+                      searchResultsFromOtherBranches.map((msg) => {
+                        const summary = msg.content.length > 40 ? msg.content.slice(0, 40) + '...' : msg.content;
+                        const sourceBranch = branchGroups
+                          .flatMap((g) => g.branches)
+                          .find((b) => b.branchId === msg.branchId);
+                        const branchName = sourceBranch?.name || msg.branchId.slice(-8);
+                        return (
+                          <div
+                            key={msg.messageId}
+                            className="branch-graph-node other-branch"
+                            onClick={() => void handleSearchResultClick(msg)}
+                          >
+                            <span className="branch-graph-node-index">
+                              <Icon name="git-branch" size={11} />
+                            </span>
+                            <span className="branch-graph-node-content">{summary}</span>
+                            <span className="branch-graph-node-branch-tag">{branchName}</span>
+                          </div>
+                        );
+                      })
+                    )}
+
+                    {searchQuery &&
+                      !hasCurrentBranchMatches &&
+                      searchResultsFromOtherBranches.length === 0 && (
+                        <div className="branch-graph-empty">{t('workflow.noSearchResults')}</div>
+                      )}
+                  </>
+                ) : (
+                  <button
+                    className="branch-graph-search-toggle"
+                    onClick={() => setIsSearching(true)}
                   >
-                    <span className="branch-graph-node-index">{index + 1}</span>
-                    <span className="branch-graph-node-content">{summary}</span>
-                    {/* 分支组指示按钮：点击切换展开/折叠，阻止冒泡避免触发节点跳转 */}
-                    {hasBranchGroup && (
-                      <div
-                        className="branch-group-indicator"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleGroup(data.branchGroupId!);
-                        }}
-                      >
-                        <Icon name="git-branch" size={11} />
-                        <span>{t('workflow.branchesCount', { count: data.branchTotal })}</span>
-                      </div>
-                    )}
-                    {/* 展开时显示分支列表，点击切换活跃分支；当前活跃分支高亮，非活跃分支标记 disabled */}
-                    {isExpanded && sortedBranches.length > 0 && (
-                      <div className="branch-group-list">
-                        {sortedBranches.map((b) => {
-                          const isCurrent = b.branchId === activeBranchId;
-                          return (
-                            <div
-                              key={b.branchId}
-                              className={`branch-group-item${isCurrent ? ' active' : ' disabled'}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleSwitchToBranch(b.branchId);
-                              }}
-                            >
-                              {b.name}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* 搜索模式下，其他分支的匹配项追加在列表末尾，标识来源分支名 */}
-              {searchQuery && searchResultsFromOtherBranches.length > 0 && (
-                <>
-                  <div className="branch-graph-separator" />
-                  {searchResultsFromOtherBranches.map((msg) => {
-                    // 截取前 40 字符作为摘要
-                    const summary = msg.content.length > 40 ? msg.content.slice(0, 40) + '...' : msg.content;
-                    // 查找来源分支名称
-                    const sourceBranch = branchGroups
-                      .flatMap((g) => g.branches)
-                      .find((b) => b.branchId === msg.branchId);
-                    const branchName = sourceBranch?.name || msg.branchId.slice(-8);
-                    return (
-                      <div
-                        key={msg.messageId}
-                        className="branch-graph-node other-branch"
-                        onClick={() => void handleSearchResultClick(msg)}
-                      >
-                        <span className="branch-graph-node-index">
-                          <Icon name="git-branch" size={11} />
-                        </span>
-                        <span className="branch-graph-node-content">{summary}</span>
-                        <span className="branch-graph-node-branch-tag">{branchName}</span>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-
-              {/* 搜索模式下无任何匹配项时显示提示 */}
-              {searchQuery &&
-                !hasCurrentBranchMatches &&
-                searchResultsFromOtherBranches.length === 0 && (
-                  <div className="branch-graph-empty">{t('workflow.noSearchResults')}</div>
+                    <Icon name="search" size={12} />
+                    <span>{t('workflow.searchUserMessages')}</span>
+                  </button>
                 )}
-            </div>
-          )}
-        </CustomScrollArea>
+
+                <div className="branch-graph-search-spacer" />
+
+                {currentUserNodes.map((node, index) => {
+                  const data = node.data as UserNodeData;
+                  const content = data.content || '';
+                  const summary = content.length > 40 ? content.slice(0, 40) + '...' : (content || t('workflow.attachmentMessage'));
+                  const isActive = currentVisibleNodeId === node.id;
+                  const hasBranchGroup = !!(data.branchGroupId && data.branchTotal && data.branchTotal > 1);
+                  const isExpanded = hasBranchGroup && expandedGroupIds.has(data.branchGroupId!);
+                  const group = hasBranchGroup ? branchGroups.find((g) => g.branchGroupId === data.branchGroupId) : undefined;
+                  const sortedBranches = group?.branches.slice().sort((a, b) => a.sortOrder - b.sortOrder) || [];
+                  const nodeClass = `branch-graph-node${isActive ? ' active' : ''}`;
+                  return (
+                    <div
+                      key={node.id}
+                      className={nodeClass}
+                      data-node-id={node.id}
+                      onClick={() => jumpToNode(node.id)}
+                    >
+                      <span className="branch-graph-node-index">{index + 1}</span>
+                      <span className="branch-graph-node-content">{summary}</span>
+                      {hasBranchGroup && (
+                        <div
+                          className="branch-group-indicator"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleGroup(data.branchGroupId!);
+                          }}
+                        >
+                          <Icon name="git-branch" size={11} />
+                          <span>{t('workflow.branchesCount', { count: data.branchTotal })}</span>
+                        </div>
+                      )}
+                      {isExpanded && sortedBranches.length > 0 && (
+                        <div className="branch-group-list">
+                          {sortedBranches.map((b) => {
+                            const isCurrent = b.branchId === activeBranchId;
+                            return (
+                              <div
+                                key={b.branchId}
+                                className={`branch-group-item${isCurrent ? ' active' : ' disabled'}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleSwitchToBranch(b.branchId);
+                                }}
+                              >
+                                {b.name}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CustomScrollArea>
+        ) : (
+          <CustomScrollArea className="branch-graph-content">
+            <ContextPanel />
+          </CustomScrollArea>
+        )}
       </div>
     </div>
   );

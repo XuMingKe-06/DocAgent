@@ -604,6 +604,147 @@
   gap: 2px;
 }
 
+/* 右侧栏 Tab 切换栏 */
+.right-sidebar-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.right-sidebar-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.right-sidebar-tab:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+.right-sidebar-tab.active {
+  color: var(--color-text-primary);
+  background: var(--color-bg-sub);
+}
+
+/* 右侧栏上下文窗口面板 */
+.context-panel {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.context-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.context-panel-label {
+  font-size: 12px;
+  color: var(--color-text-quaternary);
+  font-weight: 500;
+}
+.context-panel-value {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.context-panel-bar-track {
+  height: 4px;
+  background: var(--color-context-idle);
+  border-radius: 2px;
+  overflow: hidden;
+  display: flex;
+}
+.context-panel-bar-segment {
+  height: 100%;
+  transition: width 0.5s ease;
+  min-width: 0;
+}
+.context-panel-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.context-panel-status {
+  font-size: 11px;
+  font-weight: 500;
+}
+.context-panel-percent {
+  font-size: 11px;
+  color: var(--color-text-quaternary);
+  font-variant-numeric: tabular-nums;
+}
+.context-panel-warning {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  background: var(--color-warning-bg, rgba(250, 173, 20, 0.1));
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--color-warning, #faad14);
+}
+.context-panel-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-warning, #faad14);
+  flex-shrink: 0;
+}
+.context-panel-cache {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+}
+.context-panel-cache-label {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+.context-panel-cache-value {
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.context-panel-empty {
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  padding: 24px 0;
+}
+
+/* 搜索区域与节点列表之间的间距 */
+.branch-graph-search-spacer {
+  height: 8px;
+}
+
+/* 搜索切换按钮：位于分支列表底部，点击展开搜索输入框 */
+.branch-graph-search-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.branch-graph-search-toggle:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+
 /* 搜索模式行：搜索图标 + 输入框 + 关闭按钮 */
 .branch-graph-search-row {
   display: flex;
@@ -630,12 +771,6 @@
 
 .branch-graph-search-input::placeholder {
   color: var(--color-text-tertiary);
-}
-
-.branch-graph-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--color-text-primary);
 }
 
 .branch-graph-close-btn {
@@ -694,16 +829,6 @@
   text-overflow: ellipsis;
   flex: 1;
 }
-
-
-
-/* 搜索结果分隔线（当前分支与其他分支之间） */
-.branch-graph-separator {
-  height: 1px;
-  background: var(--color-border);
-  margin: 8px 0;
-}
-
 /* 其他分支匹配项的分支标签 */
 .branch-graph-node-branch-tag {
   font-size: 10px;
